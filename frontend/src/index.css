@@ -1,0 +1,248 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* RTL support for Hebrew */
+[dir="rtl"] {
+  text-align: right;
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Base dark background */
+body {
+  @apply bg-gray-950 text-gray-100;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Smooth transitions for interactive elements */
+* {
+  @apply transition-colors duration-150;
+}
+
+/* Focus ring styling */
+*:focus-visible {
+  @apply outline-none ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900;
+}
+
+/* Custom utility classes */
+@layer components {
+  .card {
+    @apply bg-gray-900 border border-gray-800 rounded-xl p-4;
+  }
+
+  .card-hover {
+    @apply card hover:border-gray-700 hover:bg-gray-800 cursor-pointer;
+  }
+
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-700 hover:bg-gray-600 text-white font-medium px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-success {
+    @apply bg-green-600 hover:bg-green-700 text-white font-medium px-4 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-green {
+    @apply badge bg-green-900/50 text-green-400 border border-green-800;
+  }
+
+  .badge-red {
+    @apply badge bg-red-900/50 text-red-400 border border-red-800;
+  }
+
+  .badge-yellow {
+    @apply badge bg-yellow-900/50 text-yellow-400 border border-yellow-800;
+  }
+
+  .badge-blue {
+    @apply badge bg-blue-900/50 text-blue-400 border border-blue-800;
+  }
+
+  .badge-gray {
+    @apply badge bg-gray-800 text-gray-400 border border-gray-700;
+  }
+
+  .input {
+    @apply bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2 w-full
+           placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-gray-300 mb-1;
+  }
+
+  .stat-card {
+    @apply bg-gray-900 border border-gray-800 rounded-xl p-5;
+  }
+
+  .positive {
+    @apply text-green-400;
+  }
+
+  .negative {
+    @apply text-red-400;
+  }
+
+  .neutral {
+    @apply text-gray-400;
+  }
+
+  .section-title {
+    @apply text-lg font-semibold text-gray-100 mb-4;
+  }
+
+  .divider {
+    @apply border-t border-gray-800 my-4;
+  }
+}
+
+/* Animation for loading states */
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Tooltip styling */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  border-radius: 8px !important;
+}
+
+.recharts-tooltip-wrapper .recharts-default-tooltip .recharts-tooltip-label {
+  color: #94a3b8 !important;
+}
+
+/* Table styles */
+table {
+  @apply w-full border-collapse;
+}
+
+th {
+  @apply text-left text-xs font-medium text-gray-400 uppercase tracking-wider px-4 py-3;
+}
+
+td {
+  @apply px-4 py-3 text-sm text-gray-300;
+}
+
+tr {
+  @apply border-b border-gray-800;
+}
+
+tr:last-child {
+  @apply border-b-0;
+}
+
+tr:hover {
+  @apply bg-gray-800/50;
+}
+
+/* Hebrew/RTL table adjustment */
+[dir="rtl"] th,
+[dir="rtl"] td {
+  @apply text-right;
+}
+
+/* Spinner animation */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  @apply inline-block w-5 h-5 border-2 border-current border-t-transparent rounded-full;
+  animation: spin 0.75s linear infinite;
+}
+
+/* Modal backdrop */
+.modal-backdrop {
+  @apply fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center;
+}
+
+/* Sidebar active link */
+.nav-link-active {
+  @apply bg-blue-600/20 text-blue-400 border-r-2 border-blue-500;
+}
+
+/* Number display */
+.number-positive {
+  @apply text-green-400 font-medium;
+}
+
+.number-negative {
+  @apply text-red-400 font-medium;
+}
+
+/* Price display */
+.price-large {
+  @apply text-2xl font-bold text-gray-100;
+}
+
+/* Agent pipeline node states */
+.agent-node-complete {
+  @apply bg-green-900/30 border-green-700 text-green-300;
+}
+
+.agent-node-active {
+  @apply bg-blue-900/30 border-blue-600 text-blue-300;
+}
+
+.agent-node-pending {
+  @apply bg-gray-800 border-gray-700 text-gray-400;
+}
+
+.agent-node-rejected {
+  @apply bg-red-900/30 border-red-700 text-red-300;
+}
+
+/* Gradient text for headings */
+.gradient-text {
+  @apply bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent;
+}
+
+/* Risk level colors */
+.risk-low { @apply text-green-400; }
+.risk-medium { @apply text-yellow-400; }
+.risk-high { @apply text-orange-400; }
+.risk-very-high { @apply text-red-400; }
+
+/* Mobile responsive helpers */
+@media (max-width: 768px) {
+  .hide-mobile {
+    @apply hidden;
+  }
+}
