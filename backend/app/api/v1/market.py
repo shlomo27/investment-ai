@@ -173,59 +173,101 @@ async def get_asset_data(
 
     is_tase = asset and asset.exchange == Exchange.TASE
 
+    live_data: Optional[Dict[str, Any]] = None
+    live_error: Optional[str] = None
+
     try:
         if is_tase:
             tase = TASEService()
-            data = await tase.get_tase_stock_info(symbol)
+            live_data = await tase.get_tase_stock_info(symbol)
         else:
             yahoo = YahooFinanceService()
-            data = await yahoo.get_stock_info(symbol)
+            live_data = await yahoo.get_stock_info(symbol)
 
-        if not data or data.get("price", 0) == 0:
+        if not live_data or live_data.get("price", 0) == 0:
+            live_data = None
+            live_error = "Live price unavailable"
+    except Exception as e:
+        live_error = str(e)
+        logger.warning("Live data fetch failed", symbol=symbol, error=live_error)
+
+    # Fall back to DB-cached data when live feed is down
+    if live_data is None:
+        if asset is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"No data found for symbol {symbol}",
+                detail=f"Symbol {symbol} not found in pool and live data unavailable",
             )
-
-        result = {
-            "symbol": symbol,
-            "exchange": "TASE" if is_tase else data.get("exchange", "NASDAQ"),
-            "data": data,
-            "in_pool": asset is not None and asset.is_active_in_pool,
-            "pool_data": {
-                "fundamental_score": asset.fundamental_score if asset else None,
-                "sentiment_score": asset.sentiment_score if asset else None,
-                "risk_level": asset.risk_level.value if asset else None,
-                "last_analyzed_at": asset.last_analyzed_at.isoformat() if asset and asset.last_analyzed_at else None,
-            } if asset else None,
+        # Build a partial response from what we have in the DB
+        live_data = {
+            "price": asset.last_price or 0.0,
+            "previous_close": asset.last_price or 0.0,
+            "volume": 0,
+            "market_cap": asset.market_cap or 0.0,
+            "pe_ratio": asset.pe_ratio,
+            "name": asset.name,
+            "sector": asset.sector,
+            "country": asset.country,
+            "currency": "ILS" if asset.exchange == Exchange.TASE else "USD",
+            "exchange": asset.exchange.value,
         }
 
-        if include_technical and not is_tase:
+    result = {
+        "symbol": symbol,
+        "exchange": "TASE" if is_tase else live_data.get("exchange", "NASDAQ"),
+        "data": live_data,
+        "live_data": live_error is None,
+        "live_error": live_error,
+        "in_pool": asset is not None and asset.is_active_in_pool,
+        "pool_data": {
+            "fundamental_score": asset.fundamental_score if asset else None,
+            "sentiment_score": asset.sentiment_score if asset else None,
+            "risk_level": asset.risk_level.value if asset else None,
+            "last_analyzed_at": asset.last_analyzed_at.isoformat() if asset and asset.last_analyzed_at else None,
+        } if asset else None,
+    }
+
+    if include_technical and not is_tase and live_error is None:
+        try:
             from app.agents.workflow import run_technical_workflow
-            tech = await run_technical_workflow(symbol, data.get("exchange", "NASDAQ"))
+            tech = await run_technical_workflow(symbol, live_data.get("exchange", "NASDAQ"))
             result["technical_analysis"] = tech.get("technical_analysis")
+        except Exception as te:
+            logger.warning("Technical analysis failed", symbol=symbol, error=str(te))
 
-        return result
+    return result
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("get_asset_data failed", symbol=symbol, error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch data for {symbol}: {str(e)}",
-        )
+
+class AddToPoolRequest(BaseModel):
+    symbol: str
+    exchange: str = "NASDAQ"
 
 
 @router.post("/pool/add")
 async def add_to_pool(
-    symbol: str,
-    exchange: str = "NASDAQ",
+    body: Optional[AddToPoolRequest] = None,
+    symbol: Optional[str] = None,
+    exchange: Optional[str] = None,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Add a new asset to the scanning pool (admin action)."""
-    symbol = symbol.upper()
+    """Add a new asset to the scanning pool (admin action).
+
+    Accepts either a JSON body ``{"symbol": "AAPL", "exchange": "NASDAQ"}``
+    or legacy query params ``?symbol=AAPL&exchange=NASDAQ``.
+    """
+    # Resolve symbol / exchange from body or query params
+    resolved_symbol: str = (body.symbol if body else None) or symbol or ""
+    resolved_exchange: str = (body.exchange if body else None) or exchange or "NASDAQ"
+
+    if not resolved_symbol:
+        from fastapi import HTTPException as _HTTPException
+        raise _HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="symbol is required (provide via JSON body or query param)",
+        )
+
+    symbol = resolved_symbol.upper()
 
     existing = await db.execute(select(Asset).where(Asset.symbol == symbol))
     if existing.scalar_one_or_none():
@@ -235,9 +277,9 @@ async def add_to_pool(
         )
 
     try:
-        exchange_enum = Exchange(exchange.upper())
+        exchange_enum = Exchange(resolved_exchange.upper())
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid exchange: {exchange}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid exchange: {resolved_exchange}")
 
     # Fetch basic info
     try:
@@ -267,3 +309,14 @@ async def add_to_pool(
     await db.flush()
 
     return {"message": f"{symbol} added to pool", "asset_id": asset.id}
+
+
+@router.post("/pool/seed")
+async def seed_pool(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Seed the asset pool with curated stocks."""
+    from app.db.seed import seed_asset_pool
+    result = await seed_asset_pool(db)
+    return result

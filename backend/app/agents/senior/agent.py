@@ -50,12 +50,20 @@ class SeniorCommitteeAgent:
     """
 
     def __init__(self):
-        self.llm = ChatAnthropic(
-            model=settings.CLAUDE_MODEL,
-            api_key=settings.ANTHROPIC_API_KEY,
-            max_tokens=settings.CLAUDE_MAX_TOKENS,
-            temperature=0.1,  # Low temperature for consistent decisions
-        )
+        self._llm = None
+
+    def _get_llm(self):
+        """Lazy-initialize the LLM only when first needed."""
+        if not settings.ANTHROPIC_API_KEY:
+            return None
+        if self._llm is None:
+            self._llm = ChatAnthropic(
+                model=settings.CLAUDE_MODEL,
+                api_key=settings.ANTHROPIC_API_KEY,
+                max_tokens=settings.CLAUDE_MAX_TOKENS,
+                temperature=0.1,  # Low temperature for consistent decisions
+            )
+        return self._llm
 
     async def review(
         self,
@@ -75,10 +83,15 @@ class SeniorCommitteeAgent:
 
         prompt = self._build_review_prompt(raw_data, fundamental_analysis, user_risk_context)
 
+        llm = self._get_llm()
+        if llm is None:
+            logger.warning("Claude LLM unavailable (missing API key), returning safe reject", symbol=raw_data["symbol"])
+            return self._safe_reject(raw_data, "ANTHROPIC_API_KEY not configured")
+
         try:
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: self.llm.invoke([
+                lambda: llm.invoke([
                     SystemMessage(content=SENIOR_SYSTEM_PROMPT),
                     HumanMessage(content=prompt)
                 ])

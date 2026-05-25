@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "production"
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
 
-    # Security
-    SECRET_KEY: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+    # Security — must be set via env var in production; dev fallback is stable
+    SECRET_KEY: str = "dev-stable-secret-key-change-in-production-via-SECRET_KEY-env-var"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30

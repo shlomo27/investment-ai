@@ -1,15 +1,40 @@
 """
 Yahoo Finance Service
 Async wrapper around yfinance for global stock data.
+Uses browser-like session to avoid 403 on cloud IPs.
 """
 import asyncio
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import structlog
 import pandas as pd
+import requests
 import yfinance as yf
 
 logger = structlog.get_logger(__name__)
+
+# TTL cache: {symbol: (timestamp, data)}
+_INFO_CACHE: Dict[str, tuple] = {}
+_CACHE_TTL = 300  # 5 minutes
+
+
+def _make_session() -> requests.Session:
+    """Create a browser-like requests session to avoid 403 on cloud IPs."""
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    })
+    return session
 
 
 class YahooFinanceService:
@@ -17,6 +42,10 @@ class YahooFinanceService:
 
     def __init__(self):
         self._cache: Dict[str, Any] = {}
+
+    # ------------------------------------------------------------------
+    # Public async interface
+    # ------------------------------------------------------------------
 
     async def get_stock_info(self, symbol: str) -> Dict[str, Any]:
         """
@@ -32,12 +61,168 @@ class YahooFinanceService:
             logger.error("Yahoo Finance get_stock_info failed", symbol=symbol, error=str(e))
             raise
 
-    def _fetch_ticker_info(self, symbol: str) -> Dict[str, Any]:
-        """Synchronous fetch - runs in thread pool."""
-        ticker = yf.Ticker(symbol)
-        info = ticker.info or {}
+    async def get_historical_prices(self, symbol: str, period: str = "6mo") -> Optional[pd.DataFrame]:
+        """Fetch OHLCV historical data."""
+        try:
+            session = _make_session()
+            df = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: yf.download(
+                    symbol,
+                    period=period,
+                    progress=False,
+                    auto_adjust=True,
+                    session=session,
+                )
+            )
+            if df is None or df.empty:
+                return None
+            # Flatten multi-index if present
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            return df
+        except Exception as e:
+            logger.error("get_historical_prices failed", symbol=symbol, error=str(e))
+            return None
 
-        # Try to get earnings
+    async def get_earnings(self, symbol: str) -> Dict[str, Any]:
+        """Fetch earnings history."""
+        try:
+            def _fetch():
+                session = _make_session()
+                ticker = yf.Ticker(symbol, session=session)
+                quarterly = ticker.quarterly_earnings
+                annual = ticker.earnings
+                result = {"quarterly": [], "annual": []}
+                if quarterly is not None and not quarterly.empty:
+                    result["quarterly"] = quarterly.reset_index().to_dict(orient="records")
+                if annual is not None and not annual.empty:
+                    result["annual"] = annual.reset_index().to_dict(orient="records")
+                return result
+            return await asyncio.get_event_loop().run_in_executor(None, _fetch)
+        except Exception as e:
+            logger.error("get_earnings failed", symbol=symbol, error=str(e))
+            return {"quarterly": [], "annual": []}
+
+    async def search_stocks(self, query: str) -> List[Dict[str, Any]]:
+        """Search for stocks by query string."""
+        try:
+            def _search():
+                results = []
+                session = _make_session()
+                ticker = yf.Ticker(query.upper(), session=session)
+
+                # Try fast_info first (v8 endpoint, rarely blocked)
+                symbol_found = query.upper()
+                price = None
+                currency = "USD"
+                exchange = ""
+                name = ""
+
+                try:
+                    fi = ticker.fast_info
+                    price = getattr(fi, "last_price", None)
+                    currency = getattr(fi, "currency", "USD") or "USD"
+                    exchange = getattr(fi, "exchange", "") or ""
+                    if price is not None:
+                        # fast_info succeeded — we have a valid ticker
+                        results.append({
+                            "symbol": symbol_found,
+                            "name": name or symbol_found,
+                            "exchange": exchange,
+                            "type": "STOCK",
+                            "currency": currency,
+                        })
+                        # Try to enrich name from info without raising on failure
+                        try:
+                            info = ticker.info or {}
+                            if info.get("symbol"):
+                                results[0]["name"] = info.get("shortName") or info.get("longName") or symbol_found
+                                results[0]["exchange"] = info.get("exchange", exchange)
+                        except Exception:
+                            pass
+                        return results
+                except Exception:
+                    pass
+
+                # Fallback: try ticker.info
+                try:
+                    info = ticker.info or {}
+                    if info and info.get("symbol"):
+                        results.append({
+                            "symbol": info.get("symbol", symbol_found),
+                            "name": info.get("shortName") or info.get("longName", ""),
+                            "exchange": info.get("exchange", ""),
+                            "type": "STOCK",
+                            "currency": info.get("currency", "USD"),
+                        })
+                except Exception:
+                    pass
+
+                return results
+
+            return await asyncio.get_event_loop().run_in_executor(None, _search)
+        except Exception as e:
+            logger.warning("search_stocks failed", query=query, error=str(e))
+            return []
+
+    # ------------------------------------------------------------------
+    # Internal sync helpers
+    # ------------------------------------------------------------------
+
+    def _fetch_ticker_info(self, symbol: str) -> Dict[str, Any]:
+        """Synchronous fetch - runs in thread pool.
+
+        Uses fast_info (v8 endpoint) as primary price source; falls back to
+        ticker.info for fundamentals.  Results are cached for 5 minutes.
+        """
+        now = time.monotonic()
+        cached = _INFO_CACHE.get(symbol)
+        if cached is not None:
+            ts, data = cached
+            if now - ts < _CACHE_TTL:
+                return data
+
+        session = _make_session()
+        ticker = yf.Ticker(symbol, session=session)
+
+        # --- Primary: fast_info (v8 endpoint) ---
+        price = 0.0
+        previous_close = 0.0
+        market_cap_fast = 0.0
+        currency_fast = "USD"
+        try:
+            fi = ticker.fast_info
+            price = float(getattr(fi, "last_price", None) or 0)
+            previous_close = float(getattr(fi, "previous_close", None) or 0)
+            market_cap_fast = float(getattr(fi, "market_cap", None) or 0)
+            currency_fast = str(getattr(fi, "currency", "USD") or "USD")
+        except Exception as e:
+            logger.debug("fast_info unavailable", symbol=symbol, error=str(e))
+
+        # --- Secondary: ticker.info for fundamentals ---
+        info: Dict[str, Any] = {}
+        try:
+            info = ticker.info or {}
+        except Exception as e:
+            logger.debug("ticker.info unavailable", symbol=symbol, error=str(e))
+
+        # Prefer fast_info price; fall back to info fields
+        if price == 0.0:
+            price = float(
+                info.get("currentPrice")
+                or info.get("regularMarketPrice")
+                or info.get("previousClose")
+                or 0
+            )
+        if previous_close == 0.0:
+            previous_close = float(
+                info.get("previousClose") or info.get("regularMarketPreviousClose") or 0
+            )
+        market_cap = market_cap_fast or float(info.get("marketCap") or 0)
+        currency = currency_fast if currency_fast != "USD" else info.get("currency", "USD")
+
+        # --- Earnings data ---
         earnings_data = None
         try:
             earnings_hist = ticker.earnings_history
@@ -45,14 +230,17 @@ class YahooFinanceService:
             calendar = ticker.calendar
 
             eps_est = None
-            rev_est = None
             earnings_date_str = None
 
             if calendar is not None and isinstance(calendar, dict):
-                eps_est = calendar.get("Earnings Estimate", {}).get(symbol) if isinstance(calendar.get("Earnings Estimate"), dict) else None
+                eps_est = (
+                    calendar.get("Earnings Estimate", {}).get(symbol)
+                    if isinstance(calendar.get("Earnings Estimate"), dict)
+                    else None
+                )
                 earnings_date = calendar.get("Earnings Date")
                 if earnings_date is not None:
-                    if hasattr(earnings_date, '__iter__') and not isinstance(earnings_date, str):
+                    if hasattr(earnings_date, "__iter__") and not isinstance(earnings_date, str):
                         try:
                             earnings_date_str = str(list(earnings_date)[0])
                         except Exception:
@@ -91,12 +279,12 @@ class YahooFinanceService:
         except Exception as e:
             logger.debug("Earnings fetch partial failure", symbol=symbol, error=str(e))
 
-        return {
-            "price": float(info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose") or 0),
-            "previous_close": float(info.get("previousClose") or info.get("regularMarketPreviousClose") or 0),
+        result = {
+            "price": price,
+            "previous_close": previous_close,
             "volume": int(info.get("volume") or info.get("regularMarketVolume") or 0),
             "avg_volume_30d": int(info.get("averageVolume") or info.get("averageVolume10days") or 0),
-            "market_cap": float(info.get("marketCap") or 0),
+            "market_cap": market_cap,
             "pe_ratio": self._safe_float(info.get("trailingPE")),
             "forward_pe": self._safe_float(info.get("forwardPE")),
             "peg_ratio": self._safe_float(info.get("pegRatio")),
@@ -119,7 +307,7 @@ class YahooFinanceService:
             "sector": info.get("sector"),
             "industry": info.get("industry"),
             "country": info.get("country", "US"),
-            "currency": info.get("currency", "USD"),
+            "currency": currency,
             "analyst_target_price": self._safe_float(info.get("targetMeanPrice")),
             "analyst_recommendation": info.get("recommendationKey"),
             "institutional_ownership": self._safe_float(info.get("institutionsPercentHeld")),
@@ -129,63 +317,8 @@ class YahooFinanceService:
             "exchange": info.get("exchange", "NASDAQ"),
         }
 
-    async def get_historical_prices(self, symbol: str, period: str = "6mo") -> Optional[pd.DataFrame]:
-        """Fetch OHLCV historical data."""
-        try:
-            df = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: yf.download(symbol, period=period, progress=False, auto_adjust=True)
-            )
-            if df is None or df.empty:
-                return None
-            # Flatten multi-index if present
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            return df
-        except Exception as e:
-            logger.error("get_historical_prices failed", symbol=symbol, error=str(e))
-            return None
-
-    async def get_earnings(self, symbol: str) -> Dict[str, Any]:
-        """Fetch earnings history."""
-        try:
-            def _fetch():
-                ticker = yf.Ticker(symbol)
-                quarterly = ticker.quarterly_earnings
-                annual = ticker.earnings
-                result = {"quarterly": [], "annual": []}
-                if quarterly is not None and not quarterly.empty:
-                    result["quarterly"] = quarterly.reset_index().to_dict(orient="records")
-                if annual is not None and not annual.empty:
-                    result["annual"] = annual.reset_index().to_dict(orient="records")
-                return result
-            return await asyncio.get_event_loop().run_in_executor(None, _fetch)
-        except Exception as e:
-            logger.error("get_earnings failed", symbol=symbol, error=str(e))
-            return {"quarterly": [], "annual": []}
-
-    async def search_stocks(self, query: str) -> List[Dict[str, Any]]:
-        """Search for stocks by query string."""
-        try:
-            def _search():
-                results = []
-                # yfinance doesn't have direct search, use a simple approach
-                ticker = yf.Ticker(query.upper())
-                info = ticker.info
-                if info and info.get("symbol"):
-                    results.append({
-                        "symbol": info.get("symbol", query.upper()),
-                        "name": info.get("shortName") or info.get("longName", ""),
-                        "exchange": info.get("exchange", ""),
-                        "type": "STOCK",
-                        "currency": info.get("currency", "USD"),
-                    })
-                return results
-
-            return await asyncio.get_event_loop().run_in_executor(None, _search)
-        except Exception as e:
-            logger.warning("search_stocks failed", query=query, error=str(e))
-            return []
+        _INFO_CACHE[symbol] = (now, result)
+        return result
 
     def _safe_float(self, value: Any) -> Optional[float]:
         if value is None:

@@ -30,16 +30,24 @@ class DataFetcherAgent:
     """
 
     def __init__(self):
-        self.llm = ChatAnthropic(
-            model=settings.CLAUDE_MODEL,
-            api_key=settings.ANTHROPIC_API_KEY,
-            max_tokens=settings.CLAUDE_MAX_TOKENS,
-            temperature=0.1,
-        )
+        self._llm = None
         self.yahoo_service = YahooFinanceService()
         self.tase_service = TASEService()
         self.sentiment_service = SentimentService()
         self.news_service = NewsService()
+
+    def _get_llm(self):
+        """Lazy-initialize the LLM only when first needed."""
+        if not settings.ANTHROPIC_API_KEY:
+            return None
+        if self._llm is None:
+            self._llm = ChatAnthropic(
+                model=settings.CLAUDE_MODEL,
+                api_key=settings.ANTHROPIC_API_KEY,
+                max_tokens=settings.CLAUDE_MAX_TOKENS,
+                temperature=0.1,
+            )
+        return self._llm
 
     async def fetch_all_data(self, symbol: str, exchange: str) -> MarketDataState:
         """
@@ -160,6 +168,16 @@ class DataFetcherAgent:
         fetch_errors: List[str],
     ) -> Dict[str, Any]:
         """Use Claude to create a brief structured summary of the raw data."""
+        llm = self._get_llm()
+        if llm is None:
+            logger.warning("Claude LLM unavailable (missing API key), skipping summarization", symbol=symbol)
+            return {
+                "company_summary": f"Market data collected for {symbol}.",
+                "data_quality_issues": [],
+                "exceptional_signals": [],
+                "data_completeness_score": 50,
+            }
+
         try:
             news_text = "\n".join([
                 f"- {n['title']} ({n['source']}): sentiment={n.get('sentiment', 0):.2f}"
@@ -195,7 +213,7 @@ Respond in JSON format:
 
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: self.llm.invoke([
+                lambda: llm.invoke([
                     SystemMessage(content="You are a financial data aggregation AI. Respond only in valid JSON."),
                     HumanMessage(content=prompt)
                 ])

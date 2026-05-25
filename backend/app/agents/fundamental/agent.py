@@ -39,12 +39,20 @@ class FundamentalAnalystAgent:
     """
 
     def __init__(self):
-        self.llm = ChatAnthropic(
-            model=settings.CLAUDE_MODEL,
-            api_key=settings.ANTHROPIC_API_KEY,
-            max_tokens=settings.CLAUDE_MAX_TOKENS,
-            temperature=0.2,
-        )
+        self._llm = None
+
+    def _get_llm(self):
+        """Lazy-initialize the LLM only when first needed."""
+        if not settings.ANTHROPIC_API_KEY:
+            return None
+        if self._llm is None:
+            self._llm = ChatAnthropic(
+                model=settings.CLAUDE_MODEL,
+                api_key=settings.ANTHROPIC_API_KEY,
+                max_tokens=settings.CLAUDE_MAX_TOKENS,
+                temperature=0.2,
+            )
+        return self._llm
 
     async def analyze(
         self,
@@ -62,10 +70,15 @@ class FundamentalAnalystAgent:
 
         prompt = self._build_analysis_prompt(market_data, portfolio_context)
 
+        llm = self._get_llm()
+        if llm is None:
+            logger.warning("Claude LLM unavailable (missing API key), returning fallback analysis", symbol=market_data["symbol"])
+            return self._fallback_analysis(market_data, "ANTHROPIC_API_KEY not configured")
+
         try:
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: self.llm.invoke([
+                lambda: llm.invoke([
                     SystemMessage(content=SYSTEM_PROMPT),
                     HumanMessage(content=prompt)
                 ])

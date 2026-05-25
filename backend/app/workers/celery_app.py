@@ -13,7 +13,7 @@ celery_app = Celery(
 )
 
 celery_app.conf.update(
-    # Serialization
+    # Serialization (JSON only — never pickle, for security)
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
@@ -25,11 +25,15 @@ celery_app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,
+    # Worker concurrency
+    worker_concurrency=4,
     # Result expiry
     result_expires=3600,
     # Retry settings
     task_max_retries=3,
     task_default_retry_delay=60,
+    # Broker resilience
+    broker_connection_retry_on_startup=True,
     # Routing
     task_default_queue="default",
     task_queues={

@@ -149,6 +149,37 @@ async def health_check():
     }
 
 
+@app.get("/health/detailed")
+async def health_detailed():
+    """Detailed health check showing all service statuses."""
+    checks = {}
+
+    # DB check
+    checks["database"] = await check_db_connection()
+
+    # Redis check
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.REDIS_URL)
+        await r.ping()
+        await r.close()
+        checks["redis"] = True
+    except Exception:
+        checks["redis"] = False
+
+    # Claude API check (just key presence, don't make API call)
+    checks["anthropic_api_key"] = bool(settings.ANTHROPIC_API_KEY)
+
+    overall = "healthy" if checks["database"] else "degraded"
+
+    return {
+        "status": overall,
+        "checks": checks,
+        "version": settings.APP_VERSION,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @app.get("/")
 async def root():
     """Root endpoint."""
@@ -226,9 +257,11 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
 
 @app.exception_handler(404)
 async def not_found_handler(request, exc):
+    # Preserve detail when the 404 comes from inside a route handler
+    detail = getattr(exc, "detail", None) or "Resource not found"
     return JSONResponse(
         status_code=404,
-        content={"detail": "Resource not found", "path": str(request.url.path)},
+        content={"detail": detail, "path": str(request.url.path)},
     )
 
 
