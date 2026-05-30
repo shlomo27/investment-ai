@@ -62,7 +62,8 @@ class YahooFinanceService:
             raise
 
     async def get_historical_prices(self, symbol: str, period: str = "6mo") -> Optional[pd.DataFrame]:
-        """Fetch OHLCV historical data."""
+        """Fetch OHLCV historical data. Falls back to Alpha Vantage if Yahoo is blocked."""
+        # Try yfinance first
         try:
             session = _make_session()
             df = await asyncio.get_event_loop().run_in_executor(
@@ -75,14 +76,52 @@ class YahooFinanceService:
                     session=session,
                 )
             )
-            if df is None or df.empty:
+            if df is not None and not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                return df
+        except Exception as e:
+            logger.warning("yfinance blocked, trying Alpha Vantage", symbol=symbol, error=str(e))
+
+        # Fallback: Alpha Vantage
+        return await self._get_historical_alpha_vantage(symbol)
+
+    async def _get_historical_alpha_vantage(self, symbol: str) -> Optional[pd.DataFrame]:
+        """Fetch daily OHLCV from Alpha Vantage as fallback."""
+        from app.core.config import settings
+        api_key = settings.ALPHA_VANTAGE_KEY
+        if not api_key:
+            logger.warning("No ALPHA_VANTAGE_KEY set, cannot fetch historical data")
+            return None
+        try:
+            url = (
+                f"https://www.alphavantage.co/query"
+                f"?function=TIME_SERIES_DAILY_ADJUSTED&symbol={symbol}"
+                f"&outputsize=full&apikey={api_key}"
+            )
+            resp = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: requests.get(url, timeout=15)
+            )
+            data = resp.json()
+            ts = data.get("Time Series (Daily)")
+            if not ts:
+                logger.warning("Alpha Vantage returned no data", symbol=symbol, response=list(data.keys()))
                 return None
-            # Flatten multi-index if present
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+            rows = []
+            for date_str, vals in ts.items():
+                rows.append({
+                    "Date": pd.to_datetime(date_str),
+                    "Open": float(vals["1. open"]),
+                    "High": float(vals["2. high"]),
+                    "Low": float(vals["3. low"]),
+                    "Close": float(vals["5. adjusted close"]),
+                    "Volume": float(vals["6. volume"]),
+                })
+            df = pd.DataFrame(rows).set_index("Date").sort_index()
+            logger.info("Alpha Vantage historical data fetched", symbol=symbol, rows=len(df))
             return df
         except Exception as e:
-            logger.error("get_historical_prices failed", symbol=symbol, error=str(e))
+            logger.error("Alpha Vantage fallback failed", symbol=symbol, error=str(e))
             return None
 
     async def get_earnings(self, symbol: str) -> Dict[str, Any]:
