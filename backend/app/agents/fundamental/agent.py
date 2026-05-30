@@ -29,7 +29,14 @@ You analyze stocks with rigorous financial discipline. Your job is to:
 
 You always think in terms of risk-adjusted returns and portfolio construction.
 Your output must be structured JSON. Be precise and data-driven.
-Do not make recommendations based on sentiment alone - fundamentals must justify the trade."""
+
+IMPORTANT - When live market data is unavailable (price shown as 0.0 or N/A):
+- Use your training knowledge about the company's fundamentals, business model, competitive position, and recent financial performance
+- Well-known companies (AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA, JPM, JNJ, SPY, QQQ) have extensive public financial data you were trained on
+- You MUST still provide a meaningful recommendation — do not default to HOLD with 0 confidence just because live data is missing
+- Set confidence_score to 30-60 when relying on training knowledge (reflecting data staleness uncertainty)
+- Set data_completeness to 20-40 when live data is unavailable
+- A well-reasoned HOLD, BUY, or SELL based on known fundamentals is far more useful than refusing to analyze"""
 
 
 class FundamentalAnalystAgent:

@@ -79,8 +79,8 @@ class Settings(BaseSettings):
 
     # Agent Configuration
     AGENT_SCAN_INTERVAL_SECONDS: int = 300  # 5 minutes
-    FUNDAMENTAL_CONFIDENCE_THRESHOLD: float = 0.65
-    SENIOR_APPROVAL_THRESHOLD: float = 0.70
+    FUNDAMENTAL_CONFIDENCE_THRESHOLD: float = 0.25
+    SENIOR_APPROVAL_THRESHOLD: float = 0.30
     MAX_CONCURRENT_SCANS: int = 10
 
     # Market Hours (Israel Time UTC+3)
