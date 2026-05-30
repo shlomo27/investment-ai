@@ -13,6 +13,7 @@ RUN npx vite build
 
 # Production stage
 FROM nginx:alpine
+RUN apk add --no-cache bash curl
 
 # Copy built files
 COPY --from=build /app/dist /usr/share/nginx/html
