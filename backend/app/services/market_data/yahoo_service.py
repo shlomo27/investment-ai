@@ -356,8 +356,96 @@ class YahooFinanceService:
             "exchange": info.get("exchange", "NASDAQ"),
         }
 
+        # --- Tertiary: Alpha Vantage fallback when Yahoo is rate-limited ---
+        if price == 0.0:
+            av_data = self._fetch_alpha_vantage_info(symbol)
+            if av_data:
+                _INFO_CACHE[symbol] = (now, av_data)
+                return av_data
+
         _INFO_CACHE[symbol] = (now, result)
         return result
+
+    def _fetch_alpha_vantage_info(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Fetch stock info from Alpha Vantage when Yahoo Finance is rate-limited."""
+        from app.core.config import settings
+        api_key = settings.ALPHA_VANTAGE_KEY
+        if not api_key:
+            logger.debug("ALPHA_VANTAGE_KEY not set, skipping AV fallback", symbol=symbol)
+            return None
+
+        try:
+            quote_resp = requests.get(
+                "https://www.alphavantage.co/query",
+                params={"function": "GLOBAL_QUOTE", "symbol": symbol, "apikey": api_key},
+                timeout=15,
+            )
+            gq = quote_resp.json().get("Global Quote", {})
+            price = self._safe_float(gq.get("05. price")) or 0.0
+            if not price:
+                logger.warning("Alpha Vantage returned no price", symbol=symbol)
+                return None
+
+            previous_close = self._safe_float(gq.get("08. previous close")) or 0.0
+            volume = int(float(gq.get("06. volume") or 0))
+
+            overview_resp = requests.get(
+                "https://www.alphavantage.co/query",
+                params={"function": "OVERVIEW", "symbol": symbol, "apikey": api_key},
+                timeout=15,
+            )
+            ov = overview_resp.json()
+
+            logger.info("Alpha Vantage fallback succeeded", symbol=symbol, price=price)
+            return {
+                "price": price,
+                "previous_close": previous_close,
+                "volume": volume,
+                "avg_volume_30d": 0,
+                "market_cap": self._safe_float(ov.get("MarketCapitalization")) or 0.0,
+                "pe_ratio": self._safe_float(ov.get("TrailingPE")),
+                "forward_pe": self._safe_float(ov.get("ForwardPE")),
+                "peg_ratio": self._safe_float(ov.get("PEGRatio")),
+                "price_to_book": self._safe_float(ov.get("PriceToBookRatio")),
+                "price_to_sales": self._safe_float(ov.get("PriceToSalesRatioTTM")),
+                "debt_to_equity": None,
+                "current_ratio": None,
+                "quick_ratio": None,
+                "revenue_growth": self._safe_float(ov.get("QuarterlyRevenueGrowthYOY")),
+                "earnings_growth": self._safe_float(ov.get("QuarterlyEarningsGrowthYOY")),
+                "profit_margin": self._safe_float(ov.get("ProfitMargin")),
+                "operating_margin": self._safe_float(ov.get("OperatingMarginTTM")),
+                "roe": self._safe_float(ov.get("ReturnOnEquityTTM")),
+                "roa": self._safe_float(ov.get("ReturnOnAssetsTTM")),
+                "free_cash_flow": None,
+                "dividend_yield": self._safe_float(ov.get("DividendYield")),
+                "beta": self._safe_float(ov.get("Beta")),
+                "fifty_two_week_high": self._safe_float(ov.get("52WeekHigh")) or 0.0,
+                "fifty_two_week_low": self._safe_float(ov.get("52WeekLow")) or 0.0,
+                "sector": ov.get("Sector"),
+                "industry": ov.get("Industry"),
+                "country": ov.get("Country", "US"),
+                "currency": ov.get("Currency", "USD"),
+                "analyst_target_price": self._safe_float(ov.get("AnalystTargetPrice")),
+                "analyst_recommendation": None,
+                "institutional_ownership": None,
+                "short_interest": None,
+                "earnings_data": {
+                    "last_eps": self._safe_float(ov.get("EPS")),
+                    "eps_estimate": self._safe_float(ov.get("ForwardEPS")),
+                    "eps_surprise_pct": None,
+                    "revenue_last": self._safe_float(ov.get("RevenueTTM")) or 0.0,
+                    "revenue_estimate": 0.0,
+                    "revenue_surprise_pct": None,
+                    "earnings_date": None,
+                    "earnings_history": [],
+                },
+                "name": ov.get("Name", symbol),
+                "exchange": ov.get("Exchange", "NASDAQ"),
+            }
+        except Exception as e:
+            logger.warning("Alpha Vantage stock info fallback failed", symbol=symbol, error=str(e))
+            return None
 
     def _safe_float(self, value: Any) -> Optional[float]:
         if value is None:
