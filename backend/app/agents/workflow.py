@@ -287,7 +287,7 @@ async def node_log_rejection(state: AgentWorkflowState) -> AgentWorkflowState:
     logger.info(
         "Workflow node: log_rejection",
         symbol=state["asset_symbol"],
-        reason=state.get("senior_decision", {}).get("rejection_reasoning"),
+        reason=(state.get("senior_decision") or {}).get("rejection_reasoning"),
     )
 
     try:
@@ -296,7 +296,7 @@ async def node_log_rejection(state: AgentWorkflowState) -> AgentWorkflowState:
         from app.db.models.asset import Asset
         from sqlalchemy import select
 
-        senior = state.get("senior_decision", {})
+        senior = state.get("senior_decision") or {}
         fundamental = state.get("fundamental_analysis") or {}
         raw = state.get("data_fetcher_output") or {}
 

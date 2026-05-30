@@ -111,25 +111,31 @@ class FundamentalAnalystAgent:
             logger.error("Fundamental analysis failed", symbol=market_data["symbol"], error=str(e))
             return self._fallback_analysis(market_data, str(e))
 
+    @staticmethod
+    def _v(value: Any, default: Any = "N/A") -> Any:
+        """Return value if not None, otherwise default. Prevents format-spec crashes."""
+        return value if value is not None else default
+
     def _build_analysis_prompt(
         self,
         data: MarketDataState,
         portfolio_context: Optional[Dict[str, Any]],
     ) -> str:
+        v = self._v
         news_summary = "\n".join([
             f"  - [{n.get('sentiment', 0):+.2f}] {n['title']} ({n['source']})"
             for n in data.get("news_items", [])[:8]
         ])
 
-        sentiment = data.get("social_sentiment", {})
+        sentiment = data.get("social_sentiment") or {}
         earnings = data.get("earnings_data") or {}
 
         portfolio_section = ""
         if portfolio_context:
             portfolio_section = f"""
 PORTFOLIO CONTEXT:
-- Total Portfolio Value: ${portfolio_context.get('total_value', 0):,.2f}
-- Available Cash: ${portfolio_context.get('cash_balance', 0):,.2f}
+- Total Portfolio Value: ${v(portfolio_context.get('total_value'), 0):,.2f}
+- Available Cash: ${v(portfolio_context.get('cash_balance'), 0):,.2f}
 - Current Holdings: {portfolio_context.get('holdings_count', 0)} positions
 - Max Single Asset Exposure: {portfolio_context.get('max_exposure_pct', 3)}%
 - Existing Position in {data['symbol']}: {portfolio_context.get('existing_position', 'None')}
@@ -138,42 +144,42 @@ PORTFOLIO CONTEXT:
         prompt = f"""Perform comprehensive fundamental analysis for {data['symbol']} ({data['exchange']}).
 
 === MARKET DATA ===
-Current Price: {data.get('price', 'N/A')} {data.get('currency', 'USD')}
-Previous Close: {data.get('previous_close', 'N/A')}
-52-Week Range: {data.get('fifty_two_week_low', 'N/A')} - {data.get('fifty_two_week_high', 'N/A')}
-Volume: {data.get('volume', 'N/A'):,} (30d avg: {data.get('avg_volume_30d', 'N/A'):,})
-Market Cap: ${data.get('market_cap', 0):,.0f}
-Sector: {data.get('sector', 'Unknown')} | Industry: {data.get('industry', 'Unknown')}
-Country: {data.get('country', 'US')}
+Current Price: {v(data.get('price'), 'N/A')} {v(data.get('currency'), 'USD')}
+Previous Close: {v(data.get('previous_close'), 'N/A')}
+52-Week Range: {v(data.get('fifty_two_week_low'), 'N/A')} - {v(data.get('fifty_two_week_high'), 'N/A')}
+Volume: {v(data.get('volume'), 0):,} (30d avg: {v(data.get('avg_volume_30d'), 0):,})
+Market Cap: ${v(data.get('market_cap'), 0):,.0f}
+Sector: {v(data.get('sector'), 'Unknown')} | Industry: {v(data.get('industry'), 'Unknown')}
+Country: {v(data.get('country'), 'US')}
 
 === VALUATION RATIOS ===
-P/E Ratio (TTM): {data.get('pe_ratio', 'N/A')}
-Forward P/E: {data.get('forward_pe', 'N/A')}
-PEG Ratio: {data.get('peg_ratio', 'N/A')}
-Price/Book: {data.get('price_to_book', 'N/A')}
-Price/Sales: {data.get('price_to_sales', 'N/A')}
-Analyst Target: {data.get('analyst_target_price', 'N/A')} | Analyst Rec: {data.get('analyst_recommendation', 'N/A')}
+P/E Ratio (TTM): {v(data.get('pe_ratio'), 'N/A')}
+Forward P/E: {v(data.get('forward_pe'), 'N/A')}
+PEG Ratio: {v(data.get('peg_ratio'), 'N/A')}
+Price/Book: {v(data.get('price_to_book'), 'N/A')}
+Price/Sales: {v(data.get('price_to_sales'), 'N/A')}
+Analyst Target: {v(data.get('analyst_target_price'), 'N/A')} | Analyst Rec: {v(data.get('analyst_recommendation'), 'N/A')}
 
 === FINANCIAL HEALTH ===
-Revenue Growth (YoY): {data.get('revenue_growth', 'N/A')}
-Earnings Growth (YoY): {data.get('earnings_growth', 'N/A')}
-Profit Margin: {data.get('profit_margin', 'N/A')}
-Operating Margin: {data.get('operating_margin', 'N/A')}
-ROE: {data.get('roe', 'N/A')}
-ROA: {data.get('roa', 'N/A')}
-Free Cash Flow: ${data.get('free_cash_flow', 0):,.0f}
-Debt/Equity: {data.get('debt_to_equity', 'N/A')}
-Current Ratio: {data.get('current_ratio', 'N/A')}
-Quick Ratio: {data.get('quick_ratio', 'N/A')}
-Beta: {data.get('beta', 'N/A')}
-Dividend Yield: {data.get('dividend_yield', 'N/A')}
-Institutional Ownership: {data.get('institutional_ownership', 'N/A')}
-Short Interest: {data.get('short_interest', 'N/A')}
+Revenue Growth (YoY): {v(data.get('revenue_growth'), 'N/A')}
+Earnings Growth (YoY): {v(data.get('earnings_growth'), 'N/A')}
+Profit Margin: {v(data.get('profit_margin'), 'N/A')}
+Operating Margin: {v(data.get('operating_margin'), 'N/A')}
+ROE: {v(data.get('roe'), 'N/A')}
+ROA: {v(data.get('roa'), 'N/A')}
+Free Cash Flow: ${v(data.get('free_cash_flow'), 0):,.0f}
+Debt/Equity: {v(data.get('debt_to_equity'), 'N/A')}
+Current Ratio: {v(data.get('current_ratio'), 'N/A')}
+Quick Ratio: {v(data.get('quick_ratio'), 'N/A')}
+Beta: {v(data.get('beta'), 'N/A')}
+Dividend Yield: {v(data.get('dividend_yield'), 'N/A')}
+Institutional Ownership: {v(data.get('institutional_ownership'), 'N/A')}
+Short Interest: {v(data.get('short_interest'), 'N/A')}
 
 === EARNINGS ===
-Last EPS: {earnings.get('last_eps', 'N/A')} (Estimate: {earnings.get('eps_estimate', 'N/A')}, Surprise: {earnings.get('eps_surprise_pct', 'N/A')}%)
-Revenue Last: ${earnings.get('revenue_last', 0):,.0f} (Estimate: ${earnings.get('revenue_estimate', 0):,.0f})
-Next Earnings Date: {earnings.get('earnings_date', 'N/A')}
+Last EPS: {v(earnings.get('last_eps'), 'N/A')} (Estimate: {v(earnings.get('eps_estimate'), 'N/A')}, Surprise: {v(earnings.get('eps_surprise_pct'), 'N/A')}%)
+Revenue Last: ${v(earnings.get('revenue_last'), 0):,.0f} (Estimate: ${v(earnings.get('revenue_estimate'), 0):,.0f})
+Next Earnings Date: {v(earnings.get('earnings_date'), 'N/A')}
 
 === SOCIAL SENTIMENT ===
 Overall Sentiment Score: {sentiment.get('score', 0):.3f} (-1 bearish to +1 bullish)
