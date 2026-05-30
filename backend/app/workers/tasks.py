@@ -13,13 +13,16 @@ logger = structlog.get_logger(__name__)
 
 
 def run_async(coro):
-    """Helper to run async code in Celery tasks."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    """Helper to run async code in Celery tasks (asyncpg-safe)."""
+    import asyncio
     try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("loop closed")
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
 
 
 @celery_app.task(
