@@ -72,10 +72,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      dispatch(fetchUnreadCount({}));
+      dispatch(fetchUnreadCount());
       // Poll for unread count every 60 seconds
       const interval = setInterval(() => {
-        dispatch(fetchUnreadCount({}));
+        dispatch(fetchUnreadCount());
       }, 60000);
       return () => clearInterval(interval);
     }
