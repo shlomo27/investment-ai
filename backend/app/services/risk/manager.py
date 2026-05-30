@@ -130,8 +130,17 @@ class RiskManager:
                 "user_id": user_id,
                 "risk_score": 0,
                 "risk_level": "NONE",
+                "total_value": user.cash_balance,
+                "total_market_value": 0,
+                "cash_balance": user.cash_balance,
+                "cash_pct": 100.0,
                 "total_positions": 0,
+                "herfindahl_index": 0,
                 "diversification_score": 100,
+                "high_risk_exposure_pct": 0.0,
+                "medium_risk_exposure_pct": 0.0,
+                "overconcentrated_positions": [],
+                "risk_breakdown": [],
                 "message": "No positions - portfolio is all cash",
             }
 
