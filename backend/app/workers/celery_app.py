@@ -45,6 +45,12 @@ celery_app.conf.update(
     # Beat schedule is defined in scheduler.py
 )
 
+# Load beat schedule into celery_app.conf
+try:
+    from app.workers import scheduler  # noqa: F401 — registers beat_schedule
+except Exception:
+    pass
+
 
 def get_celery_app() -> Celery:
     return celery_app
