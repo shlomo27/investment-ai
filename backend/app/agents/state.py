@@ -120,6 +120,9 @@ class AgentWorkflowState(TypedDict):
     error: Optional[str]
     # Result
     recommendation_id: Optional[int]
+    # Optional context passed from caller
+    portfolio_context: Optional[Dict[str, Any]]
+    user_risk_context: Optional[Dict[str, Any]]
 
 
 class TechnicalWorkflowState(TypedDict):

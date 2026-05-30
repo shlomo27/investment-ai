@@ -79,19 +79,29 @@ def scan_asset_pool_task(self):
 
             for asset, result in zip(batch, results):
                 if isinstance(result, Exception):
+                    import traceback
                     logger.error(
                         "Asset scan failed",
                         symbol=asset.symbol,
                         error=str(result),
+                        error_type=type(result).__name__,
+                        traceback=traceback.format_exc(),
                     )
                     errors += 1
                 else:
                     status = result.get("workflow_status", "unknown")
+                    logger.info("Asset scan result", symbol=asset.symbol, status=status)
                     if status in ("completed", "saved"):
                         approved += 1
                     elif status in ("rejected", "rejected_logged"):
                         rejected += 1
                     else:
+                        logger.warning(
+                            "Asset scan unexpected status",
+                            symbol=asset.symbol,
+                            status=status,
+                            error=result.get("error"),
+                        )
                         errors += 1
 
                 # Update asset last_analyzed_at
