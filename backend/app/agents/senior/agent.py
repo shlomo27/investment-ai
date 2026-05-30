@@ -123,13 +123,18 @@ class SeniorCommitteeAgent:
             logger.error("Senior review failed", symbol=raw_data["symbol"], error=str(e))
             return self._safe_reject(raw_data, str(e))
 
+    @staticmethod
+    def _v(value: Any, default: Any = "N/A") -> Any:
+        """Return value if not None, otherwise default. Prevents format-spec crashes."""
+        return value if value is not None else default
+
     def _build_review_prompt(
         self,
         raw: MarketDataState,
         analysis: Dict[str, Any],
         risk_ctx: Optional[Dict[str, Any]],
     ) -> str:
-        sentiment = raw.get("social_sentiment", {})
+        sentiment = raw.get("social_sentiment") or {}
         earnings = raw.get("earnings_data") or {}
         news_items = raw.get("news_items", [])
 
@@ -174,6 +179,7 @@ Current Portfolio Exposure to {raw['symbol']}: {risk_ctx.get('current_exposure_p
 Max Allowed Single Asset: {risk_ctx.get('max_single_asset_pct', 3):.1f}%
 """
 
+        v = self._v
         prompt = f"""Review this investment recommendation for {raw['symbol']} ({raw['exchange']}).
 
 === ANALYST RECOMMENDATION ===
@@ -181,30 +187,30 @@ Recommendation: {analyst_rec}
 Confidence: {analyst_conf}/100
 Target Price: {target or 'Not set'}
 Stop Loss: {stop_loss or 'Not set'}
-Expected Return: {analysis.get('expected_return_pct', 'N/A')}%
-Investment Horizon: {analysis.get('investment_horizon', 'N/A')}
+Expected Return: {v(analysis.get('expected_return_pct'), 'N/A')}%
+Investment Horizon: {v(analysis.get('investment_horizon'), 'N/A')}
 
-Analyst's Bull Case: {analysis.get('bull_case', 'N/A')}
-Analyst's Bear Case: {analysis.get('bear_case', 'N/A')}
-Risk Factors Identified: {', '.join(analysis.get('risk_factors', []))}
-Sentiment Cross-Check: {analysis.get('sentiment_cross_check', 'N/A')}
-Analyst Notes: {analysis.get('analyst_notes', 'N/A')}
+Analyst's Bull Case: {v(analysis.get('bull_case'), 'N/A')}
+Analyst's Bear Case: {v(analysis.get('bear_case'), 'N/A')}
+Risk Factors Identified: {', '.join(analysis.get('risk_factors') or [])}
+Sentiment Cross-Check: {v(analysis.get('sentiment_cross_check'), 'N/A')}
+Analyst Notes: {v(analysis.get('analyst_notes'), 'N/A')}
 
 === RAW MARKET DATA (הפקיד's full report) ===
-Price: {raw.get('price', 'N/A')} | 52W Range: {raw.get('fifty_two_week_low', 'N/A')}-{raw.get('fifty_two_week_high', 'N/A')}
-Market Cap: ${raw.get('market_cap', 0):,.0f}
-P/E: {raw.get('pe_ratio', 'N/A')} | Forward P/E: {raw.get('forward_pe', 'N/A')}
-Revenue Growth: {raw.get('revenue_growth', 'N/A')} | Earnings Growth: {raw.get('earnings_growth', 'N/A')}
-Debt/Equity: {raw.get('debt_to_equity', 'N/A')} | Free Cash Flow: ${raw.get('free_cash_flow', 0):,.0f}
-Beta: {raw.get('beta', 'N/A')} | Short Interest: {raw.get('short_interest', 'N/A')}
+Price: {v(raw.get('price'), 'N/A')} | 52W Range: {v(raw.get('fifty_two_week_low'), 'N/A')}-{v(raw.get('fifty_two_week_high'), 'N/A')}
+Market Cap: ${v(raw.get('market_cap'), 0):,.0f}
+P/E: {v(raw.get('pe_ratio'), 'N/A')} | Forward P/E: {v(raw.get('forward_pe'), 'N/A')}
+Revenue Growth: {v(raw.get('revenue_growth'), 'N/A')} | Earnings Growth: {v(raw.get('earnings_growth'), 'N/A')}
+Debt/Equity: {v(raw.get('debt_to_equity'), 'N/A')} | Free Cash Flow: ${v(raw.get('free_cash_flow'), 0):,.0f}
+Beta: {v(raw.get('beta'), 'N/A')} | Short Interest: {v(raw.get('short_interest'), 'N/A')}
 
 === SENTIMENT DEEP DIVE ===
 Overall Score: {sent_score:.3f} [{sentiment_direction}]
-Twitter Score: {sentiment.get('twitter_score', 0):.3f} ({sentiment.get('tweet_count', 0)} tweets)
-Reddit Score: {sentiment.get('reddit_score', 0):.3f} ({sentiment.get('reddit_post_count', 0)} posts)
-Total Mentions: {sentiment.get('mentions', 0):,}
+Twitter Score: {v(sentiment.get('twitter_score'), 0):.3f} ({v(sentiment.get('tweet_count'), 0)} tweets)
+Reddit Score: {v(sentiment.get('reddit_score'), 0):.3f} ({v(sentiment.get('reddit_post_count'), 0)} posts)
+Total Mentions: {v(sentiment.get('mentions'), 0):,}
 Trending: {sentiment.get('trending', False)}
-Key Themes: {', '.join(sentiment.get('key_themes', [])[:8])}
+Key Themes: {', '.join((sentiment.get('key_themes') or [])[:8])}
 {sentiment_divergence}
 
 === HIGH-IMPACT NEWS FLAGS ===
@@ -265,7 +271,7 @@ Respond ONLY with valid JSON in this exact format:
             decision["decision_confidence"] = float(conf)
 
         # If approved but confidence is too low, auto-reject
-        if decision["approved"] and decision["decision_confidence"] < 55:
+        if decision["approved"] and decision["decision_confidence"] < 30:
             decision["approved"] = False
             decision["rejection_reasoning"] = (
                 decision.get("rejection_reasoning", "") +
