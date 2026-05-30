@@ -355,7 +355,7 @@ def route_after_fetch(state: AgentWorkflowState) -> str:
     """Route after data fetching - fail fast if no data."""
     if state.get("workflow_status") == "failed" or state.get("data_fetcher_error"):
         return "log_rejection"
-    return "fundamental_analysis"
+    return "run_fundamental"
 
 
 def route_after_fundamental(state: AgentWorkflowState) -> str:
@@ -375,7 +375,7 @@ def build_main_workflow() -> StateGraph:
 
     # Add nodes
     workflow.add_node("fetch_data", node_fetch_data)
-    workflow.add_node("fundamental_analysis", node_fundamental_analysis)
+    workflow.add_node("run_fundamental", node_fundamental_analysis)
     workflow.add_node("senior_review", node_senior_review)
     workflow.add_node("save_recommendation", node_save_recommendation)
     workflow.add_node("notify_users", node_notify_users)
@@ -389,13 +389,13 @@ def build_main_workflow() -> StateGraph:
         "fetch_data",
         route_after_fetch,
         {
-            "fundamental_analysis": "fundamental_analysis",
+            "run_fundamental": "run_fundamental",
             "log_rejection": "log_rejection",
         }
     )
 
     workflow.add_conditional_edges(
-        "fundamental_analysis",
+        "run_fundamental",
         route_after_fundamental,
         {
             "senior_review": "senior_review",
