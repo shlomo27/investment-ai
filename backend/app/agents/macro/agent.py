@@ -36,12 +36,13 @@ class MacroContextAgent:
         self._llm = None
 
     def _get_llm(self):
-        if not settings.GEMINI_API_KEY:
+        api_key = settings.GEMINI_API_KEY or settings.GOOGLE_AI_API_KEY
+        if not api_key:
             return None
         if self._llm is None:
             self._llm = ChatGoogleGenerativeAI(
                 model=settings.GEMINI_MODEL,
-                google_api_key=settings.GEMINI_API_KEY,
+                google_api_key=api_key,
                 max_output_tokens=1500,
                 temperature=0.1,
             )
