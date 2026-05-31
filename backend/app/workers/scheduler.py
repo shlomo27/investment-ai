@@ -7,17 +7,17 @@ from app.workers.celery_app import celery_app
 
 # Configure Beat schedule
 celery_app.conf.beat_schedule = {
-    # Scan entire asset pool every 5 minutes (24/7 - markets around the world)
-    "scan-asset-pool-every-5-minutes": {
+    # Scan entire asset pool every 3 hours
+    "scan-asset-pool-every-3-hours": {
         "task": "scan_asset_pool",
-        "schedule": 300.0,  # 5 minutes
+        "schedule": 10800.0,  # 3 hours
         "options": {"queue": "scanning"},
     },
 
-    # Scan user portfolios for sell signals every 5 minutes
-    "scan-user-portfolios-every-5-minutes": {
+    # Scan user portfolios for sell signals every 3 hours
+    "scan-user-portfolios-every-3-hours": {
         "task": "scan_user_portfolios",
-        "schedule": 300.0,  # 5 minutes
+        "schedule": 10800.0,  # 3 hours
         "options": {"queue": "scanning"},
     },
 
