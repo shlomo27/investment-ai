@@ -14,6 +14,8 @@ from langgraph.graph import StateGraph, END
 
 from app.agents.state import AgentWorkflowState, TechnicalWorkflowState
 from app.agents.data_fetcher.agent import get_data_fetcher_agent
+from app.agents.news.agent import get_news_agent
+from app.agents.macro.agent import get_macro_agent
 from app.agents.fundamental.agent import get_fundamental_agent
 from app.agents.senior.agent import get_senior_agent
 from app.agents.technical.agent import get_technical_agent
@@ -51,6 +53,40 @@ async def node_fetch_data(state: AgentWorkflowState) -> AgentWorkflowState:
         }
 
 
+async def node_enrich_data(state: AgentWorkflowState) -> AgentWorkflowState:
+    """Node 2: Run GPT (news) + Gemini (macro) in parallel to enrich the raw data."""
+    logger.info("Workflow node: enrich_data", symbol=state["asset_symbol"])
+
+    if state.get("data_fetcher_error") or not state.get("data_fetcher_output"):
+        return {**state, "enrichment_error": "Skipped - no data from fetcher"}
+
+    market_data = state["data_fetcher_output"]
+    try:
+        news_result, macro_result = await asyncio.gather(
+            get_news_agent().analyze(market_data),
+            get_macro_agent().analyze(market_data),
+            return_exceptions=True,
+        )
+
+        if isinstance(news_result, Exception):
+            logger.warning("News agent failed", error=str(news_result))
+            news_result = None
+        if isinstance(macro_result, Exception):
+            logger.warning("Macro agent failed", error=str(macro_result))
+            macro_result = None
+
+        return {
+            **state,
+            "news_analysis": news_result,
+            "macro_analysis": macro_result,
+            "enrichment_error": None,
+            "workflow_status": "enriched",
+        }
+    except Exception as e:
+        logger.error("enrich_data node failed", symbol=state["asset_symbol"], error=str(e))
+        return {**state, "enrichment_error": str(e)}
+
+
 async def node_fundamental_analysis(state: AgentWorkflowState) -> AgentWorkflowState:
     """Node 2: Run FundamentalAnalystAgent on the fetched data."""
     logger.info("Workflow node: fundamental_analysis", symbol=state["asset_symbol"])
@@ -64,10 +100,11 @@ async def node_fundamental_analysis(state: AgentWorkflowState) -> AgentWorkflowS
 
     try:
         agent = get_fundamental_agent()
-        portfolio_context = state.get("portfolio_context")
         analysis = await agent.analyze(
             market_data=state["data_fetcher_output"],
-            portfolio_context=portfolio_context,
+            portfolio_context=state.get("portfolio_context"),
+            news_analysis=state.get("news_analysis"),
+            macro_analysis=state.get("macro_analysis"),
         )
         return {
             **state,
@@ -355,6 +392,13 @@ def route_after_fetch(state: AgentWorkflowState) -> str:
     """Route after data fetching - fail fast if no data."""
     if state.get("workflow_status") == "failed" or state.get("data_fetcher_error"):
         return "log_rejection"
+    return "enrich_data"
+
+
+def route_after_enrich(state: AgentWorkflowState) -> str:
+    """Route after enrichment — always continue to fundamental (enrichment failures are non-fatal)."""
+    if state.get("workflow_status") == "failed":
+        return "log_rejection"
     return "run_fundamental"
 
 
@@ -375,6 +419,7 @@ def build_main_workflow() -> StateGraph:
 
     # Add nodes
     workflow.add_node("fetch_data", node_fetch_data)
+    workflow.add_node("enrich_data", node_enrich_data)
     workflow.add_node("run_fundamental", node_fundamental_analysis)
     workflow.add_node("senior_review", node_senior_review)
     workflow.add_node("save_recommendation", node_save_recommendation)
@@ -388,6 +433,15 @@ def build_main_workflow() -> StateGraph:
     workflow.add_conditional_edges(
         "fetch_data",
         route_after_fetch,
+        {
+            "enrich_data": "enrich_data",
+            "log_rejection": "log_rejection",
+        }
+    )
+
+    workflow.add_conditional_edges(
+        "enrich_data",
+        route_after_enrich,
         {
             "run_fundamental": "run_fundamental",
             "log_rejection": "log_rejection",
@@ -532,6 +586,9 @@ async def run_investment_workflow(
         "exchange": exchange,
         "data_fetcher_output": None,
         "data_fetcher_error": None,
+        "news_analysis": None,
+        "macro_analysis": None,
+        "enrichment_error": None,
         "fundamental_analysis": None,
         "fundamental_error": None,
         "senior_decision": None,

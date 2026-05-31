@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     CLAUDE_MODEL: str = "claude-sonnet-4-6"
     CLAUDE_MAX_TOKENS: int = 4096
 
+    # OpenAI / GPT (News Analyst)
+    OPENAI_API_KEY: str = ""
+    OPENAI_MODEL: str = "gpt-4o-mini"
+
+    # Google Gemini (Macro Context)
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-1.5-flash"
+
     # Twitter/X API v2
     TWITTER_BEARER_TOKEN: str = ""
     TWITTER_API_KEY: str = ""

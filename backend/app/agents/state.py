@@ -103,7 +103,11 @@ class AgentWorkflowState(TypedDict):
     # Stage 1: Raw data from הפקיד
     data_fetcher_output: Optional[MarketDataState]
     data_fetcher_error: Optional[str]
-    # Stage 2: Fundamental analysis
+    # Stage 2: Enrichment — GPT news analysis + Gemini macro context (parallel)
+    news_analysis: Optional[Dict[str, Any]]
+    macro_analysis: Optional[Dict[str, Any]]
+    enrichment_error: Optional[str]
+    # Stage 3: Fundamental analysis (Claude)
     fundamental_analysis: Optional[Dict[str, Any]]
     fundamental_error: Optional[str]
     # Stage 3: Senior committee decision

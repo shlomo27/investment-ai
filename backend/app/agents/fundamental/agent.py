@@ -65,6 +65,8 @@ class FundamentalAnalystAgent:
         self,
         market_data: MarketDataState,
         portfolio_context: Optional[Dict[str, Any]] = None,
+        news_analysis: Optional[Dict[str, Any]] = None,
+        macro_analysis: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Main analysis method. Returns structured fundamental analysis dict.
@@ -75,7 +77,7 @@ class FundamentalAnalystAgent:
             price=market_data.get("price"),
         )
 
-        prompt = self._build_analysis_prompt(market_data, portfolio_context)
+        prompt = self._build_analysis_prompt(market_data, portfolio_context, news_analysis, macro_analysis)
 
         llm = self._get_llm()
         if llm is None:
@@ -127,6 +129,8 @@ class FundamentalAnalystAgent:
         self,
         data: MarketDataState,
         portfolio_context: Optional[Dict[str, Any]],
+        news_analysis: Optional[Dict[str, Any]] = None,
+        macro_analysis: Optional[Dict[str, Any]] = None,
     ) -> str:
         v = self._v
         news_summary = "\n".join([
@@ -198,13 +202,19 @@ Key Themes: {', '.join(sentiment.get('key_themes', [])[:5])}
 
 === RECENT NEWS ===
 {news_summary if news_summary else 'No recent news available'}
+
+=== GPT NEWS ANALYSIS ===
+{self._format_news_analysis(news_analysis)}
+
+=== GEMINI MACRO CONTEXT ===
+{self._format_macro_analysis(macro_analysis)}
 {portfolio_section}
 === COMPANY CONTEXT ===
 {data.get('company_description', 'No description available.')}
 
 ---
 
-Based on ALL the above data, provide your fundamental analysis in this exact JSON format:
+Based on ALL the above data (including the GPT news analysis and Gemini macro context), provide your fundamental analysis in this exact JSON format:
 {{
   "recommendation_type": "BUY|SELL|HOLD|STRONG_BUY|STRONG_SELL",
   "confidence_score": 0-100,
@@ -232,6 +242,34 @@ Based on ALL the above data, provide your fundamental analysis in this exact JSO
 }}"""
 
         return prompt
+
+    @staticmethod
+    def _format_news_analysis(news: Optional[Dict[str, Any]]) -> str:
+        if not news or news.get("skipped_reason"):
+            return "Not available"
+        return (
+            f"Dominant Narrative: {news.get('dominant_narrative', 'N/A')}\n"
+            f"Overall Impact: {news.get('overall_market_impact', 'N/A')} / Direction: {news.get('overall_direction', 'N/A')}\n"
+            f"Sentiment-News Alignment: {news.get('sentiment_news_alignment', 'N/A')}\n"
+            f"Hidden Signals: {', '.join(news.get('hidden_signals') or [])}\n"
+            f"Red Flags: {', '.join(news.get('red_flags') or [])}\n"
+            f"Opportunities: {', '.join(news.get('opportunities') or [])}"
+        )
+
+    @staticmethod
+    def _format_macro_analysis(macro: Optional[Dict[str, Any]]) -> str:
+        if not macro or macro.get("skipped_reason"):
+            return "Not available"
+        return (
+            f"Sector Outlook: {macro.get('sector_outlook', 'N/A')} | {macro.get('sector_trend', 'N/A')}\n"
+            f"Macro Environment: {macro.get('macro_environment', 'N/A')}\n"
+            f"Macro Impact on Stock: {macro.get('macro_impact_on_stock', 'N/A')}\n"
+            f"Competitive Position: {macro.get('competitive_position', 'N/A')} — {macro.get('competitive_notes', 'N/A')}\n"
+            f"Regulatory Risk: {macro.get('regulatory_risk', 'N/A')} — {macro.get('regulatory_notes', 'N/A')}\n"
+            f"Analyst Consensus Trend: {macro.get('analyst_consensus_trend', 'N/A')}\n"
+            f"Key Macro Risks: {', '.join(macro.get('key_macro_risks') or [])}\n"
+            f"Key Macro Catalysts: {', '.join(macro.get('key_macro_catalysts') or [])}"
+        )
 
     def _validate_and_normalize(
         self,
