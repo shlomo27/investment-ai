@@ -305,10 +305,12 @@ async def admin_delete_all_users(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid secret")
 
     from sqlalchemy import text
+    # Delete in correct FK order (children before parents)
     await db.execute(text("DELETE FROM notifications"))
     await db.execute(text("DELETE FROM orders"))
-    await db.execute(text("DELETE FROM portfolio"))
+    await db.execute(text("DELETE FROM portfolios"))
     await db.execute(text("DELETE FROM watchlist"))
+    await db.execute(text("DELETE FROM recommendations"))
     await db.execute(text("DELETE FROM users"))
     await db.commit()
 
