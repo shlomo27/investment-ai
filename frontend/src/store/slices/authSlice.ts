@@ -94,7 +94,10 @@ export const completeOnboarding = createAsyncThunk(
     data: {
       risk_profile: RiskProfile;
       risk_score: number;
-      initial_deposit: number;
+      investment_type: string;
+      allows_volatile: boolean;
+      allows_leveraged: boolean;
+      allows_short: boolean;
       notification_email: boolean;
       notification_sms: boolean;
       notification_push: boolean;

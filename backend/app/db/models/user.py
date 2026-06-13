@@ -28,6 +28,12 @@ class User(Base):
     risk_score: Mapped[int] = mapped_column(Integer, nullable=False, default=50)  # 0-100
     cash_balance: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     max_single_asset_exposure: Mapped[float] = mapped_column(Float, nullable=False, default=0.03)
+
+    # Investment preferences (set during onboarding)
+    investment_type: Mapped[str] = mapped_column(String(10), nullable=False, default="BOTH")  # STOCKS | ETFS | BOTH
+    allows_volatile: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    allows_leveraged: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    allows_short: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_onboarded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     preferred_language: Mapped[str] = mapped_column(String(10), default="he", nullable=False)

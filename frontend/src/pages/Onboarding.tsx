@@ -1,126 +1,86 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { completeOnboarding } from "../store/slices/authSlice";
-import { RiskProfile, RiskQuestion } from "../types";
-import { marketApi } from "../api/client";
+import { RiskProfile } from "../types";
 
-const RISK_QUESTIONS: RiskQuestion[] = [
-  {
-    id: "q1",
-    question_he: "מהי מטרת ההשקעה שלך?",
-    question_en: "What is your primary investment goal?",
-    options: [
-      { value: 20, label_he: "שמירת הון", label_en: "Capital preservation" },
-      { value: 40, label_he: "הכנסה סדירה", label_en: "Regular income" },
-      { value: 60, label_he: "צמיחה מאוזנת", label_en: "Balanced growth" },
-      { value: 80, label_he: "צמיחה מהירה", label_en: "Aggressive growth" },
-    ],
-    weight: 1.5,
-  },
-  {
-    id: "q2",
-    question_he: "מהו אופק ההשקעה שלך?",
-    question_en: "What is your investment time horizon?",
-    options: [
-      { value: 20, label_he: "פחות משנה", label_en: "Less than 1 year" },
-      { value: 40, label_he: "1-3 שנים", label_en: "1-3 years" },
-      { value: 60, label_he: "3-7 שנים", label_en: "3-7 years" },
-      { value: 80, label_he: "יותר מ-7 שנים", label_en: "More than 7 years" },
-    ],
-    weight: 1.0,
-  },
-  {
-    id: "q3",
-    question_he: "כיצד תגיב לירידה של 20% בתיק תוך חודש?",
-    question_en: "How would you react to a 20% portfolio drop in one month?",
-    options: [
-      { value: 10, label_he: "אמכור הכל מיד", label_en: "Sell everything immediately" },
-      { value: 30, label_he: "אמכור חלק", label_en: "Sell some positions" },
-      { value: 60, label_he: "אחכה ואראה", label_en: "Wait and see" },
-      { value: 90, label_he: "אקנה עוד", label_en: "Buy more (opportunity)" },
-    ],
-    weight: 1.5,
-  },
-  {
-    id: "q4",
-    question_he: "מה אחוז החסכונות שאתה מוכן להשקיע?",
-    question_en: "What percentage of savings are you willing to invest?",
-    options: [
-      { value: 20, label_he: "עד 10%", label_en: "Up to 10%" },
-      { value: 40, label_he: "10%-25%", label_en: "10%-25%" },
-      { value: 60, label_he: "25%-50%", label_en: "25%-50%" },
-      { value: 80, label_he: "יותר מ-50%", label_en: "More than 50%" },
-    ],
-    weight: 1.0,
-  },
-  {
-    id: "q5",
-    question_he: "כמה ניסיון השקעות יש לך?",
-    question_en: "How much investment experience do you have?",
-    options: [
-      { value: 20, label_he: "ללא ניסיון", label_en: "No experience" },
-      { value: 40, label_he: "ניסיון מועט", label_en: "Limited experience" },
-      { value: 60, label_he: "ניסיון בינוני", label_en: "Moderate experience" },
-      { value: 80, label_he: "ניסיון רב", label_en: "Extensive experience" },
-    ],
-    weight: 0.8,
-  },
-];
+type RiskLevel = "CONSERVATIVE" | "HYBRID" | "AGGRESSIVE";
+type InvestmentType = "STOCKS" | "ETFS" | "BOTH";
 
-function calculateRiskProfile(score: number): RiskProfile {
-  if (score < 30) return RiskProfile.CONSERVATIVE;
-  if (score < 50) return RiskProfile.PASSIVE;
-  if (score < 70) return RiskProfile.HYBRID;
-  return RiskProfile.AGGRESSIVE;
+interface PortfolioHolding {
+  symbol: string;
+  quantity: string;
+  avg_price: string;
 }
 
-const STEPS = ["account", "risk", "deposit", "confirm"];
+const STEPS = ["welcome", "risk", "assets", "portfolio", "confirm"];
 
 const Onboarding: React.FC = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { user, isLoading, error } = useAppSelector((state) => state.auth);
-  const lang = user?.preferred_language || "he";
-  const isHe = lang === "he";
+  const isHe = (user?.preferred_language || "he") === "he";
 
   const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, number>>({});
-  const [deposit, setDeposit] = useState<number>(10000);
+
+  // Step 1 — Risk
+  const [riskLevel, setRiskLevel] = useState<RiskLevel | null>(null);
+  const [allowsVolatile, setAllowsVolatile] = useState(false);
+  const [allowsLeveraged, setAllowsLeveraged] = useState(false);
+  const [allowsShort, setAllowsShort] = useState(false);
+
+  // Step 2 — Asset type
+  const [investmentType, setInvestmentType] = useState<InvestmentType | null>(null);
+
+  // Step 3 — Existing portfolio
+  const [hasPortfolio, setHasPortfolio] = useState<boolean | null>(null);
+  const [holdings, setHoldings] = useState<PortfolioHolding[]>([
+    { symbol: "", quantity: "", avg_price: "" },
+  ]);
+
+  // Step 4 — Notifications
   const [notifications, setNotifications] = useState({
     email: true,
     sms: true,
     push: false,
   });
-  const [poolAssets, setPoolAssets] = useState<any[]>([]);
 
-  const totalWeight = RISK_QUESTIONS.reduce((s, q) => s + q.weight, 0);
-  const answeredCount = Object.keys(answers).length;
-  const allAnswered = answeredCount === RISK_QUESTIONS.length;
+  const riskScoreMap: Record<RiskLevel, number> = {
+    CONSERVATIVE: 25,
+    HYBRID: 55,
+    AGGRESSIVE: 85,
+  };
 
-  const riskScore = allAnswered
-    ? Math.round(
-        RISK_QUESTIONS.reduce((sum, q) => {
-          const ans = answers[q.id] || 50;
-          return sum + (ans * q.weight) / totalWeight;
-        }, 0)
-      )
-    : 50;
+  const profileMap: Record<RiskLevel, RiskProfile> = {
+    CONSERVATIVE: RiskProfile.CONSERVATIVE,
+    HYBRID: RiskProfile.HYBRID,
+    AGGRESSIVE: RiskProfile.AGGRESSIVE,
+  };
 
-  const riskProfile = calculateRiskProfile(riskScore);
+  const addHolding = () =>
+    setHoldings([...holdings, { symbol: "", quantity: "", avg_price: "" }]);
 
-  useEffect(() => {
-    if (step === 3) {
-      marketApi.getAssetPool({ activeOnly: true }).then(setPoolAssets).catch(() => {});
-    }
-  }, [step]);
+  const updateHolding = (i: number, field: keyof PortfolioHolding, value: string) => {
+    const updated = [...holdings];
+    updated[i] = { ...updated[i], [field]: value };
+    setHoldings(updated);
+  };
+
+  const removeHolding = (i: number) =>
+    setHoldings(holdings.filter((_, idx) => idx !== i));
+
+  const validHoldings = holdings.filter((h) => h.symbol.trim() && h.quantity);
 
   const handleComplete = async () => {
+    if (!riskLevel || !investmentType) return;
     const result = await dispatch(
       completeOnboarding({
-        risk_profile: riskProfile,
-        risk_score: riskScore,
-        initial_deposit: deposit,
+        risk_profile: profileMap[riskLevel],
+        risk_score: riskScoreMap[riskLevel],
+        investment_type: investmentType,
+        allows_volatile: allowsVolatile,
+        allows_leveraged: allowsLeveraged,
+        allows_short: allowsShort,
         notification_email: notifications.email,
         notification_sms: notifications.sms,
         notification_push: notifications.push,
@@ -131,26 +91,79 @@ const Onboarding: React.FC = () => {
     }
   };
 
-  const profileLabels: Record<RiskProfile, { he: string; en: string; color: string }> = {
-    [RiskProfile.CONSERVATIVE]: { he: "שמרני", en: "Conservative", color: "text-green-400" },
-    [RiskProfile.PASSIVE]: { he: "פסיבי", en: "Passive", color: "text-blue-400" },
-    [RiskProfile.HYBRID]: { he: "היברידי", en: "Hybrid", color: "text-yellow-400" },
-    [RiskProfile.AGGRESSIVE]: { he: "אגרסיבי", en: "Aggressive", color: "text-red-400" },
-  };
+  const riskCards: { level: RiskLevel; icon: string; color: string; borderColor: string; he: string; en: string; desc_he: string; desc_en: string }[] = [
+    {
+      level: "CONSERVATIVE",
+      icon: "🟢",
+      color: "text-green-400",
+      borderColor: "border-green-500",
+      he: "שמרני",
+      en: "Conservative",
+      desc_he: "S&P 500, ETF דיבידנדים, מניות יציבות. סיכון נמוך, תשואה עקבית.",
+      desc_en: "S&P 500, dividend ETFs, stable stocks. Low risk, consistent returns.",
+    },
+    {
+      level: "HYBRID",
+      icon: "🟡",
+      color: "text-yellow-400",
+      borderColor: "border-yellow-500",
+      he: "סיכון בינוני",
+      en: "Medium Risk",
+      desc_he: "שילוב מניות צמיחה ו-ETF. פוטנציאל תשואה גבוה יותר עם סיכון מתון.",
+      desc_en: "Growth stocks and ETF mix. Higher return potential with moderate risk.",
+    },
+    {
+      level: "AGGRESSIVE",
+      icon: "🔴",
+      color: "text-red-400",
+      borderColor: "border-red-500",
+      he: "סיכון גבוה",
+      en: "High Risk",
+      desc_he: "מניות תנודתיות, מינוף, שורט. מחיר יכול לרדת עשרות אחוזים ביום.",
+      desc_en: "Volatile stocks, leverage, short. Price can drop tens of percent in a day.",
+    },
+  ];
+
+  const assetCards: { type: InvestmentType; icon: string; he: string; en: string; desc_he: string; desc_en: string }[] = [
+    {
+      type: "STOCKS",
+      icon: "📈",
+      he: "מניות בלבד",
+      en: "Stocks Only",
+      desc_he: "מניות ספציפיות בשוק",
+      desc_en: "Individual company stocks",
+    },
+    {
+      type: "ETFS",
+      icon: "🗂️",
+      he: "ETF בלבד",
+      en: "ETFs Only",
+      desc_he: "קרנות מדד מגוונות",
+      desc_en: "Diversified index funds",
+    },
+    {
+      type: "BOTH",
+      icon: "🔀",
+      he: "שניהם",
+      en: "Both",
+      desc_he: "מניות וETF — מגוון מלא",
+      desc_en: "Stocks and ETFs — full variety",
+    },
+  ];
 
   return (
     <div
-      className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center px-4"
+      className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center px-4 py-8"
       dir={isHe ? "rtl" : "ltr"}
     >
       <div className="w-full max-w-2xl">
-        {/* Progress */}
+        {/* Progress bar */}
         <div className="mb-8">
           <div className="flex gap-2 mb-3">
-            {STEPS.map((s, i) => (
+            {STEPS.map((_, i) => (
               <div
-                key={s}
-                className={`h-1 flex-1 rounded-full ${i <= step ? "bg-blue-500" : "bg-gray-700"}`}
+                key={i}
+                className={`h-1 flex-1 rounded-full transition-colors ${i <= step ? "bg-blue-500" : "bg-gray-700"}`}
               />
             ))}
           </div>
@@ -159,7 +172,7 @@ const Onboarding: React.FC = () => {
           </p>
         </div>
 
-        {/* Step 0: Welcome */}
+        {/* ── Step 0: Welcome ─────────────────────────────────────── */}
         {step === 0 && (
           <div className="bg-gray-900 rounded-2xl p-8 border border-gray-800">
             <h2 className="text-2xl font-bold mb-2">
@@ -167,19 +180,19 @@ const Onboarding: React.FC = () => {
             </h2>
             <p className="text-gray-400 mb-6">
               {isHe
-                ? "ברוכים הבאים לפלטפורמת ההשקעות החכמה. בשלבים הבאים נלמד על פרופיל הסיכון שלך."
-                : "Welcome to the intelligent investment platform. In the next steps, we'll learn about your risk profile."}
+                ? "ברוכים הבאים למערכת ה-AI. נגדיר יחד את פרופיל ההשקעה שלך."
+                : "Welcome to the AI platform. Let's set up your investment profile together."}
             </p>
             <div className="grid grid-cols-2 gap-4 mb-6">
               {[
                 { he: "ניתוח AI מתקדם", en: "Advanced AI Analysis", icon: "🤖" },
                 { he: "ניהול סיכונים", en: "Risk Management", icon: "🛡️" },
+                { he: "התראות בזמן אמת", en: "Real-Time Alerts", icon: "🔔" },
                 { he: "שווקים גלובליים", en: "Global Markets", icon: "🌍" },
-                { he: "התראות חכמות", en: "Smart Alerts", icon: "🔔" },
-              ].map((feat) => (
-                <div key={feat.en} className="bg-gray-800 rounded-xl p-4">
-                  <span className="text-2xl">{feat.icon}</span>
-                  <p className="text-sm mt-2 font-medium">{isHe ? feat.he : feat.en}</p>
+              ].map((f) => (
+                <div key={f.en} className="bg-gray-800 rounded-xl p-4">
+                  <span className="text-2xl">{f.icon}</span>
+                  <p className="text-sm mt-2 font-medium">{isHe ? f.he : f.en}</p>
                 </div>
               ))}
             </div>
@@ -192,60 +205,120 @@ const Onboarding: React.FC = () => {
           </div>
         )}
 
-        {/* Step 1: Risk Questionnaire */}
+        {/* ── Step 1: Risk Level ───────────────────────────────────── */}
         {step === 1 && (
           <div className="bg-gray-900 rounded-2xl p-8 border border-gray-800">
             <h2 className="text-xl font-bold mb-1">
-              {isHe ? "שאלון פרופיל סיכון" : "Risk Profile Questionnaire"}
+              {isHe ? "מהי רמת הסיכון שאתה מוכן לקחת?" : "What risk level are you willing to take?"}
             </h2>
             <p className="text-gray-400 text-sm mb-6">
-              {isHe ? `ענה על ${RISK_QUESTIONS.length} שאלות לקביעת פרופיל ההשקעה שלך` : `Answer ${RISK_QUESTIONS.length} questions to determine your investment profile`}
+              {isHe ? "זה קובע אילו מניות ו-ETF המערכת תמליץ עליך" : "This determines which stocks and ETFs the system recommends for you"}
             </p>
 
-            <div className="space-y-6">
-              {RISK_QUESTIONS.map((q, qi) => (
-                <div key={q.id}>
-                  <p className="font-medium mb-3">
-                    {qi + 1}. {isHe ? q.question_he : q.question_en}
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {q.options.map((opt) => (
-                      <button
-                        key={opt.value}
-                        onClick={() => setAnswers({ ...answers, [q.id]: opt.value })}
-                        className={`py-2 px-3 rounded-lg text-sm text-right border transition-colors ${
-                          answers[q.id] === opt.value
-                            ? "border-blue-500 bg-blue-500/10 text-blue-300"
-                            : "border-gray-700 hover:border-gray-600 text-gray-300"
-                        }`}
-                      >
-                        {isHe ? opt.label_he : opt.label_en}
-                      </button>
-                    ))}
+            <div className="space-y-3 mb-6">
+              {riskCards.map((card) => (
+                <button
+                  key={card.level}
+                  onClick={() => {
+                    setRiskLevel(card.level);
+                    if (card.level !== "AGGRESSIVE") {
+                      setAllowsVolatile(false);
+                      setAllowsLeveraged(false);
+                      setAllowsShort(false);
+                    }
+                  }}
+                  className={`w-full text-right p-4 rounded-xl border-2 transition-all ${
+                    riskLevel === card.level
+                      ? `${card.borderColor} bg-gray-800`
+                      : "border-gray-700 hover:border-gray-600"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{card.icon}</span>
+                    <div className="flex-1 text-start">
+                      <p className={`font-bold ${riskLevel === card.level ? card.color : "text-white"}`}>
+                        {isHe ? card.he : card.en}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {isHe ? card.desc_he : card.desc_en}
+                      </p>
+                    </div>
+                    {riskLevel === card.level && (
+                      <span className={`text-xl ${card.color}`}>✓</span>
+                    )}
                   </div>
-                </div>
+                </button>
               ))}
             </div>
 
-            {allAnswered && (
-              <div className="mt-6 p-4 bg-gray-800 rounded-xl">
-                <p className="text-sm text-gray-400">{isHe ? "פרופיל שלך:" : "Your profile:"}</p>
-                <p className={`text-xl font-bold ${profileLabels[riskProfile].color}`}>
-                  {isHe ? profileLabels[riskProfile].he : profileLabels[riskProfile].en}
+            {/* High-risk sub-options */}
+            {riskLevel === "AGGRESSIVE" && (
+              <div className="bg-red-950/30 border border-red-800/50 rounded-xl p-4 mb-6">
+                <p className="text-sm font-medium text-red-300 mb-3">
+                  {isHe ? "אפשרויות סיכון גבוה נוספות:" : "Additional high-risk options:"}
                 </p>
-                <p className="text-sm text-gray-400">
-                  {isHe ? `ציון סיכון: ${riskScore}/100` : `Risk score: ${riskScore}/100`}
+                {[
+                  {
+                    key: "volatile" as const,
+                    val: allowsVolatile,
+                    set: setAllowsVolatile,
+                    he: "מניות עם תנודתיות גבוהה מאוד",
+                    en: "Very high-volatility stocks",
+                    sub_he: "מחיר יכול לרדת 30-70% ביום, פוטנציאל לחדלות פירעון",
+                    sub_en: "Price can drop 30-70% in a day, bankruptcy risk",
+                  },
+                  {
+                    key: "leveraged" as const,
+                    val: allowsLeveraged,
+                    set: setAllowsLeveraged,
+                    he: "ETF ממונף ×2 / ×3",
+                    en: "Leveraged ETF ×2 / ×3",
+                    sub_he: "תנועת מדד מוכפלת פי 2 או 3 — בשני הכיוונים",
+                    sub_en: "Index movement multiplied 2x or 3x — in both directions",
+                  },
+                  {
+                    key: "short" as const,
+                    val: allowsShort,
+                    set: setAllowsShort,
+                    he: "ETF SHORT (מינוף הפוך)",
+                    en: "Short ETF (inverse leverage)",
+                    sub_he: "מרוויח כאשר השוק יורד",
+                    sub_en: "Profits when the market falls",
+                  },
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => opt.set(!opt.val)}
+                    className={`w-full flex items-start gap-3 p-3 rounded-lg mb-2 text-start transition-colors ${
+                      opt.val ? "bg-red-900/40 border border-red-700/50" : "hover:bg-gray-800"
+                    }`}
+                  >
+                    <div className={`w-5 h-5 mt-0.5 rounded border-2 flex-shrink-0 flex items-center justify-center ${
+                      opt.val ? "bg-red-600 border-red-600" : "border-gray-600"
+                    }`}>
+                      {opt.val && <span className="text-white text-xs">✓</span>}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-red-200">{isHe ? opt.he : opt.en}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{isHe ? opt.sub_he : opt.sub_en}</p>
+                    </div>
+                  </button>
+                ))}
+                <p className="text-xs text-red-400/70 mt-2">
+                  {isHe
+                    ? "⚠️ ההמלצות לנכסים אלו יכללו אזהרת סיכון מפורשת"
+                    : "⚠️ Recommendations for these assets will include explicit risk warnings"}
                 </p>
               </div>
             )}
 
-            <div className="flex gap-3 mt-6">
+            <div className="flex gap-3">
               <button onClick={() => setStep(0)} className="flex-1 border border-gray-700 rounded-xl py-3 text-gray-400">
                 {isHe ? "חזרה" : "Back"}
               </button>
               <button
                 onClick={() => setStep(2)}
-                disabled={!allAnswered}
+                disabled={!riskLevel}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl py-3 font-medium"
               >
                 {isHe ? "המשך" : "Continue"}
@@ -254,66 +327,44 @@ const Onboarding: React.FC = () => {
           </div>
         )}
 
-        {/* Step 2: Deposit */}
+        {/* ── Step 2: Asset Type ───────────────────────────────────── */}
         {step === 2 && (
           <div className="bg-gray-900 rounded-2xl p-8 border border-gray-800">
             <h2 className="text-xl font-bold mb-1">
-              {isHe ? "פיקדון ראשוני" : "Initial Deposit"}
+              {isHe ? "איזה סוג נכסים אתה מעוניין?" : "Which type of assets interest you?"}
             </h2>
             <p className="text-gray-400 text-sm mb-6">
-              {isHe ? "כמה ברצונך להפקיד לחשבון ההשקעות שלך?" : "How much would you like to deposit into your investment account?"}
+              {isHe
+                ? "המערכת תסנן המלצות לפי ההעדפה שלך"
+                : "The system will filter recommendations based on your preference"}
             </p>
 
-            <div className="mb-6">
-              <label className="block text-sm text-gray-400 mb-2">
-                {isHe ? "סכום (₪)" : "Amount ($)"}
-              </label>
-              <input
-                type="number"
-                value={deposit}
-                onChange={(e) => setDeposit(Number(e.target.value))}
-                min={1000}
-                step={1000}
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-2xl font-bold text-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div className="grid grid-cols-4 gap-2 mb-6">
-              {[5000, 10000, 25000, 50000].map((amount) => (
+            <div className="space-y-3 mb-6">
+              {assetCards.map((card) => (
                 <button
-                  key={amount}
-                  onClick={() => setDeposit(amount)}
-                  className={`py-2 rounded-lg text-sm border ${
-                    deposit === amount
-                      ? "border-blue-500 bg-blue-500/10 text-blue-300"
-                      : "border-gray-700 text-gray-400"
+                  key={card.type}
+                  onClick={() => setInvestmentType(card.type)}
+                  className={`w-full p-4 rounded-xl border-2 transition-all ${
+                    investmentType === card.type
+                      ? "border-blue-500 bg-blue-500/10"
+                      : "border-gray-700 hover:border-gray-600"
                   }`}
                 >
-                  {amount.toLocaleString()}
+                  <div className="flex items-center gap-4">
+                    <span className="text-3xl">{card.icon}</span>
+                    <div className="flex-1 text-start">
+                      <p className={`font-bold ${investmentType === card.type ? "text-blue-300" : "text-white"}`}>
+                        {isHe ? card.he : card.en}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {isHe ? card.desc_he : card.desc_en}
+                      </p>
+                    </div>
+                    {investmentType === card.type && (
+                      <span className="text-blue-400 text-xl">✓</span>
+                    )}
+                  </div>
                 </button>
-              ))}
-            </div>
-
-            <div className="mb-6 p-4 bg-gray-800 rounded-xl">
-              <p className="text-sm text-gray-400 mb-3">{isHe ? "הגדרות התראות" : "Notification Settings"}</p>
-              {[
-                { key: "email", he: "דוא\"ל", en: "Email" },
-                { key: "sms", he: "SMS", en: "SMS" },
-                { key: "push", he: "Push", en: "Push" },
-              ].map((ch) => (
-                <div key={ch.key} className="flex items-center justify-between py-2">
-                  <span className="text-sm">{isHe ? ch.he : ch.en}</span>
-                  <button
-                    onClick={() => setNotifications({ ...notifications, [ch.key]: !notifications[ch.key as keyof typeof notifications] })}
-                    className={`w-10 h-5 rounded-full transition-colors ${
-                      notifications[ch.key as keyof typeof notifications] ? "bg-blue-600" : "bg-gray-600"
-                    }`}
-                  >
-                    <div className={`w-4 h-4 bg-white rounded-full mx-0.5 transition-transform ${
-                      notifications[ch.key as keyof typeof notifications] ? "translate-x-5" : ""
-                    }`} />
-                  </button>
-                </div>
               ))}
             </div>
 
@@ -323,7 +374,7 @@ const Onboarding: React.FC = () => {
               </button>
               <button
                 onClick={() => setStep(3)}
-                disabled={deposit < 1000}
+                disabled={!investmentType}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl py-3 font-medium"
               >
                 {isHe ? "המשך" : "Continue"}
@@ -332,55 +383,203 @@ const Onboarding: React.FC = () => {
           </div>
         )}
 
-        {/* Step 3: Confirm */}
+        {/* ── Step 3: Existing Portfolio ───────────────────────────── */}
         {step === 3 && (
           <div className="bg-gray-900 rounded-2xl p-8 border border-gray-800">
             <h2 className="text-xl font-bold mb-1">
-              {isHe ? "אישור פרטים" : "Confirm Details"}
+              {isHe ? "האם יש לך תיק השקעות קיים?" : "Do you have an existing portfolio?"}
             </h2>
+            <p className="text-gray-400 text-sm mb-6">
+              {isHe
+                ? "אם כן, המערכת תנתח אותו ותבדוק התאמה לפרופיל הסיכון שלך"
+                : "If yes, the system will analyze it and check alignment with your risk profile"}
+            </p>
 
-            <div className="space-y-3 mb-6">
-              <div className="flex justify-between py-3 border-b border-gray-800">
-                <span className="text-gray-400">{isHe ? "פרופיל סיכון" : "Risk Profile"}</span>
-                <span className={`font-bold ${profileLabels[riskProfile].color}`}>
-                  {isHe ? profileLabels[riskProfile].he : profileLabels[riskProfile].en}
-                </span>
-              </div>
-              <div className="flex justify-between py-3 border-b border-gray-800">
-                <span className="text-gray-400">{isHe ? "ציון סיכון" : "Risk Score"}</span>
-                <span className="font-bold">{riskScore}/100</span>
-              </div>
-              <div className="flex justify-between py-3 border-b border-gray-800">
-                <span className="text-gray-400">{isHe ? "פיקדון ראשוני" : "Initial Deposit"}</span>
-                <span className="font-bold text-green-400">
-                  {deposit.toLocaleString()} ₪
-                </span>
-              </div>
-              <div className="flex justify-between py-3">
-                <span className="text-gray-400">{isHe ? "התראות" : "Notifications"}</span>
-                <span className="font-bold text-sm">
-                  {Object.entries(notifications)
-                    .filter(([, v]) => v)
-                    .map(([k]) => k.toUpperCase())
-                    .join(", ")}
-                </span>
-              </div>
+            <div className="flex gap-3 mb-6">
+              <button
+                onClick={() => setHasPortfolio(false)}
+                className={`flex-1 py-4 rounded-xl border-2 font-medium transition-all ${
+                  hasPortfolio === false
+                    ? "border-blue-500 bg-blue-500/10 text-blue-300"
+                    : "border-gray-700 text-gray-400 hover:border-gray-600"
+                }`}
+              >
+                {isHe ? "לא, אני מתחיל מאפס" : "No, starting fresh"}
+              </button>
+              <button
+                onClick={() => setHasPortfolio(true)}
+                className={`flex-1 py-4 rounded-xl border-2 font-medium transition-all ${
+                  hasPortfolio === true
+                    ? "border-blue-500 bg-blue-500/10 text-blue-300"
+                    : "border-gray-700 text-gray-400 hover:border-gray-600"
+                }`}
+              >
+                {isHe ? "כן, יש לי תיק" : "Yes, I have a portfolio"}
+              </button>
             </div>
 
-            {poolAssets.length > 0 && (
+            {hasPortfolio === true && (
               <div className="mb-6">
-                <p className="text-sm text-gray-400 mb-2">
-                  {isHe ? "נכסים מומלצים לפרופיל שלך:" : "Recommended assets for your profile:"}
+                <p className="text-sm text-gray-400 mb-3">
+                  {isHe ? "הכנס את האחזקות הקיימות שלך:" : "Enter your current holdings:"}
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  {poolAssets.slice(0, 8).map((a) => (
-                    <span key={a.symbol} className="px-2 py-1 bg-gray-800 rounded text-xs text-gray-300">
-                      {a.symbol}
-                    </span>
+
+                <div className="space-y-2">
+                  {/* Header row */}
+                  <div className={`grid grid-cols-12 gap-2 text-xs text-gray-500 px-1`}>
+                    <span className="col-span-4">{isHe ? "סמל מניה" : "Symbol"}</span>
+                    <span className="col-span-3">{isHe ? "כמות" : "Quantity"}</span>
+                    <span className="col-span-4">{isHe ? "מחיר קנייה" : "Avg Buy Price"}</span>
+                    <span className="col-span-1" />
+                  </div>
+
+                  {holdings.map((h, i) => (
+                    <div key={i} className="grid grid-cols-12 gap-2">
+                      <input
+                        value={h.symbol}
+                        onChange={(e) => updateHolding(i, "symbol", e.target.value.toUpperCase())}
+                        placeholder="AAPL"
+                        className="col-span-4 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 uppercase"
+                      />
+                      <input
+                        value={h.quantity}
+                        onChange={(e) => updateHolding(i, "quantity", e.target.value)}
+                        placeholder="10"
+                        type="number"
+                        min="0"
+                        className="col-span-3 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                      />
+                      <input
+                        value={h.avg_price}
+                        onChange={(e) => updateHolding(i, "avg_price", e.target.value)}
+                        placeholder="$180"
+                        className="col-span-4 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                      />
+                      <button
+                        onClick={() => removeHolding(i)}
+                        disabled={holdings.length === 1}
+                        className="col-span-1 text-gray-600 hover:text-red-400 disabled:opacity-20 text-lg"
+                      >
+                        ×
+                      </button>
+                    </div>
                   ))}
                 </div>
+
+                <button
+                  onClick={addHolding}
+                  className="mt-3 text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                >
+                  <span className="text-lg">+</span>
+                  {isHe ? "הוסף אחזקה" : "Add holding"}
+                </button>
+
+                {validHoldings.length > 0 && (
+                  <div className="mt-4 p-3 bg-blue-950/30 border border-blue-800/40 rounded-xl text-sm text-blue-300">
+                    {isHe
+                      ? `✓ ${validHoldings.length} אחזקות יוזנו לניתוח ראשוני לאחר ההרשמה`
+                      : `✓ ${validHoldings.length} holdings will be analyzed after setup`}
+                  </div>
+                )}
               </div>
             )}
+
+            {hasPortfolio === false && (
+              <div className="mb-6 p-4 bg-gray-800 rounded-xl text-sm text-gray-400">
+                {isHe
+                  ? "המערכת תבנה עבורך רשימת המלצות בהתאם לפרופיל הסיכון שבחרת."
+                  : "The system will build a recommendation list tailored to your chosen risk profile."}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button onClick={() => setStep(2)} className="flex-1 border border-gray-700 rounded-xl py-3 text-gray-400">
+                {isHe ? "חזרה" : "Back"}
+              </button>
+              <button
+                onClick={() => setStep(4)}
+                disabled={hasPortfolio === null}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl py-3 font-medium"
+              >
+                {isHe ? "המשך" : "Continue"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Step 4: Confirm ──────────────────────────────────────── */}
+        {step === 4 && riskLevel && investmentType && (
+          <div className="bg-gray-900 rounded-2xl p-8 border border-gray-800">
+            <h2 className="text-xl font-bold mb-4">
+              {isHe ? "אישור פרופיל" : "Confirm Profile"}
+            </h2>
+
+            {/* Summary rows */}
+            <div className="space-y-3 mb-6">
+              {[
+                {
+                  label: isHe ? "רמת סיכון" : "Risk Level",
+                  value: riskCards.find((c) => c.level === riskLevel)!,
+                  render: (v: typeof riskCards[0]) => (
+                    <span className={`font-bold ${v.color}`}>{isHe ? v.he : v.en}</span>
+                  ),
+                },
+                {
+                  label: isHe ? "סוג נכסים" : "Asset Type",
+                  value: assetCards.find((c) => c.type === investmentType)!,
+                  render: (v: typeof assetCards[0]) => (
+                    <span className="font-bold text-white">{v.icon} {isHe ? v.he : v.en}</span>
+                  ),
+                },
+              ].map(({ label, value, render }) => (
+                <div key={label} className="flex justify-between items-center py-3 border-b border-gray-800">
+                  <span className="text-gray-400 text-sm">{label}</span>
+                  {render(value as any)}
+                </div>
+              ))}
+
+              {riskLevel === "AGGRESSIVE" && (allowsVolatile || allowsLeveraged || allowsShort) && (
+                <div className="flex justify-between items-center py-3 border-b border-gray-800">
+                  <span className="text-gray-400 text-sm">{isHe ? "אפשרויות מתקדמות" : "Advanced Options"}</span>
+                  <div className="flex gap-1 flex-wrap justify-end">
+                    {allowsVolatile && <span className="px-2 py-0.5 bg-red-900/50 text-red-300 rounded text-xs">{isHe ? "תנודתיות גבוהה" : "High Vol"}</span>}
+                    {allowsLeveraged && <span className="px-2 py-0.5 bg-red-900/50 text-red-300 rounded text-xs">{isHe ? "ממונף ×2/3" : "Leveraged"}</span>}
+                    {allowsShort && <span className="px-2 py-0.5 bg-red-900/50 text-red-300 rounded text-xs">Short</span>}
+                  </div>
+                </div>
+              )}
+
+              {hasPortfolio && validHoldings.length > 0 && (
+                <div className="flex justify-between items-center py-3 border-b border-gray-800">
+                  <span className="text-gray-400 text-sm">{isHe ? "תיק קיים" : "Existing Portfolio"}</span>
+                  <span className="font-bold text-green-400">{validHoldings.length} {isHe ? "אחזקות" : "holdings"}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Notifications */}
+            <div className="bg-gray-800 rounded-xl p-4 mb-6">
+              <p className="text-sm text-gray-400 mb-3">{isHe ? "ערוצי התראה" : "Notification Channels"}</p>
+              {[
+                { key: "email", he: "דוא\"ל", en: "Email" },
+                { key: "sms", he: "SMS", en: "SMS" },
+                { key: "push", he: "Push", en: "Push" },
+              ].map((ch) => (
+                <div key={ch.key} className="flex items-center justify-between py-2">
+                  <span className="text-sm">{isHe ? ch.he : ch.en}</span>
+                  <button
+                    onClick={() => setNotifications({ ...notifications, [ch.key]: !notifications[ch.key as keyof typeof notifications] })}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${
+                      notifications[ch.key as keyof typeof notifications] ? "bg-blue-600" : "bg-gray-600"
+                    }`}
+                  >
+                    <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${
+                      notifications[ch.key as keyof typeof notifications] ? (isHe ? "right-0.5" : "left-5") : (isHe ? "right-5" : "left-0.5")
+                    }`} />
+                  </button>
+                </div>
+              ))}
+            </div>
 
             {error && (
               <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 mb-4 text-red-300 text-sm">
@@ -389,7 +588,7 @@ const Onboarding: React.FC = () => {
             )}
 
             <div className="flex gap-3">
-              <button onClick={() => setStep(2)} className="flex-1 border border-gray-700 rounded-xl py-3 text-gray-400">
+              <button onClick={() => setStep(3)} className="flex-1 border border-gray-700 rounded-xl py-3 text-gray-400">
                 {isHe ? "חזרה" : "Back"}
               </button>
               <button

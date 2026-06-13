@@ -63,7 +63,10 @@ class ProfileUpdateRequest(BaseModel):
 class OnboardingRequest(BaseModel):
     risk_profile: RiskProfile
     risk_score: int = Field(ge=0, le=100)
-    initial_deposit: float = Field(gt=0)
+    investment_type: str = "BOTH"          # STOCKS | ETFS | BOTH
+    allows_volatile: bool = False
+    allows_leveraged: bool = False
+    allows_short: bool = False
     notification_email: bool = True
     notification_sms: bool = True
     notification_push: bool = True
@@ -78,6 +81,10 @@ class UserResponse(BaseModel):
     risk_score: int
     cash_balance: float
     max_single_asset_exposure: float
+    investment_type: str = "BOTH"
+    allows_volatile: bool = False
+    allows_leveraged: bool = False
+    allows_short: bool = False
     is_active: bool
     is_onboarded: bool
     preferred_language: str
@@ -267,7 +274,10 @@ async def complete_onboarding(
 
     current_user.risk_profile = request.risk_profile
     current_user.risk_score = request.risk_score
-    current_user.cash_balance = request.initial_deposit
+    current_user.investment_type = request.investment_type
+    current_user.allows_volatile = request.allows_volatile
+    current_user.allows_leveraged = request.allows_leveraged
+    current_user.allows_short = request.allows_short
     current_user.notification_email = request.notification_email
     current_user.notification_sms = request.notification_sms
     current_user.notification_push = request.notification_push
@@ -279,7 +289,7 @@ async def complete_onboarding(
         "Onboarding completed",
         user_id=current_user.id,
         risk_profile=request.risk_profile,
-        deposit=request.initial_deposit,
+        investment_type=request.investment_type,
     )
 
     return UserResponse.from_orm(current_user)

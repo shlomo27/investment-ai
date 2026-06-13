@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { fetchPortfolioSummary } from "../store/slices/portfolioSlice";
 import { fetchInbox, fetchUnreadCount } from "../store/slices/notificationsSlice";
-import PriceChart from "../components/Charts/PriceChart";
 
 const Dashboard: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -23,8 +22,40 @@ const Dashboard: React.FC = () => {
 
   const pnlPositive = (summary?.total_pnl || 0) >= 0;
 
+  const riskColors: Record<string, string> = {
+    CONSERVATIVE: "text-green-400",
+    PASSIVE: "text-blue-400",
+    HYBRID: "text-yellow-400",
+    AGGRESSIVE: "text-red-400",
+  };
+
+  const riskLabels: Record<string, { he: string; en: string }> = {
+    CONSERVATIVE: { he: "שמרני", en: "Conservative" },
+    PASSIVE: { he: "פסיבי", en: "Passive" },
+    HYBRID: { he: "סיכון בינוני", en: "Medium Risk" },
+    AGGRESSIVE: { he: "סיכון גבוה", en: "High Risk" },
+  };
+
+  const investmentTypeLabel: Record<string, { he: string; en: string; icon: string }> = {
+    STOCKS: { he: "מניות בלבד", en: "Stocks Only", icon: "📈" },
+    ETFS: { he: "ETF בלבד", en: "ETFs Only", icon: "🗂️" },
+    BOTH: { he: "מניות + ETF", en: "Stocks + ETFs", icon: "🔀" },
+  };
+
+  const getTriggerBadge = (notif: any) => {
+    const trigger = notif.internal_detail?.trigger_type;
+    if (trigger === "PRICE_ALERT") return { label: isHe ? "תנועת מחיר" : "Price Alert", color: "bg-orange-900/50 text-orange-300" };
+    if (trigger === "NEWS_ALERT") return { label: isHe ? "חדשות" : "News Alert", color: "bg-purple-900/50 text-purple-300" };
+    if (trigger === "EARNINGS") return { label: isHe ? "דוח רבעוני" : "Earnings", color: "bg-blue-900/50 text-blue-300" };
+    return null;
+  };
+
+  const riskProfile = user?.risk_profile || "PASSIVE";
+  const invType = (user as any)?.investment_type || "BOTH";
+
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -33,7 +64,7 @@ const Dashboard: React.FC = () => {
           </h1>
           <p className="text-gray-400 text-sm mt-1">
             {new Date().toLocaleDateString(isHe ? "he-IL" : "en-US", {
-              weekday: "long", year: "numeric", month: "long", day: "numeric"
+              weekday: "long", year: "numeric", month: "long", day: "numeric",
             })}
           </p>
         </div>
@@ -46,6 +77,36 @@ const Dashboard: React.FC = () => {
             {isHe ? "הודעות חדשות" : "New Updates"}
           </Link>
         )}
+      </div>
+
+      {/* Profile Strip */}
+      <div className="bg-gray-900 rounded-2xl px-5 py-4 border border-gray-800 flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">{isHe ? "פרופיל:" : "Profile:"}</span>
+          <span className={`font-bold text-sm ${riskColors[riskProfile] || "text-white"}`}>
+            {riskLabels[riskProfile] ? (isHe ? riskLabels[riskProfile].he : riskLabels[riskProfile].en) : riskProfile}
+          </span>
+        </div>
+        <div className="w-px h-4 bg-gray-700" />
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">{isHe ? "נכסים:" : "Assets:"}</span>
+          <span className="text-sm font-medium text-white">
+            {investmentTypeLabel[invType]?.icon} {isHe ? investmentTypeLabel[invType]?.he : investmentTypeLabel[invType]?.en}
+          </span>
+        </div>
+        {(user as any)?.allows_volatile && (
+          <span className="px-2 py-0.5 bg-red-900/40 text-red-300 rounded text-xs">{isHe ? "תנודתיות גבוהה" : "High Volatility"}</span>
+        )}
+        {(user as any)?.allows_leveraged && (
+          <span className="px-2 py-0.5 bg-red-900/40 text-red-300 rounded text-xs">{isHe ? "ממונף" : "Leveraged"}</span>
+        )}
+        {(user as any)?.allows_short && (
+          <span className="px-2 py-0.5 bg-red-900/40 text-red-300 rounded text-xs">Short</span>
+        )}
+        <div className="flex-1" />
+        <Link to="/recommendations" className="text-xs text-blue-400 hover:text-blue-300">
+          {isHe ? "עדכן פרופיל ←" : "Update profile →"}
+        </Link>
       </div>
 
       {/* Portfolio Value Cards */}
@@ -67,16 +128,12 @@ const Dashboard: React.FC = () => {
             <p className="text-2xl font-bold">{formatCurrency(summary.total_market_value)}</p>
           </div>
           <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-            <p className="text-gray-400 text-xs mb-1">{isHe ? "רמת סיכון" : "Risk Level"}</p>
+            <p className="text-gray-400 text-xs mb-1">{isHe ? "ציון סיכון" : "Risk Score"}</p>
             <p className="text-2xl font-bold">
-              <span className={
-                summary.risk_level === "HIGH" ? "text-red-400" :
-                summary.risk_level === "MEDIUM" ? "text-yellow-400" : "text-green-400"
-              }>
-                {summary.risk_level || "N/A"}
+              <span className={riskColors[riskProfile] || "text-white"}>
+                {summary.risk_score ?? user?.risk_score ?? "—"}/100
               </span>
             </p>
-            <p className="text-xs text-gray-500">{isHe ? `ציון: ${summary.risk_score || "N/A"}/100` : `Score: ${summary.risk_score || "N/A"}/100`}</p>
           </div>
         </div>
       )}
@@ -123,7 +180,7 @@ const Dashboard: React.FC = () => {
           )}
         </div>
 
-        {/* Recent Notifications */}
+        {/* Recent Notifications — trigger-aware */}
         <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold">{isHe ? "עדכונים אחרונים" : "Recent Updates"}</h2>
@@ -133,28 +190,38 @@ const Dashboard: React.FC = () => {
           </div>
           {notifications.length > 0 ? (
             <div className="space-y-3">
-              {notifications.slice(0, 4).map((notif) => (
-                <div
-                  key={notif.id}
-                  className={`p-3 rounded-xl border ${
-                    !notif.is_read
-                      ? "border-blue-700/50 bg-blue-900/10"
-                      : "border-gray-800 bg-gray-800/50"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm">
+              {notifications.slice(0, 4).map((notif) => {
+                const badge = getTriggerBadge(notif);
+                return (
+                  <div
+                    key={notif.id}
+                    className={`p-3 rounded-xl border ${
+                      !notif.is_read
+                        ? "border-blue-700/50 bg-blue-900/10"
+                        : "border-gray-800 bg-gray-800/50"
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
                       {!notif.is_read && (
-                        <span className="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1.5 mb-0.5" />
+                        <span className="inline-block w-2 h-2 mt-1.5 bg-blue-400 rounded-full flex-shrink-0" />
                       )}
-                      {notif.title || notif.external_message}
-                    </p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                          {badge && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${badge.color}`}>
+                              {badge.label}
+                            </span>
+                          )}
+                          <p className="text-sm truncate">{notif.title || notif.external_message}</p>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          {new Date(notif.sent_at).toLocaleString(isHe ? "he-IL" : "en-US")}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {new Date(notif.sent_at).toLocaleString(isHe ? "he-IL" : "en-US")}
-                  </p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">

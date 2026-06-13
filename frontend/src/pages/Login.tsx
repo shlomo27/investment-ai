@@ -163,7 +163,7 @@ const Login: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
-                  {isHe ? "טלפון (אופציונלי)" : "Phone (optional)"}
+                  {isHe ? "טלפון" : "Phone"} <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="tel"
@@ -171,7 +171,11 @@ const Login: React.FC = () => {
                   onChange={(e) => setRegisterForm({ ...registerForm, phone: e.target.value })}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500"
                   placeholder="+972-50-000-0000"
+                  required
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  {isHe ? "נדרש לקבלת התראות על המלצות" : "Required for receiving recommendation alerts"}
+                </p>
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
