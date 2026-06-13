@@ -295,7 +295,7 @@ async def complete_onboarding(
     return UserResponse.from_orm(current_user)
 
 
-@router.delete("/admin/delete-all-users")
+@router.get("/admin/delete-all-users")
 async def admin_delete_all_users(
     secret: str,
     db: AsyncSession = Depends(get_db),

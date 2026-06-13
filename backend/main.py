@@ -55,10 +55,33 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+def run_migrations():
+    """Run Alembic migrations synchronously in a separate thread to avoid event loop conflicts."""
+    import threading
+    import os
+
+    def _migrate():
+        try:
+            from alembic.config import Config
+            from alembic import command
+            alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+            command.upgrade(alembic_cfg, "head")
+            logger.info("Alembic migrations applied successfully")
+        except Exception as e:
+            logger.error("Alembic migration failed", error=str(e))
+
+    t = threading.Thread(target=_migrate)
+    t.start()
+    t.join(timeout=60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown."""
     logger.info("Investment AI Platform starting up...", version=settings.APP_VERSION)
+
+    # Run DB migrations on every startup
+    run_migrations()
 
     # Check database connection
     db_ok = await check_db_connection()
@@ -66,7 +89,6 @@ async def lifespan(app: FastAPI):
         logger.error("Database connection failed on startup")
     else:
         logger.info("Database connection verified")
-        # Create tables if they don't exist (development mode)
         if settings.DEBUG:
             await create_tables()
 
