@@ -127,6 +127,9 @@ class AgentWorkflowState(TypedDict):
     # Optional context passed from caller
     portfolio_context: Optional[Dict[str, Any]]
     user_risk_context: Optional[Dict[str, Any]]
+    # What triggered this scan: SCHEDULED | PRICE_ALERT | NEWS_ALERT | EARNINGS | MANUAL
+    trigger_type: Optional[str]
+    trigger_details: Optional[str]
 
 
 class TechnicalWorkflowState(TypedDict):

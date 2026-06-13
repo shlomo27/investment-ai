@@ -55,6 +55,10 @@ class Recommendation(Base):
     senior_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     senior_approved_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
+    # What triggered this scan
+    trigger_type: Mapped[str | None] = mapped_column(String(50), nullable=True, default="SCHEDULED")
+    trigger_details: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Technical Analysis (optional, on-demand)
     technical_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     technical_notes: Mapped[str | None] = mapped_column(Text, nullable=True)

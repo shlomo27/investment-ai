@@ -238,6 +238,8 @@ async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowSt
                 senior_approved_by="senior_committee_v1",
                 risk_factors=fundamental.get("risk_factors"),
                 expected_return_pct=fundamental.get("expected_return_pct"),
+                trigger_type=state.get("trigger_type", "SCHEDULED"),
+                trigger_details=state.get("trigger_details"),
                 approved_at=datetime.now(timezone.utc),
             )
 
@@ -298,9 +300,11 @@ async def node_notify_users(state: AgentWorkflowState) -> AgentWorkflowState:
                         "stop_loss": recommendation.stop_loss if recommendation else None,
                         "fundamental_analysis": state.get("fundamental_analysis"),
                         "senior_notes": state["senior_decision"].get("senior_notes"),
+                        "trigger_type": state.get("trigger_type", "SCHEDULED"),
+                        "trigger_details": state.get("trigger_details"),
                         "sentiment_summary": {
-                            "score": state["data_fetcher_output"].get("social_sentiment", {}).get("score"),
-                            "mentions": state["data_fetcher_output"].get("social_sentiment", {}).get("mentions"),
+                            "score": (state["data_fetcher_output"].get("social_sentiment") or {}).get("score"),
+                            "mentions": (state["data_fetcher_output"].get("social_sentiment") or {}).get("mentions"),
                         },
                     }
                     await notification_service.send_notification(
@@ -360,6 +364,8 @@ async def node_log_rejection(state: AgentWorkflowState) -> AgentWorkflowState:
                     fundamental_analysis={"confidence_score": fundamental.get("confidence_score")},
                     senior_review_notes=senior.get("rejection_reasoning"),
                     senior_notes=senior.get("senior_notes"),
+                    trigger_type=state.get("trigger_type", "SCHEDULED"),
+                    trigger_details=state.get("trigger_details"),
                 )
                 session.add(rejected_rec)
                 await session.commit()
@@ -574,10 +580,12 @@ async def run_investment_workflow(
     exchange: str,
     portfolio_context: Optional[Dict[str, Any]] = None,
     user_risk_context: Optional[Dict[str, Any]] = None,
+    trigger_type: Optional[str] = "SCHEDULED",
+    trigger_details: Optional[str] = None,
 ) -> AgentWorkflowState:
     """
     Entry point for the main investment analysis workflow.
-    Called by Celery workers for scheduled asset pool scanning.
+    Called by Celery workers for scheduled scanning or event-triggered scans.
     """
     workflow = get_main_workflow()
 
@@ -603,6 +611,8 @@ async def run_investment_workflow(
         "recommendation_id": None,
         "portfolio_context": portfolio_context,
         "user_risk_context": user_risk_context,
+        "trigger_type": trigger_type,
+        "trigger_details": trigger_details,
     }
 
     final_state = await workflow.ainvoke(initial_state)

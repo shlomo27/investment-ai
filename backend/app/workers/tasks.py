@@ -362,6 +362,220 @@ def update_portfolio_prices_task():
 
 
 @celery_app.task(
+    name="check_price_movements",
+    queue="default",
+    max_retries=1,
+)
+def check_price_movements_task():
+    """
+    Price watchdog — runs every 15 minutes.
+    Fetches current prices via yfinance (no AI cost).
+    If a stock moves >3% since the last known price → triggers immediate full analysis.
+    """
+    logger.info("check_price_movements_task started")
+
+    PRICE_CHANGE_THRESHOLD = 0.03  # 3%
+
+    async def _run():
+        from app.core.database import AsyncSessionLocal
+        from app.db.models.asset import Asset
+        from app.services.market_data.yahoo_service import YahooFinanceService
+        from sqlalchemy import select
+        from datetime import timedelta
+
+        yahoo = YahooFinanceService()
+        triggered = 0
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(Asset).where(Asset.is_active_in_pool == True))
+            assets = result.scalars().all()
+
+        for asset in assets:
+            try:
+                info = await yahoo.get_stock_info(asset.symbol)
+                current_price = info.get("price") or 0
+                last_price = asset.last_price or 0
+
+                if current_price <= 0 or last_price <= 0:
+                    continue
+
+                change_pct = abs(current_price - last_price) / last_price
+
+                if change_pct >= PRICE_CHANGE_THRESHOLD:
+                    direction = "up" if current_price > last_price else "down"
+                    trigger_details = (
+                        f"Price moved {change_pct:.1%} {direction} "
+                        f"(${last_price:.2f} → ${current_price:.2f})"
+                    )
+                    logger.info(
+                        "Price movement trigger",
+                        symbol=asset.symbol,
+                        change_pct=f"{change_pct:.1%}",
+                        direction=direction,
+                    )
+                    celery_app.send_task(
+                        "scan_single_asset_event",
+                        args=[asset.symbol, asset.exchange.value, "PRICE_ALERT", trigger_details],
+                        queue="scanning",
+                    )
+                    triggered += 1
+
+            except Exception as e:
+                logger.warning("Price check failed", symbol=asset.symbol, error=str(e))
+
+        logger.info("check_price_movements_task done", triggered=triggered)
+        return {"checked": len(assets), "triggered": triggered}
+
+    try:
+        return run_async(_run())
+    except Exception as exc:
+        logger.error("check_price_movements_task failed", error=str(exc))
+
+
+@celery_app.task(
+    name="check_breaking_news",
+    queue="default",
+    max_retries=1,
+)
+def check_breaking_news_task():
+    """
+    News watchdog — runs every 30 minutes.
+    Uses yfinance .news (free) to check headlines for tracked stocks.
+    Significant headlines (earnings, M&A, regulatory, major moves) trigger immediate full analysis.
+    """
+    logger.info("check_breaking_news_task started")
+
+    SIGNIFICANT_KEYWORDS = [
+        # Earnings & financials
+        "earnings", "eps", "quarterly", "revenue", "guidance", "outlook",
+        "beats", "misses", "exceeds", "below expectations", "profit warning",
+        # Corporate events
+        "merger", "acquisition", "takeover", "buyout", "deal", "partnership",
+        "spinoff", "ipo", "bankruptcy", "restructuring",
+        # Management
+        "ceo", "cfo", "resigned", "fired", "appointed", "steps down",
+        # Regulatory / legal
+        "fda", "sec", "lawsuit", "settlement", "fine", "investigation",
+        "recall", "approved", "rejected", "violation",
+        # Market signals
+        "all-time high", "52-week", "downgrade", "upgrade", "target price",
+        "short squeeze", "analyst", "rating",
+    ]
+
+    async def _run():
+        import yfinance as yf
+        from app.core.database import AsyncSessionLocal
+        from app.db.models.asset import Asset
+        from app.db.models.recommendation import Recommendation
+        from sqlalchemy import select
+        from datetime import timedelta
+        import time
+
+        triggered = 0
+        already_triggered_symbols = set()
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(Asset).where(Asset.is_active_in_pool == True))
+            assets = result.scalars().all()
+
+            # Find symbols already scanned in the last 2 hours (avoid duplicate triggers)
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=2)
+            recent_result = await db.execute(
+                select(Recommendation.symbol).where(
+                    Recommendation.created_at >= cutoff,
+                    Recommendation.trigger_type.in_(["NEWS_ALERT", "PRICE_ALERT"]),
+                )
+            )
+            already_triggered_symbols = {row[0] for row in recent_result.all()}
+
+        for asset in assets:
+            if asset.symbol in already_triggered_symbols:
+                continue
+            try:
+                ticker = yf.Ticker(asset.symbol)
+                news_items = ticker.news or []
+
+                for item in news_items[:5]:  # check latest 5 headlines
+                    title = (item.get("title") or "").lower()
+                    matched = [kw for kw in SIGNIFICANT_KEYWORDS if kw in title]
+
+                    if matched:
+                        trigger_details = (
+                            f"Breaking news: \"{item.get('title', '')}\" "
+                            f"(keywords: {', '.join(matched[:3])})"
+                        )
+                        logger.info(
+                            "News trigger detected",
+                            symbol=asset.symbol,
+                            headline=item.get("title", "")[:80],
+                            keywords=matched[:3],
+                        )
+                        celery_app.send_task(
+                            "scan_single_asset_event",
+                            args=[asset.symbol, asset.exchange.value, "NEWS_ALERT", trigger_details],
+                            queue="scanning",
+                        )
+                        triggered += 1
+                        already_triggered_symbols.add(asset.symbol)
+                        break  # one trigger per asset per cycle
+
+            except Exception as e:
+                logger.warning("News check failed", symbol=asset.symbol, error=str(e))
+
+        logger.info("check_breaking_news_task done", triggered=triggered)
+        return {"checked": len(assets), "triggered": triggered}
+
+    try:
+        return run_async(_run())
+    except Exception as exc:
+        logger.error("check_breaking_news_task failed", error=str(exc))
+
+
+@celery_app.task(
+    name="scan_single_asset_event",
+    queue="scanning",
+    max_retries=1,
+)
+def scan_single_asset_event_task(symbol: str, exchange: str, trigger_type: str, trigger_details: str):
+    """
+    Event-triggered deep scan for a single asset.
+    Called by price watchdog or news watchdog when an anomaly is detected.
+    Runs the full AI pipeline and includes trigger_type/trigger_details in the result.
+    """
+    logger.info(
+        "scan_single_asset_event started",
+        symbol=symbol,
+        trigger_type=trigger_type,
+        trigger_details=trigger_details[:100],
+    )
+
+    async def _run():
+        from app.agents.workflow import run_investment_workflow
+        from app.core.database import AsyncSessionLocal
+        from app.db.models.recommendation import Recommendation
+
+        result = await run_investment_workflow(
+            symbol=symbol,
+            exchange=exchange,
+            trigger_type=trigger_type,
+            trigger_details=trigger_details,
+        )
+
+        logger.info(
+            "scan_single_asset_event completed",
+            symbol=symbol,
+            trigger_type=trigger_type,
+            workflow_status=result.get("workflow_status"),
+        )
+        return result
+
+    try:
+        return run_async(_run())
+    except Exception as exc:
+        logger.error("scan_single_asset_event failed", symbol=symbol, error=str(exc))
+
+
+@celery_app.task(
     name="cleanup_old_data",
     queue="cleanup",
 )
