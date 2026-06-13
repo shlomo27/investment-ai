@@ -293,3 +293,25 @@ async def complete_onboarding(
     )
 
     return UserResponse.from_orm(current_user)
+
+
+@router.delete("/admin/delete-all-users")
+async def admin_delete_all_users(
+    secret: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Dev utility — deletes ALL users and their data. Requires ?secret= query param."""
+    from app.core.config import settings
+    if secret != settings.SECRET_KEY[:16]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid secret")
+
+    from sqlalchemy import text
+    await db.execute(text("DELETE FROM notifications"))
+    await db.execute(text("DELETE FROM orders"))
+    await db.execute(text("DELETE FROM portfolio"))
+    await db.execute(text("DELETE FROM watchlist"))
+    await db.execute(text("DELETE FROM users"))
+    await db.commit()
+
+    logger.warning("admin_delete_all_users: all users deleted")
+    return {"deleted": True, "message": "All users deleted. You can now re-register."}
