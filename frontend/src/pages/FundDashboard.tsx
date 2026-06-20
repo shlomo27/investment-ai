@@ -255,9 +255,11 @@ const FundDashboard: React.FC = () => {
               : "Scores universe stocks on valuation, momentum, and analyst sentiment. Activates Top 20 LONG + Top 10 SHORT for full AI analysis."}
           </p>
 
-          {universeStats && (
+          {universeStats && (universeStats.top_long.length > 0 || universeStats.top_short.length > 0) ? (
             <div className="space-y-2 mb-4">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">{isHe ? "מועמדים LONG מובילים" : "Top LONG Candidates"}</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide">
+                {isHe ? "מועמדים LONG מובילים" : "Top LONG Candidates"}
+              </p>
               {universeStats.top_long.slice(0, 5).map((c) => (
                 <div key={c.symbol} className="flex items-center justify-between text-xs">
                   <span className="font-mono font-bold text-white">{c.symbol}</span>
@@ -269,7 +271,9 @@ const FundDashboard: React.FC = () => {
                   </div>
                 </div>
               ))}
-              <p className="text-xs text-gray-500 uppercase tracking-wide mt-3">{isHe ? "מועמדים SHORT מובילים" : "Top SHORT Candidates"}</p>
+              <p className="text-xs text-gray-500 uppercase tracking-wide mt-3">
+                {isHe ? "מועמדים SHORT מובילים" : "Top SHORT Candidates"}
+              </p>
               {universeStats.top_short.slice(0, 5).map((c) => (
                 <div key={c.symbol} className="flex items-center justify-between text-xs">
                   <span className="font-mono font-bold text-white">{c.symbol}</span>
@@ -282,7 +286,17 @@ const FundDashboard: React.FC = () => {
                 </div>
               ))}
             </div>
-          )}
+          ) : universeStats ? (
+            <div className="flex flex-col items-center justify-center py-6 text-center mb-4">
+              <p className="text-2xl mb-2">📭</p>
+              <p className="text-sm text-gray-400 font-medium">
+                {isHe ? "הסקרינר טרם רץ" : "Screener hasn't run yet"}
+              </p>
+              <p className="text-xs text-gray-600 mt-1">
+                {isHe ? "לחץ 'הרץ עכשיו' לבצע סינון ראשוני" : "Click 'Run Now' to score the universe"}
+              </p>
+            </div>
+          ) : null}
 
           {screenerResult && (
             <div className={`p-3 rounded-xl text-xs ${screenerResult.error ? "bg-red-900/20 text-red-400" : "bg-blue-900/20 text-blue-300"}`}>

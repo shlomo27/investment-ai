@@ -367,18 +367,18 @@ async def universe_stats(
         )
     )
     seeded = await db.execute(
-        select(sqlfunc.count(Asset.id)).where(Asset.in_universe == False)
+        select(sqlfunc.count(Asset.id)).where(Asset.is_active_in_pool == True)
     )
 
     top_long_result = await db.execute(
         select(Asset.symbol, Asset.long_score, Asset.direction_bias)
-        .where(Asset.in_universe == True)
+        .where(Asset.is_active_in_pool == True, Asset.direction_bias == "LONG")
         .order_by(Asset.long_score.desc())
         .limit(10)
     )
     top_short_result = await db.execute(
         select(Asset.symbol, Asset.short_score, Asset.direction_bias)
-        .where(Asset.in_universe == True)
+        .where(Asset.is_active_in_pool == True, Asset.direction_bias == "SHORT")
         .order_by(Asset.short_score.desc())
         .limit(10)
     )
