@@ -900,30 +900,50 @@ class TechnicalAnalystAgent:
             base_price = float(close.iloc[-20])
             slope_pct = slope / base_price * 100 if base_price else 0
 
-            # Strong uptrend = MARKUP
-            if ma50 and ma200 and slope_pct > 0.3 and current > ma50 and ma50 > ma200:
-                return "MARKUP"
+            # 90-day high/low for context
+            lookback = min(90, len(close))
+            high_90 = float(close.tail(lookback).max())
+            low_90 = float(close.tail(lookback).min())
+            range_90 = high_90 - low_90
+            pos_in_90 = (current - low_90) / range_90 * 100 if range_90 > 0 else 50
 
-            # Strong downtrend = MARKDOWN
-            if ma50 and ma200 and slope_pct < -0.3 and current < ma50 and ma50 < ma200:
-                return "MARKDOWN"
+            # MARKUP: upward trending + above MA50 (MA200 not required)
+            if slope_pct > 0.15 and ma50 and current > ma50:
+                # If we also have MA200 confirmation, it's even stronger
+                if ma200 and ma50 > ma200:
+                    return "MARKUP"
+                # Without MA200 but position in upper half and trending up
+                if pos_in_90 > 55:
+                    return "MARKUP"
 
-            # Flat range detection
+            # MARKDOWN: downward trending + below MA50
+            if slope_pct < -0.15 and ma50 and current < ma50:
+                if ma200 and ma50 < ma200:
+                    return "MARKDOWN"
+                if pos_in_90 < 45:
+                    return "MARKDOWN"
+
+            # Flat range detection — wider 15% threshold
             high_20 = float(close.tail(20).max())
             low_20 = float(close.tail(20).min())
-            range_pct = (high_20 - low_20) / low_20 * 100 if low_20 else 0
+            range_pct = (high_20 - low_20) / low_20 * 100 if low_20 else 100
 
-            if range_pct < 8:  # tight consolidation range
-                # Use 52-week position to distinguish accumulation vs distribution
-                high_52w = float(df["High"].tail(252).max())
-                low_52w = float(df["Low"].tail(252).min())
-                range_52w = high_52w - low_52w
-                if range_52w > 0:
-                    pos_in_52w = (current - low_52w) / range_52w * 100
-                    if pos_in_52w < 35:
-                        return "ACCUMULATION"
-                    if pos_in_52w > 65:
-                        return "DISTRIBUTION"
+            if range_pct < 15:
+                # Use 90-day position to distinguish accumulation vs distribution
+                if pos_in_90 < 35:
+                    return "ACCUMULATION"
+                if pos_in_90 > 65:
+                    return "DISTRIBUTION"
+
+            # Weaker trend signals (slope < threshold but still directional)
+            if slope_pct > 0.05 and pos_in_90 > 60:
+                return "MARKUP"
+            if slope_pct < -0.05 and pos_in_90 < 40:
+                return "MARKDOWN"
+            if pos_in_90 < 30:
+                return "ACCUMULATION"
+            if pos_in_90 > 70:
+                return "DISTRIBUTION"
 
             return "UNKNOWN"
         except Exception as e:
