@@ -47,11 +47,13 @@ class YahooFinanceService:
     # Public async interface
     # ------------------------------------------------------------------
 
-    async def get_stock_info(self, symbol: str) -> Dict[str, Any]:
+    async def get_stock_info(self, symbol: str, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Fetch comprehensive stock info including price and fundamentals.
         Returns normalized dict for use in agent state.
         """
+        if force_refresh:
+            _INFO_CACHE.pop(symbol, None)
         try:
             ticker_data = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: self._fetch_ticker_info(symbol)

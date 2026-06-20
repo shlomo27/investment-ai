@@ -244,7 +244,8 @@ const TechnicalAnalysisPage: React.FC = () => {
       setLoading(false);
       const ta = data.technical_analysis as TechnicalAnalysis | null;
       const hasFailed = ta?.error || ta?.signal_reasoning?.includes("Analysis failed") || ta?.signal_reasoning?.includes("No current price");
-      if (!ta || hasFailed) runAnalysis(data);
+      const hasNoData = ta && (!ta.analysis_breakdown || ta.analysis_breakdown.length === 0) && ta.technical_score === 50;
+      if (!ta || hasFailed || hasNoData) runAnalysis(data);
     }).catch(() => navigate("/recommendations"));
   }, [id]);
 

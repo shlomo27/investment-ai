@@ -531,7 +531,12 @@ class TechnicalAnalystAgent:
         """
         stock: dict = {}
         try:
-            stock = await self.yahoo_service.get_stock_info(symbol)
+            # force_refresh=True ensures we bypass the 5-min cache so we
+            # always get fresh fast_info data (year_high, year_low, MA50/200)
+            stock = await self.yahoo_service.get_stock_info(symbol, force_refresh=True)
+            logger.info("info-derived: got stock data", symbol=symbol,
+                        price=stock.get("price"), high52=stock.get("fifty_two_week_high"),
+                        low52=stock.get("fifty_two_week_low"), ma50=stock.get("ma_50"))
         except Exception as e:
             logger.warning("get_stock_info failed in info-derived analysis, using fallback", symbol=symbol, error=str(e))
 
