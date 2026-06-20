@@ -278,6 +278,15 @@ export interface TechnicalAnalysis {
   week52_change_pct?: number;
   analyst_consensus_mean?: number;
   short_interest_pct?: number;
+  // Charting data (price history + indicator series)
+  price_history?: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }>;
+  ma20_series?: Array<{ date: string; value: number }>;
+  ma50_series?: Array<{ date: string; value: number }>;
+  ma200_series?: Array<{ date: string; value: number }>;
+  bb_upper_series?: Array<{ date: string; value: number }>;
+  bb_lower_series?: Array<{ date: string; value: number }>;
+  rsi_series?: Array<{ date: string; value: number }>;
+  macd_series?: Array<{ date: string; value: number }>;
 }
 
 export interface Recommendation {

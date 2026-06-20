@@ -161,6 +161,79 @@ class TechnicalAnalystAgent:
                 "wyckoff_phase": wyckoff,
             }
 
+            # Attach price history + indicator series for frontend charting (last 90 bars)
+            try:
+                chart_bars = df.tail(90)
+                price_history = []
+                for idx, row in chart_bars.iterrows():
+                    date_str = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)[:10]
+                    price_history.append({
+                        "date": date_str,
+                        "open":   round(float(row["Open"]),   2),
+                        "high":   round(float(row["High"]),   2),
+                        "low":    round(float(row["Low"]),    2),
+                        "close":  round(float(row["Close"]),  2),
+                        "volume": int(row["Volume"]),
+                    })
+                result["price_history"] = price_history
+
+                # Pre-compute indicator series over the same 90-bar window
+                closes = df["Close"]
+                dates  = [i.strftime("%Y-%m-%d") if hasattr(i, "strftime") else str(i)[:10] for i in df.index]
+                start  = max(0, len(df) - 90)
+
+                # MA20, MA50, MA200 series
+                for period, key in [(20, "ma20_series"), (50, "ma50_series"), (200, "ma200_series")]:
+                    if len(closes) >= period:
+                        ma = closes.rolling(period).mean()
+                        series = []
+                        for i in range(start, len(df)):
+                            v = float(ma.iloc[i])
+                            if not pd.isna(v):
+                                series.append({"date": dates[i], "value": round(v, 2)})
+                        result[key] = series
+
+                # Bollinger Bands series (period=20, std=2)
+                if HAS_PANDAS_TA:
+                    bb = ta.bbands(closes, length=20, std=2)
+                    if bb is not None and not bb.empty:
+                        bb_upper, bb_lower = [], []
+                        for i in range(start, len(df)):
+                            upper = float(bb["BBU_20_2.0"].iloc[i]) if i < len(bb) else None
+                            lower = float(bb["BBL_20_2.0"].iloc[i]) if i < len(bb) else None
+                            if upper and not pd.isna(upper):
+                                bb_upper.append({"date": dates[i], "value": round(upper, 2)})
+                            if lower and not pd.isna(lower):
+                                bb_lower.append({"date": dates[i], "value": round(lower, 2)})
+                        result["bb_upper_series"] = bb_upper
+                        result["bb_lower_series"] = bb_lower
+
+                # RSI series
+                if HAS_PANDAS_TA:
+                    rsi_vals = ta.rsi(closes, length=14)
+                    if rsi_vals is not None and not rsi_vals.empty:
+                        rsi_series = []
+                        for i in range(start, len(df)):
+                            v = float(rsi_vals.iloc[i]) if i < len(rsi_vals) else None
+                            if v is not None and not pd.isna(v):
+                                rsi_series.append({"date": dates[i], "value": round(v, 1)})
+                        result["rsi_series"] = rsi_series
+
+                # MACD histogram series
+                if HAS_PANDAS_TA:
+                    macd_result = ta.macd(closes, fast=12, slow=26, signal=9)
+                    if macd_result is not None and not macd_result.empty:
+                        macd_series = []
+                        for i in range(start, len(df)):
+                            v = float(macd_result["MACDh_12_26_9"].iloc[i]) if i < len(macd_result) else None
+                            if v is not None and not pd.isna(v):
+                                macd_series.append({"date": dates[i], "value": round(v, 4)})
+                        result["macd_series"] = macd_series
+
+            except Exception as e:
+                logger.warning("Failed to build price history for charting", error=str(e))
+                result["price_history"] = []
+
             logger.info(
                 "TechnicalAnalystAgent completed",
                 symbol=symbol,

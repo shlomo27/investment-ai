@@ -11,6 +11,7 @@ import {
   OrderType, AnalysisModule, FibonacciLevels,
 } from "../types";
 import ConfirmTradeModal from "../components/Trading/ConfirmTradeModal";
+import CandlestickChart from "../components/Charts/CandlestickChart";
 
 // ─── Signal colours ─────────────────────────────────────────────────────────
 
@@ -361,6 +362,9 @@ const TechnicalAnalysisPage: React.FC = () => {
           <button onClick={() => rec && runAnalysis(rec)} className="ml-4 text-red-300 hover:text-white underline">RE-RUN</button>
         </div>
       )}
+
+      {/* Candlestick chart — full width above grid */}
+      {ta && <CandlestickChart ta={ta} symbol={rec.symbol} />}
 
       {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
