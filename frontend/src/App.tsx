@@ -17,6 +17,7 @@ import FundDashboard from "./pages/FundDashboard";
 import Portfolio from "./pages/Portfolio";
 import Recommendations from "./pages/Recommendations";
 import ResearchReport from "./pages/ResearchReport";
+import TechnicalAnalysisPage from "./pages/TechnicalAnalysisPage";
 import Orders from "./pages/Orders";
 import Watchlist from "./pages/Watchlist";
 
@@ -179,6 +180,16 @@ const App: React.FC = () => {
             <ProtectedRoute>
               <AppLayout>
                 <ResearchReport />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/technical/:id"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <TechnicalAnalysisPage />
               </AppLayout>
             </ProtectedRoute>
           }

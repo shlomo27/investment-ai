@@ -488,169 +488,136 @@ class TechnicalAnalystAgent:
     async def _analyze_from_info(self, symbol: str, exchange: str) -> Dict[str, Any]:
         """
         Derive technical signals from yfinance .info when historical OHLCV is unavailable.
-        Uses static metrics: 52w range position, MA50/MA200, analyst consensus, short interest.
-        Returns a result flagged with data_source='info_derived'.
+        Uses self.yahoo_service.get_stock_info() which uses fast_info (v8) + caching —
+        the same reliable path the DataFetcher already uses successfully.
         """
+        try:
+            stock = await self.yahoo_service.get_stock_info(symbol)
+        except Exception as e:
+            return self._error_result(symbol, f"Data unavailable: {e}")
+
+        current = stock.get("price") or 0
+        if not current:
+            return self._error_result(symbol, "No current price available from any source")
+
+        high_52w = stock.get("fifty_two_week_high") or 0
+        low_52w  = stock.get("fifty_two_week_low")  or 0
+        short_pct = stock.get("short_interest")
+        analyst_rec = stock.get("analyst_recommendation")
+
+        # Try to supplement with MA50/MA200 from raw info
+        ma50 = ma200 = year_change = rec_mean = None
         try:
             from app.services.market_data.yahoo_service import _make_session
             import yfinance as yf
             session = _make_session()
-            info = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: yf.Ticker(symbol, session=session).info
+            raw = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: yf.Ticker(symbol, session=session).info or {}
             )
-            if not info:
-                return self._error_result(symbol, "No data available from any source")
+            ma50        = raw.get("fiftyDayAverage")
+            ma200       = raw.get("twoHundredDayAverage")
+            year_change = raw.get("52WeekChange")
+            rec_mean    = raw.get("recommendationMean")
+        except Exception:
+            pass
 
-            current = info.get("currentPrice") or info.get("regularMarketPrice")
-            if not current:
-                return self._error_result(symbol, "No current price available")
+        score = 50.0
+        reasons: list = []
 
-            high_52w = info.get("fiftyTwoWeekHigh")
-            low_52w = info.get("fiftyTwoWeekLow")
-            ma50 = info.get("fiftyDayAverage")
-            ma200 = info.get("twoHundredDayAverage")
-            year_change = info.get("52WeekChange") or 0.0
-            avg_vol = info.get("averageVolume") or 0
-            avg_vol_10d = info.get("averageVolume10days") or 0
-            rec_mean = info.get("recommendationMean")  # 1=Strong Buy … 5=Sell
-            short_pct = info.get("shortPercentOfFloat")
+        pos_52w: float | None = None
+        if high_52w and low_52w and (high_52w - low_52w) > 0:
+            pos_52w = (current - low_52w) / (high_52w - low_52w) * 100
+            if pos_52w < 25:
+                score += 12; reasons.append(f"Near 52w low ({pos_52w:.0f}% range)")
+            elif pos_52w > 80:
+                score -= 10; reasons.append(f"Near 52w high ({pos_52w:.0f}% range)")
 
-            score = 50.0
-            reasons: list[str] = []
-
-            # 52-week position (0=near low, 100=near high) — momentum proxy
-            pos_52w: float | None = None
-            if high_52w and low_52w and (high_52w - low_52w) > 0:
-                pos_52w = (current - low_52w) / (high_52w - low_52w) * 100
-                if pos_52w < 25:
-                    score += 12
-                    reasons.append(f"Near 52w low ({pos_52w:.0f}% range position — mean-reversion setup)")
-                elif pos_52w > 80:
-                    score -= 10
-                    reasons.append(f"Near 52w high ({pos_52w:.0f}% range position — stretched)")
-
-            # Moving average structure
-            ma_trend = None
-            golden_cross = None
-            death_cross = None
-            if ma50 and ma200:
-                if ma50 > ma200:
-                    ma_trend = "BULLISH"
-                    golden_cross = True
-                    death_cross = False
-                    score += 10
-                    reasons.append("50MA above 200MA (bullish structure)")
-                else:
-                    ma_trend = "BEARISH"
-                    golden_cross = False
-                    death_cross = True
-                    score -= 10
-                    reasons.append("50MA below 200MA (bearish structure)")
-
-            if current and ma50:
-                if current > ma50:
-                    score += 5
-                    reasons.append("Price above 50MA")
-                else:
-                    score -= 5
-                    reasons.append("Price below 50MA")
-
-            # Year momentum
-            if year_change > 0.25:
-                score += 8
-                reasons.append(f"Strong 52w momentum (+{year_change*100:.0f}%)")
-            elif year_change < -0.20:
-                score -= 8
-                reasons.append(f"Weak 52w momentum ({year_change*100:.0f}%)")
-
-            # Analyst consensus
-            if rec_mean:
-                if rec_mean <= 2.0:
-                    score += 10
-                    reasons.append(f"Analyst consensus: Strong Buy (mean {rec_mean:.1f})")
-                elif rec_mean <= 2.5:
-                    score += 5
-                    reasons.append(f"Analyst consensus: Buy (mean {rec_mean:.1f})")
-                elif rec_mean >= 3.5:
-                    score -= 8
-                    reasons.append(f"Analyst consensus: Hold/Sell (mean {rec_mean:.1f})")
-
-            # Short interest
-            if short_pct:
-                if short_pct > 0.15:
-                    score -= 5
-                    reasons.append(f"High short interest ({short_pct*100:.1f}%)")
-                elif short_pct < 0.02:
-                    score += 3
-                    reasons.append(f"Low short interest ({short_pct*100:.1f}%)")
-
-            # Volume trend (10d avg vs overall avg)
-            vol_ratio: float | None = None
-            if avg_vol > 0 and avg_vol_10d > 0:
-                vol_ratio = avg_vol_10d / avg_vol
-                if vol_ratio > 1.3:
-                    reasons.append(f"Elevated recent volume ({vol_ratio:.1f}x avg)")
-
-            score = max(0.0, min(100.0, score))
-
-            if score >= 72:
-                signal, strength = "STRONG_BUY", "STRONG"
-            elif score >= 60:
-                signal, strength = "BUY_NOW", "MODERATE"
-            elif score <= 28:
-                signal, strength = "STRONG_SELL", "STRONG"
-            elif score <= 40:
-                signal, strength = "SELL_NOW", "MODERATE"
+        ma_trend = golden_cross = death_cross = None
+        if ma50 and ma200:
+            if ma50 > ma200:
+                ma_trend, golden_cross, death_cross = "BULLISH", True, False
+                score += 10; reasons.append("50MA above 200MA (bullish)")
             else:
-                signal, strength = "WAIT", "WEAK"
+                ma_trend, golden_cross, death_cross = "BEARISH", False, True
+                score -= 10; reasons.append("50MA below 200MA (bearish)")
+        if current and ma50:
+            if current > ma50:
+                score += 5; reasons.append("Price above 50MA")
+            else:
+                score -= 5; reasons.append("Price below 50MA")
 
-            patterns: list[str] = []
-            if year_change > 0.10:
-                patterns.append("UPTREND_52W")
-            elif year_change < -0.10:
-                patterns.append("DOWNTREND_52W")
-            if pos_52w is not None and pos_52w < 20:
-                patterns.append("NEAR_52W_LOW")
-            elif pos_52w is not None and pos_52w > 85:
-                patterns.append("NEAR_52W_HIGH")
-            if short_pct and short_pct > 0.10:
-                patterns.append(f"HIGH_SHORT_INTEREST")
+        if year_change is not None:
+            if year_change > 0.25:
+                score += 8; reasons.append(f"Strong 52w momentum (+{year_change*100:.0f}%)")
+            elif year_change < -0.20:
+                score -= 8; reasons.append(f"Weak 52w momentum ({year_change*100:.0f}%)")
 
-            return {
-                "symbol": symbol,
-                "exchange": exchange,
-                "analysis_timestamp": datetime.now(timezone.utc).isoformat(),
-                "current_price": float(current),
-                "rsi_14": round(pos_52w, 1) if pos_52w is not None else None,
-                "rsi_signal": "OVERSOLD" if (pos_52w or 50) < 30 else "OVERBOUGHT" if (pos_52w or 50) > 70 else "NEUTRAL",
-                "ma_50": float(ma50) if ma50 else None,
-                "ma_200": float(ma200) if ma200 else None,
-                "ma_trend": ma_trend,
-                "golden_cross": golden_cross,
-                "death_cross": death_cross,
-                "volume_ratio": vol_ratio,
-                "chart_patterns": [p for p in patterns if p],
-                "support_levels": [round(float(low_52w) * 1.01, 2)] if low_52w else [],
-                "resistance_levels": [round(float(high_52w) * 0.99, 2)] if high_52w else [],
-                "nearest_support": round(float(low_52w) * 1.01, 2) if low_52w else None,
-                "nearest_resistance": round(float(high_52w) * 0.99, 2) if high_52w else None,
-                "timing_signal": signal,
-                "technical_score": round(score, 1),
-                "signal_strength": strength,
-                "signal_reasoning": "; ".join(reasons) if reasons else "No strong signals from static indicators",
-                "data_source": "info_derived",
-                "data_bars": 0,
-                # Extra fields for UI display
-                "week52_high": float(high_52w) if high_52w else None,
-                "week52_low": float(low_52w) if low_52w else None,
-                "week52_change_pct": round(year_change * 100, 1),
-                "analyst_consensus_mean": float(rec_mean) if rec_mean else None,
-                "short_interest_pct": round(float(short_pct) * 100, 1) if short_pct else None,
-            }
+        if rec_mean is not None:
+            if rec_mean <= 2.0:
+                score += 10; reasons.append(f"Strong analyst consensus (mean {rec_mean:.1f})")
+            elif rec_mean <= 2.5:
+                score += 5;  reasons.append(f"Buy consensus (mean {rec_mean:.1f})")
+            elif rec_mean >= 3.5:
+                score -= 8;  reasons.append(f"Weak consensus (mean {rec_mean:.1f})")
+        elif analyst_rec:
+            if analyst_rec in ("buy", "strong_buy"):
+                score += 8; reasons.append(f"Analyst: {analyst_rec}")
+            elif analyst_rec in ("sell", "strong_sell"):
+                score -= 8; reasons.append(f"Analyst: {analyst_rec}")
 
-        except Exception as e:
-            logger.error("Info-derived analysis failed", symbol=symbol, error=str(e))
-            return self._error_result(symbol, str(e))
+        if short_pct:
+            if short_pct > 0.15:
+                score -= 5; reasons.append(f"High short interest ({short_pct*100:.1f}%)")
+            elif short_pct < 0.02:
+                score += 3; reasons.append(f"Low short interest ({short_pct*100:.1f}%)")
+
+        score = max(0.0, min(100.0, score))
+
+        if score >= 72:   signal, strength = "STRONG_BUY",  "STRONG"
+        elif score >= 60: signal, strength = "BUY_NOW",     "MODERATE"
+        elif score <= 28: signal, strength = "STRONG_SELL", "STRONG"
+        elif score <= 40: signal, strength = "SELL_NOW",    "MODERATE"
+        else:             signal, strength = "WAIT",        "WEAK"
+
+        patterns: list = []
+        if year_change is not None:
+            if year_change > 0.10:  patterns.append("UPTREND_52W")
+            elif year_change < -0.10: patterns.append("DOWNTREND_52W")
+        if pos_52w is not None:
+            if pos_52w < 20:   patterns.append("NEAR_52W_LOW")
+            elif pos_52w > 85: patterns.append("NEAR_52W_HIGH")
+        if short_pct and short_pct > 0.10:
+            patterns.append("HIGH_SHORT_INTEREST")
+
+        return {
+            "symbol": symbol,
+            "exchange": exchange,
+            "analysis_timestamp": datetime.now(timezone.utc).isoformat(),
+            "current_price": float(current),
+            "rsi_14": round(pos_52w, 1) if pos_52w is not None else None,
+            "rsi_signal": "OVERSOLD" if (pos_52w or 50) < 30 else "OVERBOUGHT" if (pos_52w or 50) > 70 else "NEUTRAL",
+            "ma_50": float(ma50) if ma50 else None,
+            "ma_200": float(ma200) if ma200 else None,
+            "ma_trend": ma_trend,
+            "golden_cross": golden_cross,
+            "death_cross": death_cross,
+            "chart_patterns": patterns,
+            "support_levels": [round(float(low_52w) * 1.01, 2)] if low_52w else [],
+            "resistance_levels": [round(float(high_52w) * 0.99, 2)] if high_52w else [],
+            "nearest_support": round(float(low_52w) * 1.01, 2) if low_52w else None,
+            "nearest_resistance": round(float(high_52w) * 0.99, 2) if high_52w else None,
+            "timing_signal": signal,
+            "technical_score": round(score, 1),
+            "signal_strength": strength,
+            "signal_reasoning": "; ".join(reasons) if reasons else "Derived from static indicators",
+            "data_source": "info_derived",
+            "data_bars": 0,
+            "week52_high": float(high_52w) if high_52w else None,
+            "week52_low":  float(low_52w)  if low_52w  else None,
+            "week52_change_pct": round(year_change * 100, 1) if year_change is not None else None,
+            "analyst_consensus_mean": float(rec_mean) if rec_mean else None,
+            "short_interest_pct": round(float(short_pct) * 100, 1) if short_pct else None,
+        }
 
     def _error_result(self, symbol: str, error: str) -> Dict[str, Any]:
         return {
