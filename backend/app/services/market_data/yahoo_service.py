@@ -281,6 +281,35 @@ class YahooFinanceService:
         except Exception as e:
             logger.debug("ticker.info unavailable", symbol=symbol, error=str(e))
 
+        # --- Tertiary: v7 quote API for 52w/MA when fast_info didn't supply them ---
+        # fast_info.year_high uses a different internal call than last_price and
+        # may return 0 on Railway even when last_price works fine.
+        if (year_high_fast == 0 or year_low_fast == 0) and not info.get("fiftyTwoWeekHigh"):
+            try:
+                q_resp = requests.get(
+                    "https://query2.finance.yahoo.com/v7/finance/quote",
+                    params={
+                        "symbols": symbol,
+                        "fields": "fiftyTwoWeekHigh,fiftyTwoWeekLow,fiftyDayAverage,"
+                                  "twoHundredDayAverage,recommendationMean,shortPercentOfFloat",
+                    },
+                    headers={"User-Agent": "Mozilla/5.0 (compatible)"},
+                    timeout=8,
+                )
+                q_result = q_resp.json().get("quoteResponse", {}).get("result", [{}])[0]
+                year_high_fast = float(q_result.get("fiftyTwoWeekHigh") or 0) or year_high_fast
+                year_low_fast  = float(q_result.get("fiftyTwoWeekLow")  or 0) or year_low_fast
+                ma50_fast      = float(q_result.get("fiftyDayAverage")  or 0) or ma50_fast
+                ma200_fast     = float(q_result.get("twoHundredDayAverage") or 0) or ma200_fast
+                if not info.get("shortPercentOfFloat"):
+                    info["shortPercentOfFloat"] = q_result.get("shortPercentOfFloat")
+                if not info.get("recommendationMean"):
+                    info["recommendationMean"] = q_result.get("recommendationMean")
+                logger.info("v7 quote fallback succeeded", symbol=symbol,
+                            high52=year_high_fast, low52=year_low_fast, ma50=ma50_fast, ma200=ma200_fast)
+            except Exception as e:
+                logger.debug("v7 quote fallback failed", symbol=symbol, error=str(e))
+
         # Prefer fast_info price; fall back to info fields
         if price == 0.0:
             price = float(
