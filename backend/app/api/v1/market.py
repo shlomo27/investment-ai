@@ -320,3 +320,80 @@ async def seed_pool(
     from app.db.seed import seed_asset_pool
     result = await seed_asset_pool(db)
     return result
+
+
+@router.post("/universe/load")
+async def load_universe_endpoint(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Load S&P 500 + S&P 400 constituents into the universe (admin action)."""
+    from app.workers.universe_loader import load_universe
+    result = await load_universe(db)
+    return result
+
+
+@router.post("/universe/screen")
+async def run_screener_endpoint(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run the pre-screener now: scores universe, activates top LONG/SHORT candidates."""
+    from app.workers.pre_screener import run_pre_screener
+    result = await run_pre_screener(db)
+    return result
+
+
+@router.get("/universe/stats")
+async def universe_stats(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return universe size, active pool counts, and top-scored candidates."""
+    from sqlalchemy import func as sqlfunc
+    from app.db.models.asset import Asset
+
+    total_universe = await db.execute(
+        select(sqlfunc.count(Asset.id)).where(Asset.in_universe == True)
+    )
+    active_long = await db.execute(
+        select(sqlfunc.count(Asset.id)).where(
+            Asset.is_active_in_pool == True, Asset.direction_bias == "LONG"
+        )
+    )
+    active_short = await db.execute(
+        select(sqlfunc.count(Asset.id)).where(
+            Asset.is_active_in_pool == True, Asset.direction_bias == "SHORT"
+        )
+    )
+    seeded = await db.execute(
+        select(sqlfunc.count(Asset.id)).where(Asset.in_universe == False)
+    )
+
+    top_long_result = await db.execute(
+        select(Asset.symbol, Asset.long_score, Asset.direction_bias)
+        .where(Asset.in_universe == True)
+        .order_by(Asset.long_score.desc())
+        .limit(10)
+    )
+    top_short_result = await db.execute(
+        select(Asset.symbol, Asset.short_score, Asset.direction_bias)
+        .where(Asset.in_universe == True)
+        .order_by(Asset.short_score.desc())
+        .limit(10)
+    )
+
+    return {
+        "universe_total": total_universe.scalar(),
+        "seeded_pool": seeded.scalar(),
+        "active_long": active_long.scalar(),
+        "active_short": active_short.scalar(),
+        "top_long": [
+            {"symbol": r[0], "long_score": r[1], "direction": r[2]}
+            for r in top_long_result.fetchall()
+        ],
+        "top_short": [
+            {"symbol": r[0], "short_score": r[1], "direction": r[2]}
+            for r in top_short_result.fetchall()
+        ],
+    }

@@ -48,6 +48,20 @@ celery_app.conf.beat_schedule = {
         "options": {"queue": "default"},
     },
 
+    # Pre-screener at 08:00 Israel time (05:00 UTC) — scores universe, activates pool
+    "pre-screener-daily-0800": {
+        "task": "run_pre_screener",
+        "schedule": crontab(hour=5, minute=0),  # 05:00 UTC = 08:00 IL
+        "options": {"queue": "scanning"},
+    },
+
+    # Weekly universe refresh on Sunday 07:00 IL (04:00 UTC) — loads S&P500 + S&P400
+    "universe-refresh-weekly-sunday": {
+        "task": "load_universe",
+        "schedule": crontab(hour=4, minute=0, day_of_week=0),  # Sunday 04:00 UTC = 07:00 IL
+        "options": {"queue": "scanning"},
+    },
+
     # Daily cleanup at 2 AM Israel time (UTC+3)
     "daily-cleanup": {
         "task": "cleanup_old_data",

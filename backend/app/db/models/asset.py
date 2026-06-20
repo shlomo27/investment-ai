@@ -33,6 +33,19 @@ class RiskLevel(str, enum.Enum):
     VERY_HIGH = "VERY_HIGH"
 
 
+class CapTier(str, enum.Enum):
+    LARGE = "LARGE"    # >$10B
+    MID = "MID"        # $2B–$10B
+    SMALL = "SMALL"    # $300M–$2B
+    MICRO = "MICRO"    # <$300M
+
+
+class DirectionBias(str, enum.Enum):
+    LONG = "LONG"
+    SHORT = "SHORT"
+    NEUTRAL = "NEUTRAL"
+
+
 class Asset(Base):
     __tablename__ = "assets"
 
@@ -51,9 +64,18 @@ class Asset(Base):
     pe_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
     dividend_yield: Mapped[float | None] = mapped_column(Float, nullable=True)
     beta: Mapped[float | None] = mapped_column(Float, nullable=True)
-    sentiment_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)  # -1 to 1
-    fundamental_score: Mapped[float] = mapped_column(Float, default=50.0, nullable=False)  # 0-100
-    technical_score: Mapped[float | None] = mapped_column(Float, nullable=True)  # 0-100
+    sentiment_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    fundamental_score: Mapped[float] = mapped_column(Float, default=50.0, nullable=False)
+    technical_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Universe / screener fields
+    cap_tier: Mapped[str] = mapped_column(String(10), nullable=False, default="LARGE")  # LARGE/MID/SMALL/MICRO
+    in_universe: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    direction_bias: Mapped[str] = mapped_column(String(10), nullable=False, default="NEUTRAL")  # LONG/SHORT/NEUTRAL
+    long_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)   # 0-100 screener score
+    short_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)  # 0-100 screener score
+    screener_activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     last_analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     added_to_pool_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     removed_from_pool_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
