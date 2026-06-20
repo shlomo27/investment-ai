@@ -242,7 +242,9 @@ const TechnicalAnalysisPage: React.FC = () => {
     recommendationsApi.getRecommendation(Number(id)).then(data => {
       setRec(data);
       setLoading(false);
-      if (!data.technical_analysis) runAnalysis(data);
+      const ta = data.technical_analysis as TechnicalAnalysis | null;
+      const hasFailed = ta?.error || ta?.signal_reasoning?.includes("Analysis failed") || ta?.signal_reasoning?.includes("No current price");
+      if (!ta || hasFailed) runAnalysis(data);
     }).catch(() => navigate("/recommendations"));
   }, [id]);
 
@@ -348,6 +350,13 @@ const TechnicalAnalysisPage: React.FC = () => {
         <div className="bg-blue-950/30 border border-blue-800/30 rounded-xl px-5 py-3 text-xs text-blue-400 tracking-wider flex items-center gap-3">
           <div className="animate-spin w-3 h-3 border border-blue-400 border-t-transparent rounded-full" />
           RUNNING FULL TECHNICAL ANALYSIS — CANDLESTICKS · FIBONACCI · WYCKOFF · INDICATORS…
+        </div>
+      )}
+
+      {!running && ta?.error && (
+        <div className="bg-red-950/20 border border-red-800/30 rounded-xl px-5 py-3 text-xs text-red-400 tracking-wider flex items-center justify-between">
+          <span>⚠ PREVIOUS ANALYSIS FAILED: {ta.error} — click RE-RUN ANALYSIS to retry</span>
+          <button onClick={() => rec && runAnalysis(rec)} className="ml-4 text-red-300 hover:text-white underline">RE-RUN</button>
         </div>
       )}
 
