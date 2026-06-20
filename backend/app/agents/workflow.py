@@ -494,6 +494,7 @@ async def node_technical_fetch_and_analyze(state: TechnicalWorkflowState) -> Tec
         analysis = await agent.analyze(
             symbol=state["asset_symbol"],
             exchange=state["exchange"],
+            fallback_price=state.get("fallback_price"),
         )
         return {
             **state,
@@ -628,6 +629,7 @@ async def run_technical_workflow(
     exchange: str,
     watchlist_item_id: Optional[int] = None,
     user_id: Optional[int] = None,
+    fallback_price: Optional[float] = None,
 ) -> TechnicalWorkflowState:
     """
     Entry point for on-demand technical analysis.
@@ -644,6 +646,7 @@ async def run_technical_workflow(
         "workflow_status": "running",
         "watchlist_item_id": watchlist_item_id,
         "user_id": user_id,
+        "fallback_price": fallback_price,
     }
 
     final_state = await workflow.ainvoke(initial_state)

@@ -143,3 +143,4 @@ class TechnicalWorkflowState(TypedDict):
     workflow_status: str
     watchlist_item_id: Optional[int]
     user_id: Optional[int]
+    fallback_price: Optional[float]

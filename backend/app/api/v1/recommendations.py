@@ -310,6 +310,7 @@ async def request_technical_analysis(
         symbol=rec.symbol,
         exchange=exchange,
         user_id=current_user.id,
+        fallback_price=float(rec.current_price_at_recommendation) if rec.current_price_at_recommendation else None,
     )
 
     if technical_result.get("technical_analysis"):

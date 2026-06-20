@@ -33,7 +33,7 @@ class TechnicalAnalystAgent:
         self.yahoo_service = YahooFinanceService()
         self.tase_service = TASEService()
 
-    async def analyze(self, symbol: str, exchange: str, period: str = "6mo") -> Dict[str, Any]:
+    async def analyze(self, symbol: str, exchange: str, period: str = "6mo", fallback_price: float | None = None) -> Dict[str, Any]:
         """
         Main analysis method. Fetches historical data and computes all technical indicators.
         Returns structured technical analysis dict.
@@ -50,7 +50,7 @@ class TechnicalAnalystAgent:
 
             if df is None or df.empty:
                 logger.warning("No historical price bars, falling back to info-derived analysis", symbol=symbol)
-                return await self._analyze_from_info(symbol, exchange)
+                return await self._analyze_from_info(symbol, exchange, fallback_price=fallback_price)
 
             # Ensure required columns
             required_cols = ["Open", "High", "Low", "Close", "Volume"]
@@ -485,18 +485,22 @@ class TechnicalAnalystAgent:
             return "APPROACHING_OVERBOUGHT"
         return "NEUTRAL"
 
-    async def _analyze_from_info(self, symbol: str, exchange: str) -> Dict[str, Any]:
+    async def _analyze_from_info(self, symbol: str, exchange: str, fallback_price: float | None = None) -> Dict[str, Any]:
         """
         Derive technical signals from yfinance .info when historical OHLCV is unavailable.
         Uses self.yahoo_service.get_stock_info() which uses fast_info (v8) + caching —
         the same reliable path the DataFetcher already uses successfully.
         """
+        stock: dict = {}
         try:
             stock = await self.yahoo_service.get_stock_info(symbol)
         except Exception as e:
-            return self._error_result(symbol, f"Data unavailable: {e}")
+            logger.warning("get_stock_info failed in info-derived analysis, using fallback", symbol=symbol, error=str(e))
 
         current = stock.get("price") or 0
+        if not current and fallback_price:
+            current = fallback_price
+            logger.info("Using fallback_price for technical analysis", symbol=symbol, price=current)
         if not current:
             return self._error_result(symbol, "No current price available from any source")
 
