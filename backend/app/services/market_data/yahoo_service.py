@@ -310,6 +310,52 @@ class YahooFinanceService:
             except Exception as e:
                 logger.debug("v7 quote fallback failed", symbol=symbol, error=str(e))
 
+        # --- Quaternary: direct v8 chart HTTP when v7 also failed ---
+        # fast_info.last_price uses this exact endpoint; the meta object also
+        # contains fiftyTwoWeekHigh / fiftyTwoWeekLow in most cases.
+        if year_high_fast == 0 or year_low_fast == 0:
+            try:
+                v8_resp = requests.get(
+                    f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}",
+                    params={"interval": "1d", "range": "5d"},
+                    headers={
+                        "User-Agent": (
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/124.0.0.0 Safari/537.36"
+                        ),
+                        "Accept": "application/json",
+                    },
+                    timeout=10,
+                )
+                v8_meta = v8_resp.json()["chart"]["result"][0]["meta"]
+                v8_high = float(v8_meta.get("fiftyTwoWeekHigh") or 0)
+                v8_low  = float(v8_meta.get("fiftyTwoWeekLow")  or 0)
+                v8_ma50  = float(v8_meta.get("fiftyDayAverage")       or 0)
+                v8_ma200 = float(v8_meta.get("twoHundredDayAverage")  or 0)
+                v8_price = float(v8_meta.get("regularMarketPrice") or v8_meta.get("chartPreviousClose") or 0)
+                if year_high_fast == 0:
+                    year_high_fast = v8_high
+                if year_low_fast == 0:
+                    year_low_fast = v8_low
+                if ma50_fast == 0:
+                    ma50_fast = v8_ma50
+                if ma200_fast == 0:
+                    ma200_fast = v8_ma200
+                if price == 0 and v8_price > 0:
+                    price = v8_price
+                logger.info(
+                    "v8 chart direct HTTP succeeded",
+                    symbol=symbol,
+                    high52=year_high_fast,
+                    low52=year_low_fast,
+                    ma50=ma50_fast,
+                    ma200=ma200_fast,
+                    price=price,
+                )
+            except Exception as e:
+                logger.debug("v8 chart direct HTTP failed", symbol=symbol, error=str(e))
+
         # Prefer fast_info price; fall back to info fields
         if price == 0.0:
             price = float(
@@ -423,11 +469,12 @@ class YahooFinanceService:
             "exchange": info.get("exchange", "NASDAQ"),
         }
 
-        # --- Tertiary: Alpha Vantage fallback when Yahoo is rate-limited ---
-        # Trigger if price is missing OR if 52-week data couldn't be fetched
+        # --- Quaternary: Alpha Vantage fallback when Yahoo is rate-limited ---
+        # Trigger if price is missing OR if 52-week data couldn't be fetched.
+        # Pass existing_price so AV can skip GLOBAL_QUOTE and save API quota.
         missing_range = result["fifty_two_week_high"] == 0 or result["fifty_two_week_low"] == 0
         if price == 0.0 or (missing_range and price > 0):
-            av_data = self._fetch_alpha_vantage_info(symbol)
+            av_data = self._fetch_alpha_vantage_info(symbol, existing_price=price if price > 0 else 0.0)
             if av_data:
                 if price > 0:
                     # Merge: keep our live price but fill in AV overview data for range/MA
@@ -440,8 +487,13 @@ class YahooFinanceService:
         _INFO_CACHE[symbol] = (now, result)
         return result
 
-    def _fetch_alpha_vantage_info(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Fetch stock info from Alpha Vantage when Yahoo Finance is rate-limited."""
+    def _fetch_alpha_vantage_info(self, symbol: str, existing_price: float = 0.0) -> Optional[Dict[str, Any]]:
+        """Fetch stock info from Alpha Vantage when Yahoo Finance is rate-limited.
+
+        When existing_price is provided we skip the GLOBAL_QUOTE call to save
+        the API quota (25 req/day on the free tier) and jump straight to OVERVIEW
+        for 52-week range / MA data.
+        """
         from app.core.config import settings
         api_key = settings.ALPHA_VANTAGE_KEY
         if not api_key:
@@ -449,19 +501,24 @@ class YahooFinanceService:
             return None
 
         try:
-            quote_resp = requests.get(
-                "https://www.alphavantage.co/query",
-                params={"function": "GLOBAL_QUOTE", "symbol": symbol, "apikey": api_key},
-                timeout=15,
-            )
-            gq = quote_resp.json().get("Global Quote", {})
-            price = self._safe_float(gq.get("05. price")) or 0.0
-            if not price:
-                logger.warning("Alpha Vantage returned no price", symbol=symbol)
-                return None
+            price = existing_price
+            previous_close = 0.0
+            volume = 0
 
-            previous_close = self._safe_float(gq.get("08. previous close")) or 0.0
-            volume = int(float(gq.get("06. volume") or 0))
+            if not price:
+                quote_resp = requests.get(
+                    "https://www.alphavantage.co/query",
+                    params={"function": "GLOBAL_QUOTE", "symbol": symbol, "apikey": api_key},
+                    timeout=15,
+                )
+                gq = quote_resp.json().get("Global Quote", {})
+                price = self._safe_float(gq.get("05. price")) or 0.0
+                if not price:
+                    logger.warning("Alpha Vantage returned no price", symbol=symbol)
+                    return None
+
+                previous_close = self._safe_float(gq.get("08. previous close")) or 0.0
+                volume = int(float(gq.get("06. volume") or 0))
 
             overview_resp = requests.get(
                 "https://www.alphavantage.co/query",
