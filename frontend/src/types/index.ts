@@ -246,7 +246,14 @@ export interface TechnicalAnalysis {
   signal_strength: "WEAK" | "MODERATE" | "STRONG";
   signal_reasoning: string;
   data_bars?: number;
+  data_source?: "bars" | "info_derived";
   error?: string;
+  // info-derived extras
+  week52_high?: number;
+  week52_low?: number;
+  week52_change_pct?: number;
+  analyst_consensus_mean?: number;
+  short_interest_pct?: number;
 }
 
 export interface Recommendation {
