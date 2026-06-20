@@ -64,7 +64,34 @@ def run_migrations():
         try:
             from alembic.config import Config
             from alembic import command
+            from sqlalchemy import create_engine, inspect, text
+
             alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "alembic.ini"))
+
+            # Use sync psycopg2 URL
+            db_url = settings.DATABASE_URL.replace(
+                "postgresql+asyncpg://", "postgresql+psycopg2://"
+            )
+            engine = create_engine(db_url, pool_pre_ping=True)
+
+            try:
+                with engine.connect() as conn:
+                    inspector = inspect(engine)
+                    has_users = inspector.has_table("users")
+                    has_alembic = inspector.has_table("alembic_version")
+
+                    if has_users and not has_alembic:
+                        # Tables were created by SQLAlchemy create_all() without Alembic.
+                        # Stamp at 001 so Alembic knows the base schema is in place,
+                        # then upgrade will run 002, 003, 004 to add new columns.
+                        logger.warning(
+                            "DB tables exist without Alembic tracking. "
+                            "Stamping at revision 001 then upgrading."
+                        )
+                        command.stamp(alembic_cfg, "001")
+            finally:
+                engine.dispose()
+
             command.upgrade(alembic_cfg, "head")
             logger.info("Alembic migrations applied successfully")
         except Exception as e:
@@ -72,7 +99,7 @@ def run_migrations():
 
     t = threading.Thread(target=_migrate)
     t.start()
-    t.join(timeout=60)
+    t.join(timeout=90)
 
 
 @asynccontextmanager
