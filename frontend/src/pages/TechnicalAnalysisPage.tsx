@@ -429,11 +429,53 @@ const TechnicalAnalysisPage: React.FC = () => {
           </div>
 
           {/* Wyckoff */}
-          {wyckoff && (
+          {wyckoff && ta && (
             <div className={`rounded-2xl border p-4 ${wyckoff.color}`}>
-              <p className="text-xs tracking-widest mb-1 opacity-70">WYCKOFF METHOD</p>
-              <p className="font-black text-sm tracking-widest">{wyckoff.label}</p>
-              <p className="text-xs mt-1 opacity-60 leading-relaxed">{wyckoff.desc}</p>
+              <p className="text-xs tracking-widest mb-2 opacity-60">WYCKOFF METHOD · MARKET PHASE</p>
+              {/* Phase cycle indicator */}
+              <div className="flex items-center gap-1 mb-3">
+                {(["ACCUMULATION","MARKUP","DISTRIBUTION","MARKDOWN"] as const).map(ph => (
+                  <div key={ph} className="flex-1 flex flex-col items-center gap-1">
+                    <div className={`h-2 w-full rounded-full transition-all ${
+                      ph === ta.wyckoff_phase
+                        ? (ph === "ACCUMULATION" || ph === "MARKUP" ? "bg-green-400" : "bg-red-400")
+                        : "bg-white/10"
+                    }`} />
+                    <span className={`text-[9px] tracking-widest ${ph === ta.wyckoff_phase ? "opacity-80" : "opacity-20"}`}>
+                      {ph.slice(0, 4)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="font-black text-base tracking-widest mb-2">{wyckoff.label}</p>
+              <p className="text-xs opacity-60 leading-relaxed mb-3">{wyckoff.desc}</p>
+              {/* Key metrics */}
+              <div className="grid grid-cols-2 gap-2 text-xs border-t border-white/10 pt-3">
+                {ta.ma_trend && (
+                  <div>
+                    <p className="opacity-40 tracking-wider mb-0.5">MA ALIGNMENT</p>
+                    <p className={`font-bold ${ta.ma_trend === "BULLISH" ? "text-green-400" : "text-red-400"}`}>{ta.ma_trend}</p>
+                  </div>
+                )}
+                {ta.ma_50 && ta.current_price && (
+                  <div>
+                    <p className="opacity-40 tracking-wider mb-0.5">PRICE vs MA50</p>
+                    <p className={`font-bold ${ta.current_price > ta.ma_50 ? "text-green-400" : "text-red-400"}`}>
+                      {ta.current_price > ta.ma_50 ? `+${((ta.current_price/ta.ma_50-1)*100).toFixed(1)}% ABOVE` : `-${((1-ta.current_price/ta.ma_50)*100).toFixed(1)}% BELOW`}
+                    </p>
+                  </div>
+                )}
+                {ta.golden_cross && <div><p className="opacity-40 tracking-wider mb-0.5">CROSS</p><p className="font-bold text-green-400">GOLDEN ✓</p></div>}
+                {ta.death_cross  && <div><p className="opacity-40 tracking-wider mb-0.5">CROSS</p><p className="font-bold text-red-400">DEATH ✓</p></div>}
+                {ta.volume_ratio != null && (
+                  <div>
+                    <p className="opacity-40 tracking-wider mb-0.5">VOLUME RATIO</p>
+                    <p className={`font-bold ${ta.volume_ratio > 1.2 ? "text-green-400" : ta.volume_ratio < 0.8 ? "text-red-400" : "opacity-70"}`}>
+                      {ta.volume_ratio.toFixed(2)}× avg
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -460,19 +502,44 @@ const TechnicalAnalysisPage: React.FC = () => {
           {/* Chart patterns */}
           {chartPatterns.length > 0 && (
             <div className="bg-gray-900 rounded-2xl border border-gray-800 p-4">
-              <p className="text-xs text-gray-600 tracking-widest mb-3">CHART PATTERNS</p>
-              <div className="flex flex-wrap gap-1.5">
-                {chartPatterns.map(p => (
-                  <span key={p} className={`text-xs px-2 py-1 rounded border font-bold tracking-wider ${
-                    p.includes("UP") || p.includes("LOW") || p.includes("GOLDEN")
-                      ? "bg-green-950/40 text-green-400 border-green-900/40"
-                      : p.includes("DOWN") || p.includes("HIGH") || p.includes("DEATH")
-                      ? "bg-red-950/40 text-red-400 border-red-900/40"
-                      : "bg-gray-800/60 text-gray-400 border-gray-700/40"
-                  }`}>
-                    {p.replace(/_/g, " ")}
-                  </span>
-                ))}
+              <p className="text-xs text-gray-600 tracking-widest mb-3">CHART PATTERNS · {chartPatterns.length} DETECTED</p>
+              <div className="space-y-2">
+                {chartPatterns.map(p => {
+                  const isBull = p.includes("UP") || p.includes("LOW") || p.includes("GOLDEN") || p.includes("OVERSOLD") || p.includes("BREAKOUT");
+                  const isBear = p.includes("DOWN") || p.includes("HIGH") || p.includes("DEATH") || p.includes("OVERBOUGHT") || p.includes("BREAKDOWN");
+                  const desc: Record<string, string> = {
+                    UPTREND_20D:       "Price rising consistently over 20 sessions",
+                    DOWNTREND_20D:     "Sustained selling pressure over 20 sessions",
+                    CONSOLIDATION_20D: "Price coiling in a tight range — breakout imminent",
+                    GOLDEN_CROSS:      "MA50 crossed above MA200 — major bull signal",
+                    DEATH_CROSS:       "MA50 crossed below MA200 — major bear signal",
+                    NEAR_52W_HIGH:     "Extended near yearly high — momentum but watch for exhaustion",
+                    NEAR_52W_LOW:      "Near yearly low — potential reversal / value zone",
+                    OVERBOUGHT:        "RSI > 70 — pullback risk increasing",
+                    OVERSOLD:          "RSI < 30 — bounce zone, potential reversal",
+                    HIGH_VOLUME_DAY:   "Volume spike detected — institutional activity",
+                    BREAKOUT_HIGH:     "Broke above resistance on elevated volume",
+                    BREAKDOWN_LOW:     "Broke below support — momentum turning bearish",
+                  };
+                  return (
+                    <div key={p} className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border ${
+                      isBull ? "bg-green-950/20 border-green-900/30" : isBear ? "bg-red-950/20 border-red-900/30" : "bg-gray-800/40 border-gray-700/30"
+                    }`}>
+                      <span className={`text-lg leading-none mt-0.5 ${isBull ? "text-green-500" : isBear ? "text-red-500" : "text-gray-500"}`}>
+                        {isBull ? "▲" : isBear ? "▼" : "◆"}
+                      </span>
+                      <div>
+                        <p className={`text-xs font-bold tracking-wider mb-0.5 ${isBull ? "text-green-400" : isBear ? "text-red-400" : "text-gray-400"}`}>
+                          {p.replace(/_/g, " ")}
+                        </p>
+                        <p className="text-xs text-gray-600 leading-relaxed">{desc[p] ?? "Pattern detected in recent price action"}</p>
+                      </div>
+                      <span className={`ml-auto text-xs font-bold flex-shrink-0 ${isBull ? "text-green-600" : isBear ? "text-red-600" : "text-gray-600"}`}>
+                        {isBull ? "BULL" : isBear ? "BEAR" : "NEUT"}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
