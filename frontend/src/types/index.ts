@@ -216,6 +216,25 @@ export interface SentimentData {
   reddit_post_count: number;
 }
 
+export interface AnalysisModule {
+  name: string;
+  category: "TREND" | "MOMENTUM" | "VOLATILITY" | "VOLUME" | "PATTERN" | "STRUCTURE";
+  signal: "BULLISH" | "BEARISH" | "NEUTRAL";
+  score_impact: number;
+  detail: string;
+}
+
+export interface FibonacciLevels {
+  swing_high: number;
+  swing_low: number;
+  level_236: number;
+  level_382: number;
+  level_500: number;
+  level_618: number;
+  level_786: number;
+  current_zone?: string;
+}
+
 export interface TechnicalAnalysis {
   symbol: string;
   analysis_timestamp: string;
@@ -237,9 +256,14 @@ export interface TechnicalAnalysis {
   ma_trend?: "BULLISH" | "BEARISH";
   golden_cross?: boolean;
   death_cross?: boolean;
+  volume_ratio?: number;
   support_levels: number[];
   resistance_levels: number[];
   chart_patterns: string[];
+  candlestick_patterns?: string[];
+  wyckoff_phase?: string;
+  fibonacci_levels?: FibonacciLevels;
+  analysis_breakdown?: AnalysisModule[];
   timing_signal: TechnicalSignal;
   entry_price?: number;
   technical_score: number;

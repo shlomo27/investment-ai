@@ -69,6 +69,39 @@ class TechnicalAnalystAgent:
             patterns = self._detect_patterns(df)
             signal = self._determine_signal(indicators, support, resistance, df)
 
+            # New analysis modules
+            candlestick_data: List[Dict] = []
+            fib_data: Dict[str, Any] = {}
+            wyckoff: str = "UNKNOWN"
+            breakdown: List[Dict] = []
+            try:
+                candlestick_data = self._detect_candlestick_patterns(df)
+            except Exception as e:
+                logger.warning("Candlestick detection failed", error=str(e))
+            try:
+                fib_data = self._fibonacci_levels(df)
+            except Exception as e:
+                logger.warning("Fibonacci calculation failed", error=str(e))
+            try:
+                wyckoff = self._wyckoff_phase(df, indicators)
+            except Exception as e:
+                logger.warning("Wyckoff phase detection failed", error=str(e))
+            try:
+                breakdown = self._build_analysis_breakdown(indicators, patterns, candlestick_data, fib_data, support, resistance, df)
+            except Exception as e:
+                logger.warning("Analysis breakdown build failed", error=str(e))
+
+            # Adjust signal score based on candlestick patterns
+            try:
+                for c in candlestick_data:
+                    if c["signal"] == "BULLISH":
+                        signal["score"] += 8 if c["strength"] == "STRONG" else 5
+                    elif c["signal"] == "BEARISH":
+                        signal["score"] -= 8 if c["strength"] == "STRONG" else 5
+                signal["score"] = max(0, min(100, signal["score"]))
+            except Exception:
+                pass
+
             result = {
                 "symbol": symbol,
                 "exchange": exchange,
@@ -121,6 +154,11 @@ class TechnicalAnalystAgent:
                 "signal_strength": signal["strength"],  # WEAK | MODERATE | STRONG
                 "signal_reasoning": signal["reasoning"],
                 "data_bars": len(df),
+                # New analysis modules
+                "analysis_breakdown": breakdown,
+                "fibonacci_levels": fib_data,
+                "candlestick_patterns": [c["name"] for c in candlestick_data],
+                "wyckoff_phase": wyckoff,
             }
 
             logger.info(
@@ -593,6 +631,89 @@ class TechnicalAnalystAgent:
         if short_pct and short_pct > 0.10:
             patterns.append("HIGH_SHORT_INTEREST")
 
+        # Simplified analysis breakdown for info-derived analysis
+        info_breakdown: list = []
+        try:
+            if pos_52w is not None:
+                range_signal = "BULLISH" if pos_52w < 25 else ("BEARISH" if pos_52w > 80 else "NEUTRAL")
+                range_impact = 12 if pos_52w < 25 else (-10 if pos_52w > 80 else 0)
+                info_breakdown.append({
+                    "name": "52-Week Range",
+                    "category": "STRUCTURE",
+                    "signal": range_signal,
+                    "score_impact": range_impact,
+                    "detail": f"Price at {pos_52w:.0f}% of 52-week range",
+                })
+            if ma_trend:
+                ma_signal = "BULLISH" if ma_trend == "BULLISH" else "BEARISH"
+                ma_impact = 10 if ma_trend == "BULLISH" else -10
+                info_breakdown.append({
+                    "name": "Moving Averages",
+                    "category": "TREND",
+                    "signal": ma_signal,
+                    "score_impact": ma_impact,
+                    "detail": "50MA above 200MA" if ma_trend == "BULLISH" else "50MA below 200MA",
+                })
+            if ma50 and current:
+                price_vs_ma50_signal = "BULLISH" if current > ma50 else "BEARISH"
+                price_vs_ma50_impact = 5 if current > ma50 else -5
+                info_breakdown.append({
+                    "name": "Price vs 50MA",
+                    "category": "TREND",
+                    "signal": price_vs_ma50_signal,
+                    "score_impact": price_vs_ma50_impact,
+                    "detail": f"Price {'above' if current > ma50 else 'below'} 50MA ({ma50:.2f})",
+                })
+            if year_change is not None:
+                yc_signal = "BULLISH" if year_change > 0.25 else ("BEARISH" if year_change < -0.20 else "NEUTRAL")
+                yc_impact = 8 if year_change > 0.25 else (-8 if year_change < -0.20 else 0)
+                info_breakdown.append({
+                    "name": "52-Week Momentum",
+                    "category": "MOMENTUM",
+                    "signal": yc_signal,
+                    "score_impact": yc_impact,
+                    "detail": f"52-week price change: {year_change * 100:.1f}%",
+                })
+            if rec_mean is not None:
+                if rec_mean <= 2.0:
+                    an_signal, an_impact = "BULLISH", 10
+                    an_detail = f"Strong analyst consensus (mean {rec_mean:.1f})"
+                elif rec_mean <= 2.5:
+                    an_signal, an_impact = "BULLISH", 5
+                    an_detail = f"Buy consensus (mean {rec_mean:.1f})"
+                elif rec_mean >= 3.5:
+                    an_signal, an_impact = "BEARISH", -8
+                    an_detail = f"Weak consensus (mean {rec_mean:.1f})"
+                else:
+                    an_signal, an_impact = "NEUTRAL", 0
+                    an_detail = f"Neutral analyst consensus (mean {rec_mean:.1f})"
+                info_breakdown.append({
+                    "name": "Analyst Consensus",
+                    "category": "MOMENTUM",
+                    "signal": an_signal,
+                    "score_impact": an_impact,
+                    "detail": an_detail,
+                })
+            if short_pct:
+                if short_pct > 0.15:
+                    si_signal, si_impact = "BEARISH", -5
+                    si_detail = f"High short interest ({short_pct * 100:.1f}%)"
+                elif short_pct < 0.02:
+                    si_signal, si_impact = "BULLISH", 3
+                    si_detail = f"Low short interest ({short_pct * 100:.1f}%)"
+                else:
+                    si_signal, si_impact = "NEUTRAL", 0
+                    si_detail = f"Moderate short interest ({short_pct * 100:.1f}%)"
+                info_breakdown.append({
+                    "name": "Short Interest",
+                    "category": "VOLUME",
+                    "signal": si_signal,
+                    "score_impact": si_impact,
+                    "detail": si_detail,
+                })
+        except Exception as e:
+            logger.warning("Error building info-derived breakdown", error=str(e))
+
         return {
             "symbol": symbol,
             "exchange": exchange,
@@ -621,7 +742,545 @@ class TechnicalAnalystAgent:
             "week52_change_pct": round(year_change * 100, 1) if year_change is not None else None,
             "analyst_consensus_mean": float(rec_mean) if rec_mean else None,
             "short_interest_pct": round(float(short_pct) * 100, 1) if short_pct else None,
+            "analysis_breakdown": info_breakdown,
         }
+
+    def _detect_candlestick_patterns(self, df: pd.DataFrame) -> List[Dict]:
+        """Detect candlestick patterns from the last 5 candles using raw OHLC math."""
+        detected: List[Dict] = []
+        try:
+            if len(df) < 5:
+                return detected
+
+            # Determine short-term trend (last 10 candles slope)
+            close = df["Close"]
+            trend_window = min(10, len(close))
+            slope = np.polyfit(range(trend_window), close.tail(trend_window).values, 1)[0]
+            in_uptrend = slope > 0
+            in_downtrend = slope < 0
+
+            last5 = df.tail(5).reset_index(drop=True)
+
+            for i in range(len(last5)):
+                o = float(last5["Open"].iloc[i])
+                h = float(last5["High"].iloc[i])
+                l = float(last5["Low"].iloc[i])
+                c = float(last5["Close"].iloc[i])
+                body = abs(c - o)
+                candle_range = h - l
+
+                if candle_range <= 0:
+                    continue
+
+                upper_wick = h - max(o, c)
+                lower_wick = min(o, c) - l
+
+                # Doji: very small body relative to range
+                if body < 0.1 * candle_range:
+                    detected.append({"name": "DOJI", "signal": "NEUTRAL", "strength": "WEAK"})
+
+                # Hammer: long lower wick, small upper wick, in downtrend
+                if body > 0 and lower_wick > 2 * body and upper_wick < 0.3 * body and in_downtrend:
+                    detected.append({"name": "HAMMER", "signal": "BULLISH", "strength": "MODERATE"})
+
+                # Shooting Star: long upper wick, small lower wick, in uptrend
+                if body > 0 and upper_wick > 2 * body and lower_wick < 0.3 * body and in_uptrend:
+                    detected.append({"name": "SHOOTING_STAR", "signal": "BEARISH", "strength": "MODERATE"})
+
+            # Engulfing patterns (need at least 2 candles)
+            for i in range(1, len(last5)):
+                po = float(last5["Open"].iloc[i - 1])
+                pc = float(last5["Close"].iloc[i - 1])
+                co = float(last5["Open"].iloc[i])
+                cc = float(last5["Close"].iloc[i])
+
+                prev_body_top = max(po, pc)
+                prev_body_bot = min(po, pc)
+                curr_body_top = max(co, cc)
+                curr_body_bot = min(co, cc)
+
+                # Bullish Engulfing
+                if (pc < po and cc > co and  # prev bearish, curr bullish
+                        curr_body_top > prev_body_top and curr_body_bot < prev_body_bot):
+                    detected.append({"name": "BULLISH_ENGULFING", "signal": "BULLISH", "strength": "STRONG"})
+
+                # Bearish Engulfing
+                if (pc > po and cc < co and  # prev bullish, curr bearish
+                        curr_body_top > prev_body_top and curr_body_bot < prev_body_bot):
+                    detected.append({"name": "BEARISH_ENGULFING", "signal": "BEARISH", "strength": "STRONG"})
+
+            # Morning Star (3-candle: bearish, doji/small, bullish closing above midpoint of first)
+            if len(last5) >= 3:
+                # Use last 3 candles
+                c1o = float(last5["Open"].iloc[-3]); c1c = float(last5["Close"].iloc[-3])
+                c2o = float(last5["Open"].iloc[-2]); c2c = float(last5["Close"].iloc[-2])
+                c2h = float(last5["High"].iloc[-2]); c2l = float(last5["Low"].iloc[-2])
+                c3o = float(last5["Open"].iloc[-1]); c3c = float(last5["Close"].iloc[-1])
+
+                c1_bearish = c1c < c1o
+                c1_body = abs(c1c - c1o)
+                c2_body = abs(c2c - c2o)
+                c2_range = c2h - c2l
+                c2_small = c2_range > 0 and c2_body < 0.3 * c2_range
+                c3_bullish = c3c > c3o
+                c1_midpoint = (c1o + c1c) / 2
+
+                if c1_bearish and c2_small and c3_bullish and c3c > c1_midpoint:
+                    detected.append({"name": "MORNING_STAR", "signal": "BULLISH", "strength": "STRONG"})
+
+                # Evening Star (3-candle: bullish, small, bearish closing below midpoint of first)
+                c1_bullish = c1c > c1o
+                c3_bearish = c3c < c3o
+
+                if c1_bullish and c2_small and c3_bearish and c3c < c1_midpoint:
+                    detected.append({"name": "EVENING_STAR", "signal": "BEARISH", "strength": "STRONG"})
+
+        except Exception as e:
+            logger.warning("Error detecting candlestick patterns", error=str(e))
+
+        return detected
+
+    def _fibonacci_levels(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate Fibonacci retracement levels from the last 90 candles."""
+        try:
+            window = min(90, len(df))
+            recent = df.tail(window)
+            swing_high = float(recent["High"].max())
+            swing_low = float(recent["Low"].min())
+            diff = swing_high - swing_low
+
+            if diff <= 0:
+                return {}
+
+            level_236 = swing_high - 0.236 * diff
+            level_382 = swing_high - 0.382 * diff
+            level_500 = swing_high - 0.500 * diff
+            level_618 = swing_high - 0.618 * diff
+            level_786 = swing_high - 0.786 * diff
+
+            current_price = float(df["Close"].iloc[-1])
+            levels = {
+                "NEAR_236": level_236,
+                "NEAR_382": level_382,
+                "NEAR_500": level_500,
+                "NEAR_618": level_618,
+                "NEAR_786": level_786,
+            }
+            current_zone = None
+            for zone_name, level_price in levels.items():
+                if level_price > 0 and abs(current_price - level_price) / level_price < 0.015:
+                    current_zone = zone_name
+                    break
+
+            return {
+                "swing_high": round(swing_high, 4),
+                "swing_low": round(swing_low, 4),
+                "level_236": round(level_236, 4),
+                "level_382": round(level_382, 4),
+                "level_500": round(level_500, 4),
+                "level_618": round(level_618, 4),
+                "level_786": round(level_786, 4),
+                "current_zone": current_zone,
+            }
+        except Exception as e:
+            logger.warning("Error calculating Fibonacci levels", error=str(e))
+            return {}
+
+    def _wyckoff_phase(self, df: pd.DataFrame, indicators: Dict[str, Any]) -> str:
+        """Determine Wyckoff market phase based on price action and volume."""
+        try:
+            close = df["Close"]
+            current = float(close.iloc[-1])
+            ma50 = indicators.get("ma_50")
+            ma200 = indicators.get("ma_200")
+
+            if len(close) < 20:
+                return "UNKNOWN"
+
+            # Trend strength: slope of last 20 closes
+            slope = np.polyfit(range(20), close.tail(20).values, 1)[0]
+            base_price = float(close.iloc[-20])
+            slope_pct = slope / base_price * 100 if base_price else 0
+
+            # Strong uptrend = MARKUP
+            if ma50 and ma200 and slope_pct > 0.3 and current > ma50 and ma50 > ma200:
+                return "MARKUP"
+
+            # Strong downtrend = MARKDOWN
+            if ma50 and ma200 and slope_pct < -0.3 and current < ma50 and ma50 < ma200:
+                return "MARKDOWN"
+
+            # Flat range detection
+            high_20 = float(close.tail(20).max())
+            low_20 = float(close.tail(20).min())
+            range_pct = (high_20 - low_20) / low_20 * 100 if low_20 else 0
+
+            if range_pct < 8:  # tight consolidation range
+                # Use 52-week position to distinguish accumulation vs distribution
+                high_52w = float(df["High"].tail(252).max())
+                low_52w = float(df["Low"].tail(252).min())
+                range_52w = high_52w - low_52w
+                if range_52w > 0:
+                    pos_in_52w = (current - low_52w) / range_52w * 100
+                    if pos_in_52w < 35:
+                        return "ACCUMULATION"
+                    if pos_in_52w > 65:
+                        return "DISTRIBUTION"
+
+            return "UNKNOWN"
+        except Exception as e:
+            logger.warning("Error determining Wyckoff phase", error=str(e))
+            return "UNKNOWN"
+
+    def _build_analysis_breakdown(
+        self,
+        indicators: Dict[str, Any],
+        patterns: List[str],
+        candlesticks: List[Dict],
+        fib_data: Dict[str, Any],
+        support: List[float],
+        resistance: List[float],
+        df: pd.DataFrame,
+    ) -> List[Dict]:
+        """Build structured breakdown of each analysis module."""
+        breakdown: List[Dict] = []
+        current_price = float(df["Close"].iloc[-1])
+
+        try:
+            # 1. Moving Averages (TREND)
+            ma_trend = indicators.get("ma_trend")
+            ma50 = indicators.get("ma_50")
+            ma200 = indicators.get("ma_200")
+            golden = indicators.get("golden_cross", False)
+            death = indicators.get("death_cross", False)
+            ma_signal = "NEUTRAL"
+            ma_score = 0
+            ma_details = []
+            if ma_trend == "BULLISH":
+                ma_signal = "BULLISH"
+                ma_score = 10
+                ma_details.append("50MA above 200MA")
+            elif ma_trend == "BEARISH":
+                ma_signal = "BEARISH"
+                ma_score = -10
+                ma_details.append("50MA below 200MA")
+            if golden:
+                ma_score += 15
+                ma_details.append("Golden cross recently occurred")
+            if death:
+                ma_score -= 15
+                ma_details.append("Death cross recently occurred")
+            if ma50 and current_price > ma50:
+                ma_details.append(f"Price above 50MA ({ma50:.2f})")
+            elif ma50:
+                ma_details.append(f"Price below 50MA ({ma50:.2f})")
+            breakdown.append({
+                "name": "Moving Averages",
+                "category": "TREND",
+                "signal": ma_signal,
+                "score_impact": max(-25, min(25, ma_score)),
+                "detail": "; ".join(ma_details) if ma_details else "No MA data available",
+            })
+        except Exception:
+            pass
+
+        try:
+            # 2. RSI (MOMENTUM)
+            rsi = indicators.get("rsi_14")
+            rsi_signal = "NEUTRAL"
+            rsi_score = 0
+            rsi_detail = "No RSI data"
+            if rsi is not None:
+                rsi_detail = f"RSI(14) = {rsi:.1f}"
+                if rsi < 30:
+                    rsi_signal = "BULLISH"
+                    rsi_score = 15
+                    rsi_detail += " — oversold"
+                elif rsi < 40:
+                    rsi_signal = "BULLISH"
+                    rsi_score = 8
+                    rsi_detail += " — approaching oversold"
+                elif rsi > 70:
+                    rsi_signal = "BEARISH"
+                    rsi_score = -15
+                    rsi_detail += " — overbought"
+                elif rsi > 60:
+                    rsi_signal = "BEARISH"
+                    rsi_score = -8
+                    rsi_detail += " — approaching overbought"
+            breakdown.append({
+                "name": "RSI",
+                "category": "MOMENTUM",
+                "signal": rsi_signal,
+                "score_impact": rsi_score,
+                "detail": rsi_detail,
+            })
+        except Exception:
+            pass
+
+        try:
+            # 3. MACD (MOMENTUM)
+            macd_cross = indicators.get("macd_crossover", "NONE")
+            macd_hist = indicators.get("macd_histogram")
+            macd_signal = "NEUTRAL"
+            macd_score = 0
+            macd_details = []
+            if macd_cross == "BULLISH":
+                macd_signal = "BULLISH"
+                macd_score = 12
+                macd_details.append("Bullish MACD crossover")
+            elif macd_cross == "BEARISH":
+                macd_signal = "BEARISH"
+                macd_score = -12
+                macd_details.append("Bearish MACD crossover")
+            if macd_hist is not None:
+                direction = "rising" if macd_hist > 0 else "falling"
+                macd_details.append(f"Histogram {direction} ({macd_hist:.4f})")
+                if macd_signal == "NEUTRAL":
+                    macd_signal = "BULLISH" if macd_hist > 0 else "BEARISH"
+                macd_score += 5 if macd_hist > 0 else -5
+            breakdown.append({
+                "name": "MACD",
+                "category": "MOMENTUM",
+                "signal": macd_signal,
+                "score_impact": max(-25, min(25, macd_score)),
+                "detail": "; ".join(macd_details) if macd_details else "No MACD data",
+            })
+        except Exception:
+            pass
+
+        try:
+            # 4. Bollinger Bands (VOLATILITY)
+            bb_pos = indicators.get("bb_position")
+            bb_squeeze = indicators.get("bb_squeeze", False)
+            bb_upper = indicators.get("bb_upper")
+            bb_lower = indicators.get("bb_lower")
+            bb_signal = "NEUTRAL"
+            bb_score = 0
+            bb_details = []
+            if bb_pos is not None:
+                bb_details.append(f"Position within bands: {bb_pos:.0f}%")
+                if bb_pos < 10:
+                    bb_signal = "BULLISH"
+                    bb_score = 10
+                    bb_details.append("Near lower band — oversold zone")
+                elif bb_pos > 90:
+                    bb_signal = "BEARISH"
+                    bb_score = -10
+                    bb_details.append("Near upper band — overbought zone")
+            if bb_squeeze:
+                bb_details.append("Bands squeezing — breakout potential")
+            if bb_upper and bb_lower:
+                bb_details.append(f"Range: {bb_lower:.2f} – {bb_upper:.2f}")
+            breakdown.append({
+                "name": "Bollinger Bands",
+                "category": "VOLATILITY",
+                "signal": bb_signal,
+                "score_impact": bb_score,
+                "detail": "; ".join(bb_details) if bb_details else "No BB data",
+            })
+        except Exception:
+            pass
+
+        try:
+            # 5. Volume Analysis (VOLUME)
+            vol_ratio = indicators.get("volume_ratio", 1.0)
+            close = df["Close"]
+            volume = df["Volume"]
+            # OBV: cumulative sum of signed volume
+            direction = np.where(close.diff() > 0, 1, -1)
+            obv = (volume * direction).cumsum()
+            obv_trend = "rising" if float(obv.iloc[-1]) > float(obv.iloc[-20]) else "falling"
+            vol_signal = "NEUTRAL"
+            vol_score = 0
+            vol_details = []
+            if vol_ratio is not None:
+                vol_details.append(f"Volume ratio vs 20-day avg: {vol_ratio:.2f}x")
+                if vol_ratio > 1.5:
+                    vol_signal = "BULLISH"
+                    vol_score = 5
+                    vol_details.append("Above-average volume (strong conviction)")
+                elif vol_ratio < 0.7:
+                    vol_details.append("Below-average volume (weak conviction)")
+            vol_details.append(f"OBV trend: {obv_trend}")
+            if obv_trend == "rising":
+                vol_score += 5
+                if vol_signal == "NEUTRAL":
+                    vol_signal = "BULLISH"
+            else:
+                vol_score -= 5
+                if vol_signal == "NEUTRAL":
+                    vol_signal = "BEARISH"
+            breakdown.append({
+                "name": "Volume Analysis",
+                "category": "VOLUME",
+                "signal": vol_signal,
+                "score_impact": max(-25, min(25, vol_score)),
+                "detail": "; ".join(vol_details),
+            })
+        except Exception:
+            pass
+
+        try:
+            # 6. Support & Resistance (STRUCTURE)
+            sr_signal = "NEUTRAL"
+            sr_score = 0
+            sr_details = []
+            if support:
+                nearest_sup = max(support)
+                dist_pct = (current_price - nearest_sup) / nearest_sup * 100
+                sr_details.append(f"Nearest support: {nearest_sup:.2f} ({dist_pct:.1f}% below)")
+                if current_price <= nearest_sup * 1.02:
+                    sr_signal = "BULLISH"
+                    sr_score = 8
+                    sr_details.append("Price near key support — potential bounce")
+            if resistance:
+                nearest_res = min(resistance)
+                dist_pct = (nearest_res - current_price) / current_price * 100
+                sr_details.append(f"Nearest resistance: {nearest_res:.2f} ({dist_pct:.1f}% above)")
+                if current_price >= nearest_res * 0.98:
+                    sr_signal = "BEARISH"
+                    sr_score = -8
+                    sr_details.append("Price near key resistance — potential rejection")
+            if not sr_details:
+                sr_details.append("No nearby support/resistance levels identified")
+            breakdown.append({
+                "name": "Support & Resistance",
+                "category": "STRUCTURE",
+                "signal": sr_signal,
+                "score_impact": sr_score,
+                "detail": "; ".join(sr_details),
+            })
+        except Exception:
+            pass
+
+        try:
+            # 7. Candlestick Patterns (PATTERN)
+            cs_signal = "NEUTRAL"
+            cs_score = 0
+            cs_details = []
+            for c in candlesticks:
+                sig = c.get("signal", "NEUTRAL")
+                strength = c.get("strength", "WEAK")
+                name = c.get("name", "")
+                cs_details.append(f"{name} ({sig}, {strength})")
+                if sig == "BULLISH":
+                    cs_score += 8 if strength == "STRONG" else 5
+                elif sig == "BEARISH":
+                    cs_score -= 8 if strength == "STRONG" else 5
+            if cs_score > 0:
+                cs_signal = "BULLISH"
+            elif cs_score < 0:
+                cs_signal = "BEARISH"
+            breakdown.append({
+                "name": "Candlestick Patterns",
+                "category": "PATTERN",
+                "signal": cs_signal,
+                "score_impact": max(-25, min(25, cs_score)),
+                "detail": "; ".join(cs_details) if cs_details else "No candlestick patterns detected",
+            })
+        except Exception:
+            pass
+
+        try:
+            # 8. Fibonacci (STRUCTURE)
+            fib_signal = "NEUTRAL"
+            fib_score = 0
+            fib_details = []
+            if fib_data:
+                zone = fib_data.get("current_zone")
+                swing_h = fib_data.get("swing_high")
+                swing_l = fib_data.get("swing_low")
+                if swing_h and swing_l:
+                    fib_details.append(f"90-day range: {swing_l:.2f} – {swing_h:.2f}")
+                if zone:
+                    fib_details.append(f"Price near Fibonacci {zone}")
+                    # 618 and 786 near lows = bullish support; 236 near high = bearish resistance
+                    if zone in ("NEAR_618", "NEAR_786"):
+                        fib_signal = "BULLISH"
+                        fib_score = 8
+                        fib_details.append("Strong Fibonacci support zone")
+                    elif zone in ("NEAR_236",):
+                        fib_signal = "BEARISH"
+                        fib_score = -5
+                        fib_details.append("Near Fibonacci resistance zone")
+                    elif zone in ("NEAR_382", "NEAR_500"):
+                        fib_details.append("Mid Fibonacci zone — neutral")
+                else:
+                    fib_details.append("Price not near a key Fibonacci level")
+            breakdown.append({
+                "name": "Fibonacci",
+                "category": "STRUCTURE",
+                "signal": fib_signal,
+                "score_impact": fib_score,
+                "detail": "; ".join(fib_details) if fib_details else "No Fibonacci data",
+            })
+        except Exception:
+            pass
+
+        try:
+            # 9. Wyckoff Method (STRUCTURE)
+            wyckoff = self._wyckoff_phase(df, indicators)
+            wyckoff_signal = "NEUTRAL"
+            wyckoff_score = 0
+            wyckoff_descriptions = {
+                "ACCUMULATION": "Smart money accumulating — potential markup ahead",
+                "MARKUP": "Price in markup phase — uptrend in progress",
+                "DISTRIBUTION": "Distribution phase — potential markdown ahead",
+                "MARKDOWN": "Price in markdown phase — downtrend in progress",
+                "UNKNOWN": "No clear Wyckoff phase identified",
+            }
+            if wyckoff in ("ACCUMULATION", "MARKUP"):
+                wyckoff_signal = "BULLISH"
+                wyckoff_score = 8 if wyckoff == "MARKUP" else 5
+            elif wyckoff in ("DISTRIBUTION", "MARKDOWN"):
+                wyckoff_signal = "BEARISH"
+                wyckoff_score = -8 if wyckoff == "MARKDOWN" else -5
+            breakdown.append({
+                "name": "Wyckoff Method",
+                "category": "STRUCTURE",
+                "signal": wyckoff_signal,
+                "score_impact": wyckoff_score,
+                "detail": f"Phase: {wyckoff} — {wyckoff_descriptions.get(wyckoff, '')}",
+            })
+        except Exception:
+            pass
+
+        try:
+            # 10. Chart Patterns (PATTERN)
+            chart_signal = "NEUTRAL"
+            chart_score = 0
+            chart_details = []
+            for p in patterns:
+                if p == "UPTREND_20D":
+                    chart_score += 5
+                    chart_details.append("20-day uptrend")
+                elif p == "DOWNTREND_20D":
+                    chart_score -= 5
+                    chart_details.append("20-day downtrend")
+                elif p == "NEAR_52W_HIGH":
+                    chart_score -= 5
+                    chart_details.append("Near 52-week high — potential resistance")
+                elif p == "NEAR_52W_LOW":
+                    chart_score += 8
+                    chart_details.append("Near 52-week low — potential value zone")
+                elif p == "VOLUME_SPIKE":
+                    chart_details.append("Volume spike detected")
+            if chart_score > 0:
+                chart_signal = "BULLISH"
+            elif chart_score < 0:
+                chart_signal = "BEARISH"
+            breakdown.append({
+                "name": "Chart Patterns",
+                "category": "PATTERN",
+                "signal": chart_signal,
+                "score_impact": max(-25, min(25, chart_score)),
+                "detail": "; ".join(chart_details) if chart_details else "No chart patterns detected",
+            })
+        except Exception:
+            pass
+
+        return breakdown
 
     def _error_result(self, symbol: str, error: str) -> Dict[str, Any]:
         return {
