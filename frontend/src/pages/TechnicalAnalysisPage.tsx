@@ -245,7 +245,8 @@ const TechnicalAnalysisPage: React.FC = () => {
       const ta = data.technical_analysis as TechnicalAnalysis | null;
       const hasFailed = ta?.error || ta?.signal_reasoning?.includes("Analysis failed") || ta?.signal_reasoning?.includes("No current price");
       const hasNoData = ta && (!ta.analysis_breakdown || ta.analysis_breakdown.length === 0) && ta.technical_score === 50;
-      if (!ta || hasFailed || hasNoData) runAnalysis(data);
+      const isStaticOnly = ta && (ta as any).data_source === "info_derived";
+      if (!ta || hasFailed || hasNoData || isStaticOnly) runAnalysis(data);
     }).catch(() => navigate("/recommendations"));
   }, [id]);
 
