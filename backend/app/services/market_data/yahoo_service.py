@@ -62,10 +62,29 @@ class YahooFinanceService:
             raise
 
     async def get_historical_prices(self, symbol: str, period: str = "6mo") -> Optional[pd.DataFrame]:
-        """Fetch OHLCV historical data. Falls back to Alpha Vantage if Yahoo is blocked."""
-        # Try yfinance first
+        """Fetch OHLCV historical data. Tries Ticker.history() first (v8 API, cloud-friendly),
+        then yf.download() (v7), then Alpha Vantage as last resort."""
+        session = _make_session()
+
+        # Method 1: Ticker.history() — uses v8 API, more reliable on cloud IPs
         try:
-            session = _make_session()
+            df = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: yf.Ticker(symbol, session=session).history(
+                    period=period, auto_adjust=True, actions=False
+                )
+            )
+            if df is not None and not df.empty and len(df) >= 10:
+                # Ticker.history() returns flat columns: Open, High, Low, Close, Volume
+                df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
+                logger.info("Ticker.history() succeeded", symbol=symbol, bars=len(df))
+                return df
+            logger.warning("Ticker.history() returned empty/short result", symbol=symbol)
+        except Exception as e:
+            logger.warning("Ticker.history() failed", symbol=symbol, error=str(e))
+
+        # Method 2: yf.download() — v7 API
+        try:
             df = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: yf.download(
@@ -79,11 +98,16 @@ class YahooFinanceService:
             if df is not None and not df.empty:
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
-                return df
+                # Ensure we only return the expected OHLCV columns
+                available = [c for c in ["Open", "High", "Low", "Close", "Volume"] if c in df.columns]
+                if "Close" in available:
+                    logger.info("yf.download() succeeded", symbol=symbol, bars=len(df))
+                    return df[available].copy()
+            logger.warning("yf.download() returned empty result", symbol=symbol)
         except Exception as e:
-            logger.warning("yfinance blocked, trying Alpha Vantage", symbol=symbol, error=str(e))
+            logger.warning("yf.download() failed, trying Alpha Vantage", symbol=symbol, error=str(e))
 
-        # Fallback: Alpha Vantage
+        # Method 3: Alpha Vantage
         return await self._get_historical_alpha_vantage(symbol)
 
     async def _get_historical_alpha_vantage(self, symbol: str) -> Optional[pd.DataFrame]:

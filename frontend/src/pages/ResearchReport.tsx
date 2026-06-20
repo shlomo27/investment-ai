@@ -97,8 +97,12 @@ const ResearchReport: React.FC = () => {
   if (!rec) return null;
 
   const fa = rec.fundamental_analysis;
-  const bias = fa?.direction_bias || "NEUTRAL";
   const isShort = rec.recommendation_type === RecommendationType.SELL || rec.recommendation_type === RecommendationType.STRONG_SELL;
+  // Infer direction from recommendation type when direction_bias is absent or NEUTRAL
+  const rawBias = fa?.direction_bias;
+  const bias = rawBias && rawBias !== "NEUTRAL"
+    ? rawBias
+    : isShort ? "SHORT" : "LONG";
   const currentPrice = rec.current_price_at_recommendation;
 
   const returnPct = rec.expected_return_pct ?? fa?.expected_return_pct;
@@ -364,7 +368,13 @@ const ResearchReport: React.FC = () => {
       {/* Technical Analysis */}
       {rec.technical_analysis && (
         <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-          <h2 className="font-bold mb-4">{isHe ? "ניתוח טכני" : "Technical Analysis"}</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold">{isHe ? "ניתוח טכני" : "Technical Analysis"}</h2>
+            <span className="text-xs text-gray-500 font-mono">
+              {rec.technical_analysis.symbol ?? rec.symbol}
+              {rec.technical_analysis.data_bars != null && ` · ${rec.technical_analysis.data_bars} bars`}
+            </span>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             {rec.technical_analysis.rsi_14 != null && (
               <div>

@@ -245,6 +245,7 @@ export interface TechnicalAnalysis {
   technical_score: number;
   signal_strength: "WEAK" | "MODERATE" | "STRONG";
   signal_reasoning: string;
+  data_bars?: number;
   error?: string;
 }
 
