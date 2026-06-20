@@ -1,7 +1,8 @@
 """
 Fundamental Analyst Agent
 Performs deep fundamental analysis on market data collected by הפקיד.
-Uses Claude claude-sonnet-4-6 to reason about P/E, earnings quality, sector comparison, etc.
+Uses Claude to reason about P/E, earnings quality, sector comparison, etc.
+Supports Long/Short hedge fund mode via direction_bias parameter.
 """
 import asyncio
 import json
@@ -17,39 +18,35 @@ from app.agents.state import MarketDataState
 
 logger = structlog.get_logger(__name__)
 
-SYSTEM_PROMPT = """You are a senior fundamental analyst at an elite investment firm.
-You analyze stocks with rigorous financial discipline. Your job is to:
+SYSTEM_PROMPT = """You are a senior fundamental analyst at a Long/Short equity hedge fund.
+Your mandate is to generate alpha on BOTH sides of the market — identifying longs and shorts with equal rigor.
+
+For LONG candidates: find undervalued, high-quality companies with improving fundamentals and catalysts.
+For SHORT candidates: find overvalued, deteriorating businesses with negative catalysts, weak balance sheets, or structural headwinds.
+
+You analyze stocks with rigorous financial discipline:
 1. Evaluate key financial ratios (P/E, PEG, P/B, P/S, debt ratios)
 2. Assess earnings quality and revenue growth sustainability
-3. Analyze free cash flow generation ability
-4. Compare against sector benchmarks
-5. Cross-reference financial health with social sentiment
-6. Identify key risks and opportunities
-7. Provide a clear recommendation with confidence level
+3. Analyze free cash flow generation and burn rate
+4. Compare against sector benchmarks and identify relative value
+5. Cross-reference financial health with news flow and sentiment
+6. For shorts: identify specific catalysts that will cause the stock to decline
+7. Provide precise entry levels, targets, and stop-losses
 
-You always think in terms of risk-adjusted returns and portfolio construction.
-Your output must be structured JSON. Be precise and data-driven.
+IMPORTANT — When live market data is unavailable (price shown as 0.0 or N/A):
+- Use your training knowledge about the company's fundamentals, business model, competitive position
+- You MUST still provide a meaningful recommendation — do not default to HOLD with 0 confidence
+- Set confidence_score to 30-60 when relying on training knowledge
+- A well-reasoned BUY or SELL based on known fundamentals is far more useful than refusing to analyze
 
-IMPORTANT - When live market data is unavailable (price shown as 0.0 or N/A):
-- Use your training knowledge about the company's fundamentals, business model, competitive position, and recent financial performance
-- Well-known companies (AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA, JPM, JNJ, SPY, QQQ) have extensive public financial data you were trained on
-- You MUST still provide a meaningful recommendation — do not default to HOLD with 0 confidence just because live data is missing
-- Set confidence_score to 30-60 when relying on training knowledge (reflecting data staleness uncertainty)
-- Set data_completeness to 20-40 when live data is unavailable
-- A well-reasoned HOLD, BUY, or SELL based on known fundamentals is far more useful than refusing to analyze"""
+Your output must be structured JSON. Be precise and data-driven."""
 
 
 class FundamentalAnalystAgent:
-    """
-    The Fundamental Analyst Agent.
-    Receives raw MarketDataState from DataFetcherAgent and produces investment analysis.
-    """
-
     def __init__(self):
         self._llm = None
 
     def _get_llm(self):
-        """Lazy-initialize the LLM only when first needed."""
         if not settings.ANTHROPIC_API_KEY:
             return None
         if self._llm is None:
@@ -67,21 +64,22 @@ class FundamentalAnalystAgent:
         portfolio_context: Optional[Dict[str, Any]] = None,
         news_analysis: Optional[Dict[str, Any]] = None,
         macro_analysis: Optional[Dict[str, Any]] = None,
+        direction_bias: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        Main analysis method. Returns structured fundamental analysis dict.
-        """
         logger.info(
             "FundamentalAnalystAgent starting analysis",
             symbol=market_data["symbol"],
             price=market_data.get("price"),
+            direction_bias=direction_bias,
         )
 
-        prompt = self._build_analysis_prompt(market_data, portfolio_context, news_analysis, macro_analysis)
+        prompt = self._build_analysis_prompt(
+            market_data, portfolio_context, news_analysis, macro_analysis, direction_bias
+        )
 
         llm = self._get_llm()
         if llm is None:
-            logger.warning("Claude LLM unavailable (missing API key), returning fallback analysis", symbol=market_data["symbol"])
+            logger.warning("Claude LLM unavailable (missing API key), returning fallback", symbol=market_data["symbol"])
             return self._fallback_analysis(market_data, "ANTHROPIC_API_KEY not configured")
 
         try:
@@ -100,15 +98,14 @@ class FundamentalAnalystAgent:
                 content = content.split("```")[1].split("```")[0].strip()
 
             analysis = json.loads(content)
-
-            # Validate required fields
-            analysis = self._validate_and_normalize(analysis, market_data)
+            analysis = self._validate_and_normalize(analysis, market_data, direction_bias)
 
             logger.info(
                 "FundamentalAnalystAgent completed",
                 symbol=market_data["symbol"],
                 recommendation=analysis.get("recommendation_type"),
                 confidence=analysis.get("confidence_score"),
+                direction_bias=direction_bias,
             )
 
             return analysis
@@ -122,7 +119,6 @@ class FundamentalAnalystAgent:
 
     @staticmethod
     def _v(value: Any, default: Any = "N/A") -> Any:
-        """Return value if not None, otherwise default. Prevents format-spec crashes."""
         return value if value is not None else default
 
     def _build_analysis_prompt(
@@ -131,6 +127,7 @@ class FundamentalAnalystAgent:
         portfolio_context: Optional[Dict[str, Any]],
         news_analysis: Optional[Dict[str, Any]] = None,
         macro_analysis: Optional[Dict[str, Any]] = None,
+        direction_bias: Optional[str] = None,
     ) -> str:
         v = self._v
         news_summary = "\n".join([
@@ -141,23 +138,54 @@ class FundamentalAnalystAgent:
         sentiment = data.get("social_sentiment") or {}
         earnings = data.get("earnings_data") or {}
 
+        # Direction-specific instruction block
+        if direction_bias == "SHORT":
+            direction_block = """
+=== SCREENER DIRECTIVE ===
+BIAS: SHORT — The pre-screener flagged this stock as a SHORT CANDIDATE.
+Your job: validate or refute the short thesis.
+- If you confirm the short: recommend SELL or STRONG_SELL
+- Set entry price = current price or slightly above (short entry level)
+- Set target_price = your downside target (where you'd cover the short)
+- Set stop_loss = where you'd cut the loss (above current price for a short)
+- expected_return_pct should be NEGATIVE (the expected decline)
+Focus on: overvaluation, deteriorating margins, competitive threats, debt stress, insider selling, high short interest as confirmation, upcoming negative catalysts.
+"""
+        elif direction_bias == "LONG":
+            direction_block = """
+=== SCREENER DIRECTIVE ===
+BIAS: LONG — The pre-screener flagged this stock as a LONG CANDIDATE.
+Your job: validate or refute the long thesis.
+- If you confirm the long: recommend BUY or STRONG_BUY
+- Set target_price = your upside target
+- Set stop_loss = where you'd cut the loss (below current price)
+- expected_return_pct should be POSITIVE
+Focus on: undervaluation, improving fundamentals, strong FCF, margin expansion, upcoming positive catalysts, analyst upgrades.
+"""
+        else:
+            direction_block = """
+=== ANALYSIS MODE ===
+BIAS: NEUTRAL — Evaluate this stock objectively for both long and short potential.
+Recommend BUY if it's a compelling long, SELL if it's a compelling short, HOLD if neither is clear.
+"""
+
         portfolio_section = ""
         if portfolio_context:
             portfolio_section = f"""
-PORTFOLIO CONTEXT:
-- Total Portfolio Value: ${v(portfolio_context.get('total_value'), 0):,.2f}
-- Available Cash: ${v(portfolio_context.get('cash_balance'), 0):,.2f}
-- Current Holdings: {portfolio_context.get('holdings_count', 0)} positions
-- Max Single Asset Exposure: {portfolio_context.get('max_exposure_pct', 3)}%
-- Existing Position in {data['symbol']}: {portfolio_context.get('existing_position', 'None')}
+=== PORTFOLIO CONTEXT ===
+Total Portfolio Value: ${v(portfolio_context.get('total_value'), 0):,.2f}
+Available Cash: ${v(portfolio_context.get('cash_balance'), 0):,.2f}
+Current Holdings: {portfolio_context.get('holdings_count', 0)} positions
+Max Single Asset Exposure: {portfolio_context.get('max_exposure_pct', 3)}%
+Existing Position in {data['symbol']}: {portfolio_context.get('existing_position', 'None')}
 """
 
         prompt = f"""Perform comprehensive fundamental analysis for {data['symbol']} ({data['exchange']}).
-
+{direction_block}
 === MARKET DATA ===
 Current Price: {v(data.get('price'), 'N/A')} {v(data.get('currency'), 'USD')}
 Previous Close: {v(data.get('previous_close'), 'N/A')}
-52-Week Range: {v(data.get('fifty_two_week_low'), 'N/A')} - {v(data.get('fifty_two_week_high'), 'N/A')}
+52-Week Range: {v(data.get('fifty_two_week_low'), 'N/A')} – {v(data.get('fifty_two_week_high'), 'N/A')}
 Volume: {v(data.get('volume'), 0):,} (30d avg: {v(data.get('avg_volume_30d'), 0):,})
 Market Cap: ${v(data.get('market_cap'), 0):,.0f}
 Sector: {v(data.get('sector'), 'Unknown')} | Industry: {v(data.get('industry'), 'Unknown')}
@@ -214,16 +242,18 @@ Key Themes: {', '.join(sentiment.get('key_themes', [])[:5])}
 
 ---
 
-Based on ALL the above data (including the GPT news analysis and Gemini macro context), provide your fundamental analysis in this exact JSON format:
+Based on ALL the above data and the screener directive, provide your analysis in this exact JSON format:
 {{
   "recommendation_type": "BUY|SELL|HOLD|STRONG_BUY|STRONG_SELL",
+  "direction_bias": "{direction_bias or 'NEUTRAL'}",
   "confidence_score": 0-100,
-  "target_price": <float or null>,
-  "stop_loss": <float or null>,
-  "expected_return_pct": <float or null>,
+  "target_price": <float or null — for SHORT: downside target; for LONG: upside target>,
+  "stop_loss": <float or null — for SHORT: above entry; for LONG: below entry>,
+  "expected_return_pct": <float — NEGATIVE for short thesis, POSITIVE for long thesis>,
   "investment_horizon": "SHORT_TERM|MEDIUM_TERM|LONG_TERM",
   "valuation_assessment": "UNDERVALUED|FAIRLY_VALUED|OVERVALUED",
   "financial_health": "EXCELLENT|GOOD|FAIR|POOR",
+  "thesis": "<2-3 sentences describing the core long or short thesis>",
   "key_metrics_summary": {{
     "pe_assessment": "<text>",
     "growth_quality": "<text>",
@@ -233,10 +263,11 @@ Based on ALL the above data (including the GPT news analysis and Gemini macro co
   }},
   "bull_case": "<2-3 sentences>",
   "bear_case": "<2-3 sentences>",
-  "risk_factors": ["<risk1>", "<risk2>", ...],
-  "catalysts": ["<catalyst1>", "<catalyst2>", ...],
+  "short_catalysts": ["<catalyst1>", "<catalyst2>"],
+  "risk_factors": ["<risk1>", "<risk2>"],
+  "catalysts": ["<catalyst1>", "<catalyst2>"],
   "sector_comparison": "<text>",
-  "sentiment_cross_check": "<text explaining if sentiment aligns with fundamentals>",
+  "sentiment_cross_check": "<text>",
   "analyst_notes": "<detailed analysis notes>",
   "data_completeness": 0-100
 }}"""
@@ -275,12 +306,22 @@ Based on ALL the above data (including the GPT news analysis and Gemini macro co
         self,
         analysis: Dict[str, Any],
         data: MarketDataState,
+        direction_bias: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Ensure all required fields exist with valid values."""
         valid_rec_types = {"BUY", "SELL", "HOLD", "STRONG_BUY", "STRONG_SELL"}
 
         if analysis.get("recommendation_type") not in valid_rec_types:
             analysis["recommendation_type"] = "HOLD"
+
+        # Enforce directional consistency
+        rec = analysis.get("recommendation_type", "HOLD")
+        if direction_bias == "SHORT" and rec in ("BUY", "STRONG_BUY"):
+            # Analyst contradicts short bias — downgrade to HOLD as a safety measure
+            analysis["recommendation_type"] = "HOLD"
+            analysis["direction_override_note"] = "Bias was SHORT but analyst recommended BUY — downgraded to HOLD for senior review"
+        elif direction_bias == "LONG" and rec in ("SELL", "STRONG_SELL"):
+            analysis["recommendation_type"] = "HOLD"
+            analysis["direction_override_note"] = "Bias was LONG but analyst recommended SELL — downgraded to HOLD for senior review"
 
         confidence = analysis.get("confidence_score", 50)
         if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 100:
@@ -288,17 +329,17 @@ Based on ALL the above data (including the GPT news analysis and Gemini macro co
         else:
             analysis["confidence_score"] = float(confidence)
 
-        # Add metadata
         analysis["symbol"] = data["symbol"]
+        analysis["direction_bias"] = direction_bias or "NEUTRAL"
         analysis["analysis_timestamp"] = datetime.now(timezone.utc).isoformat()
         analysis["analyst_id"] = "fundamental_agent_v1"
 
         return analysis
 
     def _fallback_analysis(self, data: MarketDataState, error: str) -> Dict[str, Any]:
-        """Return a safe fallback analysis when Claude fails."""
         return {
             "recommendation_type": "HOLD",
+            "direction_bias": "NEUTRAL",
             "confidence_score": 0.0,
             "target_price": None,
             "stop_loss": None,
@@ -306,9 +347,11 @@ Based on ALL the above data (including the GPT news analysis and Gemini macro co
             "investment_horizon": "MEDIUM_TERM",
             "valuation_assessment": "FAIRLY_VALUED",
             "financial_health": "FAIR",
+            "thesis": "Analysis unavailable due to system error.",
             "key_metrics_summary": {},
             "bull_case": "Analysis unavailable due to system error.",
             "bear_case": "Analysis unavailable due to system error.",
+            "short_catalysts": [],
             "risk_factors": ["Analysis system error"],
             "catalysts": [],
             "sector_comparison": "N/A",

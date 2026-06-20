@@ -130,6 +130,8 @@ class AgentWorkflowState(TypedDict):
     # What triggered this scan: SCHEDULED | PRICE_ALERT | NEWS_ALERT | EARNINGS | MANUAL
     trigger_type: Optional[str]
     trigger_details: Optional[str]
+    # Screener bias: LONG | SHORT | NEUTRAL — passed from pre-screener activation
+    direction_bias: Optional[str]
 
 
 class TechnicalWorkflowState(TypedDict):

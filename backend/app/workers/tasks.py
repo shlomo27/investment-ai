@@ -71,6 +71,7 @@ def scan_asset_pool_task(self):
                 run_investment_workflow(
                     symbol=asset.symbol,
                     exchange=asset.exchange.value,
+                    direction_bias=asset.direction_bias if hasattr(asset, "direction_bias") else None,
                 )
                 for asset in batch
             ]
@@ -552,13 +553,23 @@ def scan_single_asset_event_task(symbol: str, exchange: str, trigger_type: str, 
     async def _run():
         from app.agents.workflow import run_investment_workflow
         from app.core.database import AsyncSessionLocal
+        from app.db.models.asset import Asset as AssetModel
         from app.db.models.recommendation import Recommendation
+        from sqlalchemy import select
+
+        direction_bias = None
+        async with AsyncSessionLocal() as db:
+            asset_row = await db.execute(select(AssetModel).where(AssetModel.symbol == symbol))
+            asset_obj = asset_row.scalar_one_or_none()
+            if asset_obj and hasattr(asset_obj, "direction_bias"):
+                direction_bias = asset_obj.direction_bias
 
         result = await run_investment_workflow(
             symbol=symbol,
             exchange=exchange,
             trigger_type=trigger_type,
             trigger_details=trigger_details,
+            direction_bias=direction_bias,
         )
 
         logger.info(

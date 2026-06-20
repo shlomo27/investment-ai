@@ -105,6 +105,7 @@ async def node_fundamental_analysis(state: AgentWorkflowState) -> AgentWorkflowS
             portfolio_context=state.get("portfolio_context"),
             news_analysis=state.get("news_analysis"),
             macro_analysis=state.get("macro_analysis"),
+            direction_bias=state.get("direction_bias"),
         )
         return {
             **state,
@@ -152,6 +153,7 @@ async def node_senior_review(state: AgentWorkflowState) -> AgentWorkflowState:
             raw_data=state["data_fetcher_output"],
             fundamental_analysis=state["fundamental_analysis"],
             user_risk_context=state.get("user_risk_context"),
+            direction_bias=state.get("direction_bias"),
         )
         new_status = "approved" if decision.get("approved") else "rejected"
         return {
@@ -582,6 +584,7 @@ async def run_investment_workflow(
     user_risk_context: Optional[Dict[str, Any]] = None,
     trigger_type: Optional[str] = "SCHEDULED",
     trigger_details: Optional[str] = None,
+    direction_bias: Optional[str] = None,
 ) -> AgentWorkflowState:
     """
     Entry point for the main investment analysis workflow.
@@ -613,6 +616,7 @@ async def run_investment_workflow(
         "user_risk_context": user_risk_context,
         "trigger_type": trigger_type,
         "trigger_details": trigger_details,
+        "direction_bias": direction_bias,
     }
 
     final_state = await workflow.ainvoke(initial_state)
