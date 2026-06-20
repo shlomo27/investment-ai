@@ -107,7 +107,54 @@ class YahooFinanceService:
                     return df[available].copy()
             logger.warning("yf.download() returned empty result", symbol=symbol)
         except Exception as e:
-            logger.warning("yf.download() failed, trying Alpha Vantage", symbol=symbol, error=str(e))
+            logger.warning("yf.download() failed, trying direct v8 HTTP", symbol=symbol, error=str(e))
+
+        # Method 2.5: Direct v8 chart HTTP — same endpoint yfinance uses for last_price;
+        # works on Railway where the yfinance session-based calls are rate-limited.
+        try:
+            v8_range = {
+                "1mo": "1mo", "3mo": "3mo", "6mo": "6mo",
+                "1y": "1y", "2y": "2y", "5y": "5y",
+            }.get(period, "6mo")
+            v8_resp = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: requests.get(
+                    f"https://query2.finance.yahoo.com/v8/finance/chart/{symbol}",
+                    params={"interval": "1d", "range": v8_range},
+                    headers={
+                        "User-Agent": (
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/124.0.0.0 Safari/537.36"
+                        ),
+                        "Accept": "application/json",
+                    },
+                    timeout=15,
+                )
+            )
+            chart_data = v8_resp.json()
+            chart_result = chart_data["chart"]["result"][0]
+            timestamps = chart_result["timestamp"]
+            quote = chart_result["indicators"]["quote"][0]
+
+            idx = pd.to_datetime(timestamps, unit="s", utc=True).normalize()
+            ohlcv_df = pd.DataFrame(
+                {
+                    "Open":   quote.get("open",   [None] * len(timestamps)),
+                    "High":   quote.get("high",   [None] * len(timestamps)),
+                    "Low":    quote.get("low",    [None] * len(timestamps)),
+                    "Close":  quote.get("close",  [None] * len(timestamps)),
+                    "Volume": [int(v or 0) for v in quote.get("volume", [0] * len(timestamps))],
+                },
+                index=idx,
+            )
+            ohlcv_df = ohlcv_df.dropna(subset=["Close"])
+            if len(ohlcv_df) >= 10:
+                logger.info("v8 chart direct HTTP OHLCV succeeded", symbol=symbol, bars=len(ohlcv_df))
+                return ohlcv_df
+            logger.warning("v8 chart direct HTTP returned too few bars", symbol=symbol, bars=len(ohlcv_df))
+        except Exception as e:
+            logger.warning("v8 chart direct HTTP OHLCV failed, trying Alpha Vantage", symbol=symbol, error=str(e))
 
         # Method 3: Alpha Vantage
         return await self._get_historical_alpha_vantage(symbol)

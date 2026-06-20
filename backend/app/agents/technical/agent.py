@@ -60,7 +60,7 @@ class TechnicalAnalystAgent:
 
             df = df.dropna(subset=["Close"]).copy()
 
-            if len(df) < 50:
+            if len(df) < 30:
                 return self._error_result(symbol, f"Insufficient data: only {len(df)} bars")
 
             # Calculate all indicators
