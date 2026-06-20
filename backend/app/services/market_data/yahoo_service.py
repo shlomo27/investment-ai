@@ -254,12 +254,21 @@ class YahooFinanceService:
         previous_close = 0.0
         market_cap_fast = 0.0
         currency_fast = "USD"
+        year_high_fast = 0.0
+        year_low_fast = 0.0
+        ma50_fast = 0.0
+        ma200_fast = 0.0
         try:
             fi = ticker.fast_info
             price = float(getattr(fi, "last_price", None) or 0)
             previous_close = float(getattr(fi, "previous_close", None) or 0)
             market_cap_fast = float(getattr(fi, "market_cap", None) or 0)
             currency_fast = str(getattr(fi, "currency", "USD") or "USD")
+            year_high_fast = float(getattr(fi, "year_high", None) or 0)
+            year_low_fast = float(getattr(fi, "year_low", None) or 0)
+            ma50_fast = float(getattr(fi, "fifty_day_average", None) or 0)
+            ma200_fast = float(getattr(fi, "two_hundred_day_average", None) or 0)
+            logger.info("fast_info data fetched", symbol=symbol, price=price, year_high=year_high_fast, year_low=year_low_fast, ma50=ma50_fast)
         except Exception as e:
             logger.debug("fast_info unavailable", symbol=symbol, error=str(e))
 
@@ -365,8 +374,11 @@ class YahooFinanceService:
             "free_cash_flow": self._safe_float(info.get("freeCashflow")),
             "dividend_yield": self._safe_float(info.get("dividendYield")),
             "beta": self._safe_float(info.get("beta")),
-            "fifty_two_week_high": float(info.get("fiftyTwoWeekHigh") or 0),
-            "fifty_two_week_low": float(info.get("fiftyTwoWeekLow") or 0),
+            "fifty_two_week_high": year_high_fast or float(info.get("fiftyTwoWeekHigh") or 0),
+            "fifty_two_week_low": year_low_fast or float(info.get("fiftyTwoWeekLow") or 0),
+            "ma_50": ma50_fast or float(info.get("fiftyDayAverage") or 0),
+            "ma_200": ma200_fast or float(info.get("twoHundredDayAverage") or 0),
+            "recommendation_mean": float(info.get("recommendationMean") or 0),
             "sector": info.get("sector"),
             "industry": info.get("industry"),
             "country": info.get("country", "US"),
@@ -381,9 +393,16 @@ class YahooFinanceService:
         }
 
         # --- Tertiary: Alpha Vantage fallback when Yahoo is rate-limited ---
-        if price == 0.0:
+        # Trigger if price is missing OR if 52-week data couldn't be fetched
+        missing_range = result["fifty_two_week_high"] == 0 or result["fifty_two_week_low"] == 0
+        if price == 0.0 or (missing_range and price > 0):
             av_data = self._fetch_alpha_vantage_info(symbol)
             if av_data:
+                if price > 0:
+                    # Merge: keep our live price but fill in AV overview data for range/MA
+                    av_data["price"] = price
+                    av_data["ma_50"] = av_data.get("ma_50") or result.get("ma_50") or 0
+                    av_data["ma_200"] = av_data.get("ma_200") or result.get("ma_200") or 0
                 _INFO_CACHE[symbol] = (now, av_data)
                 return av_data
 
@@ -446,6 +465,9 @@ class YahooFinanceService:
                 "beta": self._safe_float(ov.get("Beta")),
                 "fifty_two_week_high": self._safe_float(ov.get("52WeekHigh")) or 0.0,
                 "fifty_two_week_low": self._safe_float(ov.get("52WeekLow")) or 0.0,
+                "ma_50": self._safe_float(ov.get("50DayMovingAverage")) or 0.0,
+                "ma_200": self._safe_float(ov.get("200DayMovingAverage")) or 0.0,
+                "recommendation_mean": 0.0,
                 "sector": ov.get("Sector"),
                 "industry": ov.get("Industry"),
                 "country": ov.get("Country", "US"),

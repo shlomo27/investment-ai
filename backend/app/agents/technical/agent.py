@@ -547,21 +547,14 @@ class TechnicalAnalystAgent:
         short_pct = stock.get("short_interest")
         analyst_rec = stock.get("analyst_recommendation")
 
-        # Try to supplement with MA50/MA200 from raw info
-        ma50 = ma200 = year_change = rec_mean = None
-        try:
-            from app.services.market_data.yahoo_service import _make_session
-            import yfinance as yf
-            session = _make_session()
-            raw = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: yf.Ticker(symbol, session=session).info or {}
-            )
-            ma50        = raw.get("fiftyDayAverage")
-            ma200       = raw.get("twoHundredDayAverage")
-            year_change = raw.get("52WeekChange")
-            rec_mean    = raw.get("recommendationMean")
-        except Exception:
-            pass
+        # MA50/MA200 now come directly from get_stock_info() via fast_info or Alpha Vantage
+        ma50_val  = stock.get("ma_50")  or 0
+        ma200_val = stock.get("ma_200") or 0
+        ma50:   float | None = float(ma50_val)  if ma50_val  else None
+        ma200:  float | None = float(ma200_val) if ma200_val else None
+        rec_mean_val = stock.get("recommendation_mean") or 0
+        rec_mean: float | None = float(rec_mean_val) if rec_mean_val else None
+        year_change: float | None = None
 
         score = 50.0
         reasons: list = []
