@@ -10,9 +10,10 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: "/dashboard", icon: "🏠", label_he: "לוח בקרה", label_en: "Dashboard" },
+  { to: "/fund", icon: "🎯", label_he: "לוח קרן", label_en: "Fund Dashboard" },
+  { to: "/dashboard", icon: "🏠", label_he: "לוח בקרה", label_en: "Overview" },
+  { to: "/recommendations", icon: "💡", label_he: "סיגנלים", label_en: "Signals" },
   { to: "/portfolio", icon: "📊", label_he: "תיק השקעות", label_en: "Portfolio" },
-  { to: "/recommendations", icon: "💡", label_he: "המלצות", label_en: "Recommendations" },
   { to: "/orders", icon: "📋", label_he: "עסקאות", label_en: "Orders" },
   { to: "/watchlist", icon: "👁", label_he: "מעקב", label_en: "Watchlist" },
 ];

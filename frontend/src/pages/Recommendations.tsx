@@ -1,23 +1,43 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
-import { fetchInbox, fetchRecommendations, markNotificationRead, acknowledgeRecommendation } from "../store/slices/notificationsSlice";
+import {
+  fetchInbox,
+  fetchRecommendations,
+  markNotificationRead,
+  acknowledgeRecommendation,
+} from "../store/slices/notificationsSlice";
 import { recommendationsApi, ordersApi } from "../api/client";
-import { Recommendation, OrderType, TechnicalAnalysis } from "../types";
-import RecommendationCard from "../components/Recommendations/RecommendationCard";
-import AgentDecisionTree from "../components/Recommendations/AgentDecisionTree";
+import { Recommendation, OrderType, RecommendationType } from "../types";
 import ConfirmTradeModal from "../components/Trading/ConfirmTradeModal";
+
+type DirectionFilter = "ALL" | "LONG" | "SHORT";
+
+const recBadgeClass = (type: string) => {
+  if (type === "STRONG_BUY") return "bg-green-500/20 text-green-300 border border-green-600/40";
+  if (type === "BUY") return "bg-green-900/30 text-green-400 border border-green-700/40";
+  if (type === "STRONG_SELL") return "bg-red-500/20 text-red-300 border border-red-600/40";
+  if (type === "SELL") return "bg-red-900/30 text-red-400 border border-red-700/40";
+  return "bg-gray-800 text-gray-400 border border-gray-700";
+};
+
+const isLong = (type: RecommendationType) =>
+  type === RecommendationType.BUY || type === RecommendationType.STRONG_BUY;
+
+const isShort = (type: RecommendationType) =>
+  type === RecommendationType.SELL || type === RecommendationType.STRONG_SELL;
 
 const Recommendations: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { user } = useAppSelector((state) => state.auth);
-  const { notifications, recommendations, isLoading } = useAppSelector((state) => state.notifications);
+  const { user } = useAppSelector((s) => s.auth);
+  const { notifications, recommendations, isLoading } = useAppSelector(
+    (s) => s.notifications
+  );
   const isHe = user?.preferred_language === "he";
 
-  const [view, setView] = useState<"inbox" | "recommendations">("inbox");
-  const [selectedRec, setSelectedRec] = useState<Recommendation | null>(null);
+  const [view, setView] = useState<"inbox" | "signals">("inbox");
+  const [dirFilter, setDirFilter] = useState<DirectionFilter>("ALL");
   const [tradeModal, setTradeModal] = useState<{ rec: Recommendation; type: OrderType } | null>(null);
-  const [technicalLoading, setTechnicalLoading] = useState<number | null>(null);
-  const [technicalResults, setTechnicalResults] = useState<Record<number, TechnicalAnalysis>>({});
 
   useEffect(() => {
     dispatch(fetchInbox({ unreadOnly: false }));
@@ -30,24 +50,6 @@ const Recommendations: React.FC = () => {
 
   const handleAcknowledge = (recId: number) => {
     dispatch(acknowledgeRecommendation(recId));
-    setSelectedRec(null);
-  };
-
-  const handleRequestTechnical = async (recId: number) => {
-    setTechnicalLoading(recId);
-    try {
-      const result = await recommendationsApi.requestTechnicalAnalysis(recId);
-      if (result.technical_analysis) {
-        setTechnicalResults({ ...technicalResults, [recId]: result.technical_analysis });
-      }
-    } catch (e) {
-      console.error("Technical analysis failed", e);
-    }
-    setTechnicalLoading(null);
-  };
-
-  const handleTrade = async (rec: Recommendation, orderType: OrderType) => {
-    setTradeModal({ rec, type: orderType });
   };
 
   const handleConfirmTrade = async (quantity: number, price: number) => {
@@ -67,37 +69,53 @@ const Recommendations: React.FC = () => {
     }
   };
 
-  const signalColor = (signal?: string) => {
-    if (!signal) return "text-gray-400";
-    if (signal.includes("BUY")) return "text-green-400";
-    if (signal.includes("SELL")) return "text-red-400";
-    return "text-yellow-400";
+  const filteredRecs = recommendations.filter((r) => {
+    if (dirFilter === "LONG") return isLong(r.recommendation_type);
+    if (dirFilter === "SHORT") return isShort(r.recommendation_type);
+    return true;
+  });
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
+  const longCount = recommendations.filter((r) => isLong(r.recommendation_type)).length;
+  const shortCount = recommendations.filter((r) => isShort(r.recommendation_type)).length;
+
+  const getTriggerBadge = (triggerType?: string) => {
+    if (triggerType === "PRICE_ALERT") return { label: isHe ? "מחיר" : "Price", cls: "bg-orange-900/40 text-orange-300" };
+    if (triggerType === "NEWS_ALERT") return { label: isHe ? "חדשות" : "News", cls: "bg-purple-900/40 text-purple-300" };
+    if (triggerType === "EARNINGS") return { label: isHe ? "דוח" : "Earnings", cls: "bg-blue-900/40 text-blue-300" };
+    return null;
   };
 
   return (
-    <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
+    <div dir={isHe ? "rtl" : "ltr"} className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{isHe ? "המלצות ועדכונים" : "Recommendations & Updates"}</h1>
+        <h1 className="text-2xl font-bold">{isHe ? "סיגנלים והמלצות AI" : "AI Signals & Recommendations"}</h1>
+        <Link to="/fund" className="text-xs text-gray-400 hover:text-gray-200">
+          {isHe ? "לוח קרן ←" : "Fund Dashboard →"}
+        </Link>
       </div>
 
-      {/* Tabs */}
+      {/* Main Tabs */}
       <div className="flex bg-gray-900 rounded-xl p-1 w-fit">
         <button
           onClick={() => setView("inbox")}
-          className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${view === "inbox" ? "bg-blue-600 text-white" : "text-gray-400"}`}
+          className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "inbox" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
         >
           {isHe ? "תיבת דואר" : "Inbox"}
-          {notifications.filter((n) => !n.is_read).length > 0 && (
-            <span className="ml-2 bg-red-500 text-xs rounded-full px-1.5 py-0.5">
-              {notifications.filter((n) => !n.is_read).length}
-            </span>
+          {unreadCount > 0 && (
+            <span className="ml-2 bg-red-500 text-xs rounded-full px-1.5 py-0.5">{unreadCount}</span>
           )}
         </button>
         <button
-          onClick={() => setView("recommendations")}
-          className={`px-6 py-2 rounded-lg text-sm font-medium transition-colors ${view === "recommendations" ? "bg-blue-600 text-white" : "text-gray-400"}`}
+          onClick={() => setView("signals")}
+          className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "signals" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
         >
-          {isHe ? "המלצות AI" : "AI Recommendations"}
+          {isHe ? "סיגנלים AI" : "AI Signals"}
+          {recommendations.length > 0 && (
+            <span className="ml-2 bg-gray-700 text-gray-300 text-xs rounded-full px-1.5 py-0.5">
+              {recommendations.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -109,7 +127,7 @@ const Recommendations: React.FC = () => {
         </div>
       )}
 
-      {/* Inbox View */}
+      {/* ── Inbox ── */}
       {view === "inbox" && !isLoading && (
         <div className="space-y-3">
           {notifications.length === 0 ? (
@@ -118,140 +136,204 @@ const Recommendations: React.FC = () => {
               <p>{isHe ? "תיבת הדואר ריקה" : "Inbox is empty"}</p>
             </div>
           ) : (
-            notifications.map((notif) => (
-              <div
-                key={notif.id}
-                className={`bg-gray-900 rounded-2xl p-5 border cursor-pointer transition-colors ${
-                  !notif.is_read ? "border-blue-700/50 hover:border-blue-600" : "border-gray-800 hover:border-gray-700"
-                }`}
-                onClick={() => {
-                  handleReadNotification(notif.id);
-                  if (notif.recommendation_id) {
-                    const rec = recommendations.find((r) => r.id === notif.recommendation_id);
-                    if (rec) setSelectedRec(rec);
-                  }
-                }}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      {!notif.is_read && (
-                        <span className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0" />
-                      )}
-                      <p className="font-medium text-sm">
-                        {notif.title || (isHe ? "עדכון השקעות" : "Investment Update")}
-                      </p>
-                    </div>
-                    {/* Full internal detail visible to authenticated users */}
-                    {notif.internal_detail && (
-                      <div className="mt-2 space-y-1">
-                        {notif.internal_detail.symbol && (
-                          <p className="text-xs text-gray-400">
-                            <span className="font-bold text-white">{notif.internal_detail.symbol}</span>
-                            {notif.internal_detail.recommendation_type && (
-                              <span className={`ml-2 font-medium ${
-                                notif.internal_detail.recommendation_type.includes("BUY") ? "text-green-400" :
-                                notif.internal_detail.recommendation_type.includes("SELL") ? "text-red-400" : "text-yellow-400"
-                              }`}>
-                                {notif.internal_detail.recommendation_type}
-                              </span>
-                            )}
-                          </p>
+            notifications.map((notif) => {
+              const trigger = getTriggerBadge(notif.internal_detail?.trigger_type);
+              const sym = notif.internal_detail?.symbol;
+              const recType = notif.internal_detail?.recommendation_type as string | undefined;
+              const recId = notif.recommendation_id;
+
+              return (
+                <div
+                  key={notif.id}
+                  onClick={() => {
+                    handleReadNotification(notif.id);
+                  }}
+                  className={`bg-gray-900 rounded-2xl p-5 border cursor-pointer transition-colors ${
+                    !notif.is_read ? "border-blue-700/50 hover:border-blue-600" : "border-gray-800 hover:border-gray-700"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-2">
+                        {!notif.is_read && (
+                          <span className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0" />
                         )}
-                        {notif.internal_detail.confidence_score && (
-                          <p className="text-xs text-gray-400">
-                            {isHe ? "ביטחון:" : "Confidence:"} {notif.internal_detail.confidence_score.toFixed(0)}%
-                          </p>
+                        {trigger && (
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${trigger.cls}`}>
+                            {trigger.label}
+                          </span>
+                        )}
+                        {sym && (
+                          <span className="font-mono font-bold text-white">{sym}</span>
+                        )}
+                        {recType && (
+                          <span className={`text-xs px-2 py-0.5 rounded border ${recBadgeClass(recType)}`}>
+                            {recType.replace("_", " ")}
+                          </span>
                         )}
                       </div>
-                    )}
+                      <p className="text-sm text-gray-300 truncate">
+                        {notif.title || notif.external_message}
+                      </p>
+                      {notif.internal_detail?.confidence_score && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          {isHe ? "ביטחון:" : "Confidence:"}{" "}
+                          {notif.internal_detail.confidence_score.toFixed(0)}%
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                      <p className="text-xs text-gray-500">
+                        {new Date(notif.sent_at).toLocaleString(isHe ? "he-IL" : "en-US")}
+                      </p>
+                      {recId && (
+                        <Link
+                          to={`/research/${recId}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs text-blue-400 hover:text-blue-300 px-2 py-1 border border-blue-800 rounded-lg"
+                        >
+                          {isHe ? "דוח מחקר →" : "Research →"}
+                        </Link>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-500 flex-shrink-0">
-                    {new Date(notif.sent_at).toLocaleString(isHe ? "he-IL" : "en-US")}
-                  </p>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
 
-      {/* Recommendations View */}
-      {view === "recommendations" && !isLoading && (
+      {/* ── AI Signals ── */}
+      {view === "signals" && !isLoading && (
         <div className="space-y-4">
-          {recommendations.length === 0 ? (
+          {/* Direction Filter */}
+          <div className="flex items-center gap-2">
+            {(["ALL", "LONG", "SHORT"] as DirectionFilter[]).map((f) => (
+              <button
+                key={f}
+                onClick={() => setDirFilter(f)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
+                  dirFilter === f
+                    ? f === "LONG" ? "bg-green-900/40 text-green-300 border-green-700/40"
+                    : f === "SHORT" ? "bg-red-900/40 text-red-300 border-red-700/40"
+                    : "bg-blue-700 text-white border-blue-600"
+                    : "bg-gray-900 text-gray-400 border-gray-800 hover:border-gray-600"
+                }`}
+              >
+                {f === "LONG" ? `LONG (${longCount})` : f === "SHORT" ? `SHORT (${shortCount})` : `${isHe ? "הכל" : "All"} (${recommendations.length})`}
+              </button>
+            ))}
+          </div>
+
+          {filteredRecs.length === 0 ? (
             <div className="bg-gray-900 rounded-2xl p-12 border border-gray-800 text-center text-gray-500">
               <p className="text-4xl mb-3">🤖</p>
-              <p>{isHe ? "אין המלצות חדשות" : "No new recommendations"}</p>
-              <p className="text-sm mt-1">{isHe ? "הסוכנים סורקים את השוק 24/7" : "Agents are scanning markets 24/7"}</p>
+              <p>{isHe ? "אין סיגנלים בפילטר זה" : "No signals for this filter"}</p>
+              <p className="text-sm mt-1">{isHe ? "הסוכנים סורקים את השוק" : "Agents are scanning markets"}</p>
             </div>
           ) : (
-            recommendations.map((rec) => (
-              <RecommendationCard
-                key={rec.id}
-                recommendation={rec}
-                isHe={isHe}
-                technicalAnalysis={technicalResults[rec.id]}
-                isLoadingTechnical={technicalLoading === rec.id}
-                onRequestTechnical={() => handleRequestTechnical(rec.id)}
-                onBuy={() => handleTrade(rec, OrderType.BUY)}
-                onSell={() => handleTrade(rec, OrderType.SELL)}
-                onDismiss={() => handleAcknowledge(rec.id)}
-              />
-            ))
+            <div className="space-y-3">
+              {filteredRecs.map((rec) => {
+                const long = isLong(rec.recommendation_type);
+                const short = isShort(rec.recommendation_type);
+                const fa = rec.fundamental_analysis;
+                const trigger = getTriggerBadge(rec.trigger_type);
+                const returnPct = rec.expected_return_pct ?? fa?.expected_return_pct;
+
+                return (
+                  <div
+                    key={rec.id}
+                    className={`bg-gray-900 rounded-2xl p-5 border transition-colors hover:border-gray-600 ${
+                      long ? "border-green-900/40" : short ? "border-red-900/40" : "border-gray-800"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        {/* Symbol + badges */}
+                        <div className="flex items-center gap-2 flex-wrap mb-2">
+                          <span className="font-mono font-bold text-lg">{rec.symbol}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded border ${recBadgeClass(rec.recommendation_type)}`}>
+                            {rec.recommendation_type.replace("_", " ")}
+                          </span>
+                          {fa?.direction_bias && fa.direction_bias !== "NEUTRAL" && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                              fa.direction_bias === "LONG" ? "bg-green-900/30 text-green-400" : "bg-red-900/30 text-red-400"
+                            }`}>
+                              {fa.direction_bias}
+                            </span>
+                          )}
+                          {trigger && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${trigger.cls}`}>
+                              {trigger.label}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Thesis or asset name */}
+                        {fa?.thesis ? (
+                          <p className="text-sm text-gray-300 line-clamp-2">{fa.thesis}</p>
+                        ) : rec.asset_name ? (
+                          <p className="text-sm text-gray-400">{rec.asset_name}</p>
+                        ) : null}
+
+                        {/* Key numbers */}
+                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                          <span>{isHe ? "ביטחון:" : "Conf:"} <span className="text-white font-medium">{rec.confidence_score.toFixed(0)}%</span></span>
+                          {rec.target_price && (
+                            <span>{isHe ? "יעד:" : "Target:"} <span className="text-white font-medium">${rec.target_price.toFixed(2)}</span></span>
+                          )}
+                          {rec.stop_loss && (
+                            <span>Stop: <span className="text-white font-medium">${rec.stop_loss.toFixed(2)}</span></span>
+                          )}
+                          {returnPct != null && (
+                            <span className={returnPct >= 0 ? "text-green-400" : "text-red-400"}>
+                              {returnPct >= 0 ? "+" : ""}{returnPct.toFixed(1)}%
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                        <Link
+                          to={`/research/${rec.id}`}
+                          className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg"
+                        >
+                          {isHe ? "דוח מחקר" : "Research"}
+                        </Link>
+                        {long && (
+                          <button
+                            onClick={() => setTradeModal({ rec, type: OrderType.BUY })}
+                            className="text-xs bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg"
+                          >
+                            {isHe ? "קנה" : "Buy"}
+                          </button>
+                        )}
+                        {short && (
+                          <button
+                            onClick={() => setTradeModal({ rec, type: OrderType.SELL })}
+                            className="text-xs bg-red-700 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg"
+                          >
+                            Short
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleAcknowledge(rec.id)}
+                          className="text-xs text-gray-500 hover:text-gray-300"
+                        >
+                          {isHe ? "התעלם" : "Dismiss"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       )}
 
-      {/* Detailed Recommendation Panel */}
-      {selectedRec && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => setSelectedRec(null)}>
-          <div
-            className="bg-gray-900 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-700"
-            onClick={(e) => e.stopPropagation()}
-            dir={isHe ? "rtl" : "ltr"}
-          >
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold">
-                {selectedRec.symbol} - {selectedRec.recommendation_type}
-              </h2>
-              <button onClick={() => setSelectedRec(null)} className="text-gray-400 hover:text-white">✕</button>
-            </div>
-
-            <AgentDecisionTree
-              symbol={selectedRec.symbol}
-              hasFundamental={!!selectedRec.fundamental_analysis}
-              hasSenior={!!selectedRec.senior_notes}
-              hasTechnical={!!selectedRec.technical_analysis}
-              isHe={isHe}
-            />
-
-            {selectedRec.fundamental_analysis && (
-              <div className="mt-4 p-4 bg-gray-800 rounded-xl">
-                <p className="text-sm font-bold mb-2">{isHe ? "ניתוח בסיסי" : "Fundamental Analysis"}</p>
-                <p className="text-xs text-gray-300">{selectedRec.fundamental_analysis.bull_case}</p>
-              </div>
-            )}
-
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => handleTrade(selectedRec, OrderType.BUY)}
-                className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl py-2.5 text-sm font-medium"
-              >
-                {isHe ? "קנייה" : "Buy"}
-              </button>
-              <button
-                onClick={() => handleAcknowledge(selectedRec.id)}
-                className="flex-1 border border-gray-700 text-gray-400 rounded-xl py-2.5 text-sm"
-              >
-                {isHe ? "התעלם" : "Dismiss"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Trade Confirmation Modal */}
       {tradeModal && (
         <ConfirmTradeModal
           recommendation={tradeModal.rec}

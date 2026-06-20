@@ -173,6 +173,7 @@ export interface Order {
 
 export interface FundamentalAnalysis {
   recommendation_type: RecommendationType;
+  direction_bias?: "LONG" | "SHORT" | "NEUTRAL";
   confidence_score: number;
   valuation_assessment: "UNDERVALUED" | "FAIRLY_VALUED" | "OVERVALUED";
   financial_health: "EXCELLENT" | "GOOD" | "FAIR" | "POOR";
@@ -183,14 +184,17 @@ export interface FundamentalAnalysis {
     cash_flow_quality?: string;
     sentiment_alignment?: string;
   };
+  thesis?: string;
   bull_case: string;
   bear_case: string;
+  short_catalysts?: string[];
   risk_factors: string[];
   catalysts: string[];
   investment_horizon: "SHORT_TERM" | "MEDIUM_TERM" | "LONG_TERM";
   sector_comparison: string;
   sentiment_cross_check: string;
   analyst_notes: string;
+  expected_return_pct?: number;
 }
 
 export interface SentimentData {
@@ -261,11 +265,22 @@ export interface Recommendation {
   technical_analysis?: TechnicalAnalysis;
   risk_factors?: string[];
   expected_return_pct?: number;
+  trigger_type?: string;
+  trigger_details?: string;
   asset_name?: string;
   sector?: string;
   created_at: string;
   approved_at?: string;
   presented_at?: string;
+}
+
+export interface UniverseStats {
+  universe_total: number;
+  seeded_pool: number;
+  active_long: number;
+  active_short: number;
+  top_long: Array<{ symbol: string; long_score: number; direction: string }>;
+  top_short: Array<{ symbol: string; short_score: number; direction: string }>;
 }
 
 export interface Notification {

@@ -13,8 +13,10 @@ import { fetchUnreadCount } from "./store/slices/notificationsSlice";
 import Login from "./pages/Login";
 import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
+import FundDashboard from "./pages/FundDashboard";
 import Portfolio from "./pages/Portfolio";
 import Recommendations from "./pages/Recommendations";
+import ResearchReport from "./pages/ResearchReport";
 import Orders from "./pages/Orders";
 import Watchlist from "./pages/Watchlist";
 
@@ -157,6 +159,26 @@ const App: React.FC = () => {
             <ProtectedRoute>
               <AppLayout>
                 <Watchlist />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/fund"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <FundDashboard />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/research/:id"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <ResearchReport />
               </AppLayout>
             </ProtectedRoute>
           }

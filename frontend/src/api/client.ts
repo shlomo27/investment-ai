@@ -16,6 +16,7 @@ import {
   Asset,
   RiskProfile,
   TechnicalAnalysis,
+  UniverseStats,
 } from "../types";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "";
@@ -361,6 +362,21 @@ export const marketApi = {
     await api.post("/market/pool/add", null, {
       params: { symbol, exchange },
     });
+  },
+
+  getUniverseStats: async (): Promise<UniverseStats> => {
+    const response = await api.get<UniverseStats>("/market/universe/stats");
+    return response.data;
+  },
+
+  runScreener: async (): Promise<any> => {
+    const response = await api.post("/market/universe/screen");
+    return response.data;
+  },
+
+  loadUniverse: async (): Promise<any> => {
+    const response = await api.post("/market/universe/load");
+    return response.data;
   },
 };
 
