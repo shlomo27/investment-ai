@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
+import { RadialBarChart, RadialBar, PolarAngleAxis, ResponsiveContainer } from "recharts";
 import { useAppSelector } from "../store";
 import { recommendationsApi, ordersApi } from "../api/client";
-import { Recommendation, RecommendationType, OrderType } from "../types";
+import { Recommendation, RecommendationType, TechnicalAnalysis, OrderType } from "../types";
 import ConfirmTradeModal from "../components/Trading/ConfirmTradeModal";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -31,6 +32,250 @@ const ScoreBar: React.FC<{ value: number; max?: number; color?: string }> = ({
     <span className="text-xs text-gray-300 w-8 text-right">{value.toFixed(0)}</span>
   </div>
 );
+
+// ─── Technical Terminal Component ────────────────────────────────────────────────
+
+const RsiGauge: React.FC<{ value: number }> = ({ value }) => {
+  const color = value > 70 ? "#f87171" : value < 30 ? "#4ade80" : "#60a5fa";
+  const data = [{ value, fill: color }];
+  return (
+    <ResponsiveContainer width="100%" height={90}>
+      <RadialBarChart
+        cx="50%" cy="80%"
+        innerRadius="70%" outerRadius="100%"
+        startAngle={180} endAngle={0}
+        data={data}
+      >
+        <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+        <RadialBar dataKey="value" cornerRadius={4} background={{ fill: "#1f2937" }} />
+      </RadialBarChart>
+    </ResponsiveContainer>
+  );
+};
+
+const SignalColor = {
+  STRONG_BUY: { bg: "bg-green-500/20", border: "border-green-500/50", text: "text-green-300", dot: "bg-green-400" },
+  BUY_NOW:    { bg: "bg-green-900/20", border: "border-green-700/40", text: "text-green-400", dot: "bg-green-500" },
+  WAIT:       { bg: "bg-yellow-900/20", border: "border-yellow-700/40", text: "text-yellow-300", dot: "bg-yellow-400" },
+  SELL_NOW:   { bg: "bg-red-900/20", border: "border-red-700/40", text: "text-red-400", dot: "bg-red-500" },
+  STRONG_SELL:{ bg: "bg-red-500/20", border: "border-red-500/50", text: "text-red-300", dot: "bg-red-400" },
+} as const;
+
+const TechnicalTerminal: React.FC<{
+  ta: TechnicalAnalysis;
+  rec: Recommendation;
+  isHe: boolean;
+}> = ({ ta, rec, isHe }) => {
+  const signal = (ta.timing_signal ?? "WAIT") as keyof typeof SignalColor;
+  const sc = SignalColor[signal] ?? SignalColor.WAIT;
+
+  // R:R ratio from recommendation
+  const entry = rec.current_price_at_recommendation ?? ta.current_price;
+  const target = rec.target_price;
+  const stop = rec.stop_loss;
+  const rrRatio = target && stop && entry
+    ? Math.abs(target - entry) / Math.abs(entry - stop)
+    : null;
+
+  const rsi = ta.rsi_14;
+  const score = ta.technical_score ?? 50;
+
+  const macdLabel = ta.macd_crossover === "BULLISH" ? "BULLISH CROSS ↑"
+    : ta.macd_crossover === "BEARISH" ? "BEARISH CROSS ↓"
+    : ta.macd_histogram != null
+      ? (ta.macd_histogram > 0 ? "POSITIVE" : "NEGATIVE")
+      : "—";
+
+  const bbLabel = ta.bb_position != null
+    ? ta.bb_position < 20 ? "NEAR LOWER BAND"
+    : ta.bb_position > 80 ? "NEAR UPPER BAND"
+    : "MID BAND"
+    : "—";
+
+  const maLabel = ta.ma_trend === "BULLISH" ? "ABOVE MA50/200 ↑"
+    : ta.ma_trend === "BEARISH" ? "BELOW MA50/200 ↓"
+    : "—";
+
+  const hasError = !!ta.error;
+
+  return (
+    <div className="bg-gray-950 rounded-2xl border border-gray-800 overflow-hidden font-mono">
+      {/* Terminal Header */}
+      <div className="bg-gray-900 border-b border-gray-800 px-5 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1.5">
+            <span className="w-3 h-3 rounded-full bg-red-500/70" />
+            <span className="w-3 h-3 rounded-full bg-yellow-500/70" />
+            <span className="w-3 h-3 rounded-full bg-green-500/70" />
+          </div>
+          <span className="text-xs text-gray-500">
+            TECHNICAL · {ta.symbol ?? rec.symbol}
+            {ta.data_bars != null && ` · ${ta.data_bars} BARS`}
+          </span>
+        </div>
+        <span className="text-xs text-gray-600">
+          {ta.analysis_timestamp ? new Date(ta.analysis_timestamp).toLocaleTimeString() : ""}
+        </span>
+      </div>
+
+      <div className="p-5 space-y-5">
+        {/* Error state */}
+        {hasError && (
+          <div className="bg-red-950/30 border border-red-800/40 rounded-xl p-4 text-sm text-red-300">
+            ⚠ {ta.signal_reasoning}
+          </div>
+        )}
+
+        {/* Row 1: Signal card + RSI gauge + score bar */}
+        <div className="grid grid-cols-3 gap-4">
+          {/* Signal */}
+          <div className={`col-span-1 rounded-xl border ${sc.bg} ${sc.border} p-4 flex flex-col items-center justify-center`}>
+            <div className={`w-2 h-2 rounded-full ${sc.dot} mb-2 animate-pulse`} />
+            <p className={`text-lg font-bold tracking-widest ${sc.text}`}>{signal.replace("_", " ")}</p>
+            {rrRatio != null && (
+              <p className="text-xs text-gray-400 mt-1">{rrRatio.toFixed(1)} R:R</p>
+            )}
+            <p className="text-xs text-gray-600 mt-2">{ta.signal_strength}</p>
+          </div>
+
+          {/* RSI Gauge */}
+          <div className="col-span-1 bg-gray-900 rounded-xl border border-gray-800 p-3 flex flex-col items-center">
+            <p className="text-xs text-gray-500 mb-1">RSI 14</p>
+            {rsi != null ? (
+              <>
+                <RsiGauge value={rsi} />
+                <p className={`text-xl font-bold -mt-4 ${rsi > 70 ? "text-red-400" : rsi < 30 ? "text-green-400" : "text-white"}`}>
+                  {rsi.toFixed(1)}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {rsi > 70 ? "OVERBOUGHT" : rsi < 30 ? "OVERSOLD" : "NEUTRAL"}
+                </p>
+              </>
+            ) : (
+              <p className="text-gray-600 text-sm mt-4">—</p>
+            )}
+          </div>
+
+          {/* Technical Score */}
+          <div className="col-span-1 bg-gray-900 rounded-xl border border-gray-800 p-4 flex flex-col justify-between">
+            <p className="text-xs text-gray-500">{isHe ? "ציון טכני" : "Tech Score"}</p>
+            <div>
+              <p className="text-3xl font-bold text-white">{score.toFixed(0)}</p>
+              <p className="text-xs text-gray-600">/100</p>
+            </div>
+            <div className="w-full bg-gray-800 rounded-full h-1.5 mt-2">
+              <div
+                className={`h-1.5 rounded-full ${score >= 62 ? "bg-green-500" : score <= 38 ? "bg-red-500" : "bg-yellow-500"}`}
+                style={{ width: `${score}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Row 2: Indicator grid */}
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: "MACD", value: macdLabel, color: ta.macd_crossover === "BULLISH" ? "text-green-400" : ta.macd_crossover === "BEARISH" ? "text-red-400" : "text-gray-300" },
+            { label: "BOLLINGER", value: bbLabel, color: ta.bb_position != null && (ta.bb_position < 20 || ta.bb_position > 80) ? "text-yellow-400" : "text-gray-300" },
+            { label: "MA TREND", value: maLabel, color: ta.ma_trend === "BULLISH" ? "text-green-400" : ta.ma_trend === "BEARISH" ? "text-red-400" : "text-gray-300" },
+          ].map((ind) => (
+            <div key={ind.label} className="bg-gray-900/80 border border-gray-800 rounded-lg p-3">
+              <p className="text-xs text-gray-600 mb-1">{ind.label}</p>
+              <p className={`text-xs font-bold ${ind.color}`}>{ind.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Row 3: Price ladder — support/resistance */}
+        {(ta.resistance_levels?.length || ta.support_levels?.length || ta.nearest_resistance || ta.nearest_support) && (
+          <div className="bg-gray-900/60 border border-gray-800 rounded-xl p-4">
+            <p className="text-xs text-gray-500 mb-3">{isHe ? "רמות מחיר מרכזיות" : "KEY PRICE LEVELS"}</p>
+            <div className="relative">
+              {/* Resistance levels */}
+              {(ta.resistance_levels ?? []).slice(0, 3).map((r) => (
+                <div key={r} className="flex items-center gap-2 mb-1.5">
+                  <div className="w-16 text-right">
+                    <span className="text-xs text-red-400 font-bold">${r.toFixed(2)}</span>
+                  </div>
+                  <div className="flex-1 h-px bg-red-800/60 relative">
+                    <span className="absolute right-0 -top-2.5 text-xs text-red-600">R</span>
+                  </div>
+                </div>
+              ))}
+
+              {/* Current price */}
+              {ta.current_price && (
+                <div className="flex items-center gap-2 my-2">
+                  <div className="w-16 text-right">
+                    <span className="text-xs text-white font-bold">${ta.current_price.toFixed(2)}</span>
+                  </div>
+                  <div className="flex-1 h-0.5 bg-white/30 relative">
+                    <span className="absolute right-0 -top-2.5 text-xs text-gray-400">{isHe ? "כעת" : "NOW"}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Support levels */}
+              {(ta.support_levels ?? []).slice(0, 3).map((s) => (
+                <div key={s} className="flex items-center gap-2 mb-1.5">
+                  <div className="w-16 text-right">
+                    <span className="text-xs text-green-400 font-bold">${s.toFixed(2)}</span>
+                  </div>
+                  <div className="flex-1 h-px bg-green-800/60 relative">
+                    <span className="absolute right-0 -top-2.5 text-xs text-green-600">S</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Row 4: Chart patterns */}
+        {ta.chart_patterns && ta.chart_patterns.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {ta.chart_patterns.map((p) => (
+              <span key={p} className={`text-xs px-2 py-1 rounded font-bold tracking-wider border ${
+                p.includes("UP") || p.includes("LOW") || p.includes("GOLDEN")
+                  ? "bg-green-950/40 text-green-400 border-green-800/40"
+                  : p.includes("DOWN") || p.includes("HIGH") || p.includes("DEATH")
+                  ? "bg-red-950/40 text-red-400 border-red-800/40"
+                  : "bg-gray-800 text-gray-400 border-gray-700"
+              }`}>
+                {p.replace(/_/g, " ")}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Row 5: Signal reasoning */}
+        {ta.signal_reasoning && !hasError && (
+          <div className="border-t border-gray-800 pt-4">
+            <p className="text-xs text-gray-600 mb-1">SIGNAL REASONING</p>
+            <p className="text-xs text-gray-400 leading-relaxed">{ta.signal_reasoning}</p>
+          </div>
+        )}
+
+        {/* Entry / Stop suggestion row */}
+        {(ta.entry_price || rec.stop_loss) && !hasError && (
+          <div className="grid grid-cols-2 gap-3 border-t border-gray-800 pt-4">
+            {ta.entry_price && (
+              <div>
+                <p className="text-xs text-gray-600">ENTRY ZONE</p>
+                <p className="text-sm font-bold text-blue-400">${ta.entry_price.toFixed(2)}</p>
+              </div>
+            )}
+            {rec.stop_loss && (
+              <div>
+                <p className="text-xs text-gray-600">STOP LOSS</p>
+                <p className="text-sm font-bold text-red-400">${rec.stop_loss.toFixed(2)}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // ─── Component ───────────────────────────────────────────────────────────────────
 
@@ -365,63 +610,24 @@ const ResearchReport: React.FC = () => {
         </div>
       )}
 
-      {/* Technical Analysis */}
-      {rec.technical_analysis && (
-        <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold">{isHe ? "ניתוח טכני" : "Technical Analysis"}</h2>
-            <span className="text-xs text-gray-500 font-mono">
-              {rec.technical_analysis.symbol ?? rec.symbol}
-              {rec.technical_analysis.data_bars != null && ` · ${rec.technical_analysis.data_bars} bars`}
-            </span>
+      {/* Technical Analysis — Terminal Style */}
+      {rec.technical_analysis
+        ? <TechnicalTerminal ta={rec.technical_analysis} rec={rec} isHe={isHe} />
+        : (
+          <div className="bg-gray-900 rounded-2xl border border-gray-800 border-dashed flex flex-col items-center justify-center py-10 gap-3">
+            <p className="text-gray-500 text-sm">{isHe ? "ניתוח טכני טרם בוצע" : "Technical analysis not yet run"}</p>
+            <button
+              onClick={handleRequestTechnical}
+              disabled={technicalLoading}
+              className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white text-sm rounded-lg font-medium transition-colors"
+            >
+              {technicalLoading
+                ? (isHe ? "מריץ ניתוח..." : "Running analysis...")
+                : (isHe ? "הרץ ניתוח טכני" : "Run Technical Analysis")}
+            </button>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            {rec.technical_analysis.rsi_14 != null && (
-              <div>
-                <p className="text-xs text-gray-500">RSI 14</p>
-                <p className={`text-lg font-bold ${
-                  rec.technical_analysis.rsi_14 > 70 ? "text-red-400" :
-                  rec.technical_analysis.rsi_14 < 30 ? "text-green-400" : "text-white"
-                }`}>
-                  {rec.technical_analysis.rsi_14.toFixed(1)}
-                </p>
-              </div>
-            )}
-            <div>
-              <p className="text-xs text-gray-500">{isHe ? "סיגנל" : "Signal"}</p>
-              <p className={`text-sm font-bold ${
-                rec.technical_analysis.timing_signal?.includes("BUY") ? "text-green-400" :
-                rec.technical_analysis.timing_signal?.includes("SELL") ? "text-red-400" : "text-yellow-400"
-              }`}>
-                {rec.technical_analysis.timing_signal}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">{isHe ? "ציון טכני" : "Tech Score"}</p>
-              <p className="text-lg font-bold">{rec.technical_analysis.technical_score?.toFixed(0)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">{isHe ? "עוצמה" : "Strength"}</p>
-              <p className="text-sm font-bold text-gray-300">{rec.technical_analysis.signal_strength}</p>
-            </div>
-          </div>
-          {rec.technical_analysis.signal_reasoning && (
-            <p className="text-sm text-gray-300">{rec.technical_analysis.signal_reasoning}</p>
-          )}
-        </div>
-      )}
-
-      {!rec.technical_analysis && (
-        <div className="text-center py-4">
-          <button
-            onClick={handleRequestTechnical}
-            disabled={technicalLoading}
-            className="text-sm text-blue-400 hover:text-blue-300 disabled:text-gray-600"
-          >
-            {technicalLoading ? (isHe ? "מבצע ניתוח טכני..." : "Running technical analysis...") : (isHe ? "הוסף ניתוח טכני" : "Add Technical Analysis")}
-          </button>
-        </div>
-      )}
+        )
+      }
 
       {/* Trade Modal */}
       {tradeModal && rec && (
