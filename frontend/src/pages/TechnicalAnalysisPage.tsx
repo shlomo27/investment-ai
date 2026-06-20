@@ -139,7 +139,7 @@ const BreakdownChart: React.FC<{ items: AnalysisModule[] }> = ({ items }) => {
           contentStyle={{ background: "#0f172a", border: "1px solid #374151", borderRadius: 8, fontSize: 11, fontFamily: "monospace" }}
           formatter={(v: number) => [`${v > 0 ? "+" : ""}${v}`, "score impact"]}
         />
-        <Bar dataKey="score" radius={[0, 4, 4, 0]}>
+        <Bar dataKey="score" radius={[0, 4, 4, 0]} minPointSize={3}>
           {data.map((d, i) => (
             <Cell key={i} fill={d.bull ? "#22c55e" : d.neutral ? "#eab308" : "#ef4444"} />
           ))}

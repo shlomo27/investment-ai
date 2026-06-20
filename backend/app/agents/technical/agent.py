@@ -33,7 +33,7 @@ class TechnicalAnalystAgent:
         self.yahoo_service = YahooFinanceService()
         self.tase_service = TASEService()
 
-    async def analyze(self, symbol: str, exchange: str, period: str = "6mo", fallback_price: float | None = None) -> Dict[str, Any]:
+    async def analyze(self, symbol: str, exchange: str, period: str = "1y", fallback_price: float | None = None) -> Dict[str, Any]:
         """
         Main analysis method. Fetches historical data and computes all technical indicators.
         Returns structured technical analysis dict.
@@ -947,6 +947,7 @@ class TechnicalAnalystAgent:
         try:
             # 1. Moving Averages (TREND)
             ma_trend = indicators.get("ma_trend")
+            ma20 = indicators.get("ma_20")
             ma50 = indicators.get("ma_50")
             ma200 = indicators.get("ma_200")
             golden = indicators.get("golden_cross", False)
@@ -954,24 +955,35 @@ class TechnicalAnalystAgent:
             ma_signal = "NEUTRAL"
             ma_score = 0
             ma_details = []
+            # MA200 alignment (strongest signal)
             if ma_trend == "BULLISH":
-                ma_signal = "BULLISH"
-                ma_score = 10
-                ma_details.append("50MA above 200MA")
+                ma_signal = "BULLISH"; ma_score = 10
+                ma_details.append("50MA above 200MA — golden alignment")
             elif ma_trend == "BEARISH":
-                ma_signal = "BEARISH"
-                ma_score = -10
-                ma_details.append("50MA below 200MA")
+                ma_signal = "BEARISH"; ma_score = -10
+                ma_details.append("50MA below 200MA — death alignment")
             if golden:
-                ma_score += 15
-                ma_details.append("Golden cross recently occurred")
+                ma_score += 15; ma_details.append("Golden cross recently occurred")
             if death:
-                ma_score -= 15
-                ma_details.append("Death cross recently occurred")
-            if ma50 and current_price > ma50:
-                ma_details.append(f"Price above 50MA ({ma50:.2f})")
-            elif ma50:
-                ma_details.append(f"Price below 50MA ({ma50:.2f})")
+                ma_score -= 15; ma_details.append("Death cross recently occurred")
+            # Price vs MA50 (works even without MA200)
+            if ma50:
+                if current_price > ma50:
+                    ma_score += 7
+                    ma_details.append(f"Price above 50MA ({ma50:.2f}) ↗")
+                    if ma_signal == "NEUTRAL": ma_signal = "BULLISH"
+                else:
+                    ma_score -= 7
+                    ma_details.append(f"Price below 50MA ({ma50:.2f}) ↘")
+                    if ma_signal == "NEUTRAL": ma_signal = "BEARISH"
+            # Price vs MA20 (short-term momentum)
+            if ma20:
+                if current_price > ma20:
+                    ma_score += 4
+                    ma_details.append(f"Price above 20MA ({ma20:.2f})")
+                else:
+                    ma_score -= 4
+                    ma_details.append(f"Price below 20MA ({ma20:.2f})")
             breakdown.append({
                 "name": "Moving Averages",
                 "category": "TREND",
@@ -1059,13 +1071,23 @@ class TechnicalAnalystAgent:
             if bb_pos is not None:
                 bb_details.append(f"Position within bands: {bb_pos:.0f}%")
                 if bb_pos < 10:
-                    bb_signal = "BULLISH"
-                    bb_score = 10
-                    bb_details.append("Near lower band — oversold zone")
-                elif bb_pos > 90:
-                    bb_signal = "BEARISH"
-                    bb_score = -10
-                    bb_details.append("Near upper band — overbought zone")
+                    bb_signal = "BULLISH"; bb_score = 12
+                    bb_details.append("Near lower band — strongly oversold")
+                elif bb_pos < 30:
+                    bb_signal = "BULLISH"; bb_score = 6
+                    bb_details.append("Lower half of bands — mild oversold")
+                elif bb_pos < 50:
+                    bb_signal = "BULLISH"; bb_score = 3
+                    bb_details.append("Below mid-band — slight bullish bias")
+                elif bb_pos < 70:
+                    bb_signal = "BEARISH"; bb_score = -3
+                    bb_details.append("Above mid-band — slight bearish bias")
+                elif bb_pos < 90:
+                    bb_signal = "BEARISH"; bb_score = -6
+                    bb_details.append("Upper half of bands — mild overbought")
+                else:
+                    bb_signal = "BEARISH"; bb_score = -12
+                    bb_details.append("Near upper band — strongly overbought")
             if bb_squeeze:
                 bb_details.append("Bands squeezing — breakout potential")
             if bb_upper and bb_lower:
@@ -1127,26 +1149,42 @@ class TechnicalAnalystAgent:
             if support:
                 nearest_sup = max(support)
                 dist_pct = (current_price - nearest_sup) / nearest_sup * 100
-                sr_details.append(f"Nearest support: {nearest_sup:.2f} ({dist_pct:.1f}% below)")
-                if current_price <= nearest_sup * 1.02:
-                    sr_signal = "BULLISH"
-                    sr_score = 8
-                    sr_details.append("Price near key support — potential bounce")
+                sr_details.append(f"Nearest support: ${nearest_sup:.2f} ({dist_pct:.1f}% below)")
+                if dist_pct <= 2:
+                    sr_signal = "BULLISH"; sr_score = 10
+                    sr_details.append("At key support — potential strong bounce")
+                elif dist_pct <= 5:
+                    sr_signal = "BULLISH"; sr_score = 6
+                    sr_details.append("Close to support — watch for bounce")
+                elif dist_pct <= 12:
+                    sr_signal = "BULLISH"; sr_score = 3
+                    sr_details.append("Above support with room to hold")
+                else:
+                    sr_score += 1
+                    sr_details.append("Far from support — less immediate risk")
             if resistance:
                 nearest_res = min(resistance)
                 dist_pct = (nearest_res - current_price) / current_price * 100
-                sr_details.append(f"Nearest resistance: {nearest_res:.2f} ({dist_pct:.1f}% above)")
-                if current_price >= nearest_res * 0.98:
-                    sr_signal = "BEARISH"
-                    sr_score = -8
-                    sr_details.append("Price near key resistance — potential rejection")
+                sr_details.append(f"Nearest resistance: ${nearest_res:.2f} ({dist_pct:.1f}% above)")
+                if dist_pct <= 2:
+                    sr_signal = "BEARISH"; sr_score = -10
+                    sr_details.append("At resistance — likely rejection zone")
+                elif dist_pct <= 5:
+                    sr_signal = "BEARISH"; sr_score -= 5
+                    sr_details.append("Approaching resistance — caution advised")
+                elif dist_pct <= 12:
+                    sr_score -= 2
+                    sr_details.append("Resistance overhead but room to run")
+                else:
+                    sr_score += 1
+                    sr_details.append("Resistance far away — clear upside path")
             if not sr_details:
-                sr_details.append("No nearby support/resistance levels identified")
+                sr_details.append("No support/resistance levels identified")
             breakdown.append({
                 "name": "Support & Resistance",
                 "category": "STRUCTURE",
                 "signal": sr_signal,
-                "score_impact": sr_score,
+                "score_impact": max(-25, min(25, sr_score)),
                 "detail": "; ".join(sr_details),
             })
         except Exception:
@@ -1228,12 +1266,25 @@ class TechnicalAnalystAgent:
                 "MARKDOWN": "Price in markdown phase — downtrend in progress",
                 "UNKNOWN": "No clear Wyckoff phase identified",
             }
-            if wyckoff in ("ACCUMULATION", "MARKUP"):
-                wyckoff_signal = "BULLISH"
-                wyckoff_score = 8 if wyckoff == "MARKUP" else 5
-            elif wyckoff in ("DISTRIBUTION", "MARKDOWN"):
-                wyckoff_signal = "BEARISH"
-                wyckoff_score = -8 if wyckoff == "MARKDOWN" else -5
+            if wyckoff == "MARKUP":
+                wyckoff_signal = "BULLISH"; wyckoff_score = 10
+            elif wyckoff == "ACCUMULATION":
+                wyckoff_signal = "BULLISH"; wyckoff_score = 6
+            elif wyckoff == "MARKDOWN":
+                wyckoff_signal = "BEARISH"; wyckoff_score = -10
+            elif wyckoff == "DISTRIBUTION":
+                wyckoff_signal = "BEARISH"; wyckoff_score = -6
+            else:
+                # UNKNOWN — use recent price slope as a tiebreaker
+                try:
+                    close_series = df["Close"]
+                    slope = float(np.polyfit(range(20), close_series.tail(20).values, 1)[0])
+                    if slope > 0:
+                        wyckoff_signal = "BULLISH"; wyckoff_score = 3
+                    else:
+                        wyckoff_signal = "BEARISH"; wyckoff_score = -3
+                except Exception:
+                    pass
             breakdown.append({
                 "name": "Wyckoff Method",
                 "category": "STRUCTURE",
