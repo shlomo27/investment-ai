@@ -90,7 +90,7 @@ const App: React.FC = () => {
         <Route
           path="/login"
           element={
-            isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />
+            isAuthenticated ? <Navigate to="/fund" replace /> : <Login />
           }
         />
 
@@ -100,7 +100,7 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               {user?.is_onboarded ? (
-                <Navigate to="/dashboard" replace />
+                <Navigate to="/fund" replace />
               ) : (
                 <Onboarding />
               )}
@@ -187,7 +187,7 @@ const App: React.FC = () => {
         {/* Catch-all redirect */}
         <Route
           path="/"
-          element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />}
+          element={<Navigate to={isAuthenticated ? "/fund" : "/login"} replace />}
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
