@@ -247,7 +247,8 @@ const TechnicalAnalysisPage: React.FC = () => {
       const hasFailed = ta?.error || ta?.signal_reasoning?.includes("Analysis failed") || ta?.signal_reasoning?.includes("No current price");
       const hasNoData = ta && (!ta.analysis_breakdown || ta.analysis_breakdown.length === 0) && ta.technical_score === 50;
       const isStaticOnly = ta && (ta as any).data_source === "info_derived";
-      if (!ta || hasFailed || hasNoData || isStaticOnly) runAnalysis(data);
+      const missingChart = ta && (!(ta as any).price_history || (ta as any).price_history.length === 0);
+      if (!ta || hasFailed || hasNoData || isStaticOnly || missingChart) runAnalysis(data);
     }).catch(() => navigate("/recommendations"));
   }, [id]);
 

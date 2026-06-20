@@ -316,6 +316,7 @@ async def request_technical_analysis(
     if technical_result.get("technical_analysis"):
         rec.technical_analysis = technical_result["technical_analysis"]
         await db.flush()
+        await db.commit()
 
     return {
         "message": "Technical analysis completed",
