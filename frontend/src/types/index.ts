@@ -171,6 +171,13 @@ export interface Order {
   cancelled_at?: string;
 }
 
+export interface QuantDCFYear {
+  year: number;
+  fcf_mm: number;
+  pv_factor: number;
+  pv_mm: number;
+}
+
 export interface QuantDCF {
   intrinsic_value?: number;
   current_price?: number;
@@ -180,6 +187,11 @@ export interface QuantDCF {
   terminal_growth_pct?: number;
   pv_5yr_fcf?: number;
   pv_terminal?: number;
+  terminal_value_total?: number;
+  total_equity?: number;
+  fcf_base_mm?: number;
+  shares_mm?: number;
+  yearly_projections?: QuantDCFYear[];
   skipped?: string;
   error?: string;
 }

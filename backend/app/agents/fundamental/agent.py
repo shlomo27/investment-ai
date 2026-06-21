@@ -342,28 +342,43 @@ Based on ALL the above data and the screener directive, provide your analysis in
         # ── DCF ────────────────────────────────────────────────────────────
         try:
             if fcf > 0 and market_cap > 0 and price > 0:
-                fcf_g = min(max(rev_growth, earn_growth, 0.0), 0.30)
-                wacc  = ke
-                fcf_t = fcf
+                fcf_g  = min(max(rev_growth, earn_growth, 0.0), 0.30)
+                wacc   = ke
+                shares = market_cap / price
+                # Year-by-year FCF projections
+                yearly = []
+                fcf_t  = fcf
                 pv_fcf = 0.0
                 for t in range(1, 6):
                     fcf_t  *= (1 + fcf_g)
-                    pv_fcf += fcf_t / (1 + wacc) ** t
+                    pv_f    = 1 / (1 + wacc) ** t
+                    pv_yr   = fcf_t * pv_f
+                    pv_fcf += pv_yr
+                    yearly.append({
+                        "year": t,
+                        "fcf_mm": round(fcf_t / 1e6, 1),
+                        "pv_factor": round(pv_f, 4),
+                        "pv_mm": round(pv_yr / 1e6, 1),
+                    })
                 term_value   = fcf_t * (1 + TERMINAL_GROWTH) / (wacc - TERMINAL_GROWTH)
                 pv_terminal  = term_value / (1 + wacc) ** 5
                 total_equity = pv_fcf + pv_terminal
-                shares       = market_cap / price
                 intrinsic    = total_equity / shares
                 upside       = (intrinsic - price) / price * 100
                 models["dcf"] = {
-                    "intrinsic_value": round(intrinsic, 2),
-                    "current_price":   round(price, 2),
-                    "upside_pct":      round(upside, 1),
-                    "wacc_pct":        round(wacc * 100, 1),
-                    "fcf_growth_pct":  round(fcf_g * 100, 1),
+                    "intrinsic_value":     round(intrinsic, 2),
+                    "current_price":       round(price, 2),
+                    "upside_pct":          round(upside, 1),
+                    "wacc_pct":            round(wacc * 100, 1),
+                    "fcf_growth_pct":      round(fcf_g * 100, 1),
                     "terminal_growth_pct": round(TERMINAL_GROWTH * 100, 1),
-                    "pv_5yr_fcf":      round(pv_fcf, 0),
-                    "pv_terminal":     round(pv_terminal, 0),
+                    "pv_5yr_fcf":          round(pv_fcf, 0),
+                    "pv_terminal":         round(pv_terminal, 0),
+                    "terminal_value_total": round(term_value, 0),
+                    "total_equity":        round(total_equity, 0),
+                    "fcf_base_mm":         round(fcf / 1e6, 1),
+                    "shares_mm":           round(shares / 1e6, 1),
+                    "yearly_projections":  yearly,
                 }
             else:
                 models["dcf"] = {"skipped": "Negative/zero FCF or missing market cap — DCF not applicable"}
