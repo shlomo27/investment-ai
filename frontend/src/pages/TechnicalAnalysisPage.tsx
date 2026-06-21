@@ -479,6 +479,45 @@ const TechnicalAnalysisPage: React.FC = () => {
             </div>
           )}
 
+          {/* Elliott Wave */}
+          {ta?.elliott_wave && ta.elliott_wave.wave_label !== "UNKNOWN" && (() => {
+            const ew = ta.elliott_wave!;
+            const isBull = ew.score_hint === "BULLISH" || ew.wave_label === "WAVE_3" || ew.wave_label === "WAVE_C";
+            const isBear = ew.score_hint === "BEARISH" || ew.wave_label === "WAVE_A" || ew.wave_label === "WAVE_B" || ew.wave_label === "WAVE_5";
+            const color = isBull ? "border-green-700/40 bg-green-900/15 text-green-300" : isBear ? "border-red-700/40 bg-red-900/15 text-red-300" : "border-gray-700 bg-gray-800/30 text-gray-400";
+            const waveLabels = ["WAVE_1","WAVE_2_or_4","WAVE_3","WAVE_5","WAVE_A","WAVE_B","WAVE_C"];
+            return (
+              <div className={`rounded-2xl border p-4 ${color}`}>
+                <p className="text-xs tracking-widest mb-2 opacity-60">ELLIOTT WAVE THEORY · SIMPLIFIED</p>
+                {/* Wave position pills */}
+                <div className="flex items-center gap-1 mb-3">
+                  {(["W1","W2/4","W3","W5"] as const).map((w, i) => {
+                    const active = (i === 0 && ew.wave_label === "WAVE_1") || (i === 1 && ew.wave_label === "WAVE_2_or_4") || (i === 2 && ew.wave_label === "WAVE_3") || (i === 3 && ew.wave_label === "WAVE_5");
+                    return <div key={w} className={`flex-1 flex flex-col items-center gap-1`}>
+                      <div className={`h-2 w-full rounded-full ${active ? "bg-current opacity-90" : "opacity-15 bg-white"}`} />
+                      <span className={`text-[9px] tracking-widest ${active ? "opacity-80" : "opacity-20"}`}>{w}</span>
+                    </div>;
+                  })}
+                  <div className="w-px h-6 bg-white/10 mx-1" />
+                  {(["A","B","C"] as const).map(w => {
+                    const active = ew.wave_label === `WAVE_${w}`;
+                    return <div key={w} className="flex-1 flex flex-col items-center gap-1">
+                      <div className={`h-2 w-full rounded-full ${active ? "bg-current opacity-90" : "opacity-15 bg-white"}`} />
+                      <span className={`text-[9px] tracking-widest ${active ? "opacity-80" : "opacity-20"}`}>{w}</span>
+                    </div>;
+                  })}
+                </div>
+                <p className="font-black text-base tracking-widest mb-1">{ew.wave_label.replace(/_/g, " ")}</p>
+                <p className="text-xs opacity-70 leading-relaxed mb-3">{ew.detail}</p>
+                <div className="flex items-center justify-between text-xs border-t border-white/10 pt-2 opacity-60">
+                  <span>Phase: <span className="font-bold">{ew.phase.replace(/_/g, " ")}</span></span>
+                  <span>Confidence: <span className={`font-bold ${ew.confidence === "MODERATE" ? "text-yellow-400" : "text-gray-500"}`}>{ew.confidence}</span></span>
+                  {ew.pivot_count && <span>{ew.pivot_count} pivots</span>}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Candlestick patterns */}
           {candlesticks.length > 0 && (
             <div className="bg-gray-900 rounded-2xl border border-gray-800 p-4">

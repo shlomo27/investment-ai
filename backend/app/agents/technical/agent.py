@@ -67,12 +67,18 @@ class TechnicalAnalystAgent:
             indicators = self._calculate_indicators(df)
             support, resistance = self._find_support_resistance(df)
             patterns = self._detect_patterns(df)
+            # Merge advanced chart patterns (H&S, flags, triangles…)
+            try:
+                patterns = patterns + self._detect_advanced_patterns(df)
+            except Exception as e:
+                logger.warning("Advanced pattern detection failed", error=str(e))
             signal = self._determine_signal(indicators, support, resistance, df)
 
             # New analysis modules
             candlestick_data: List[Dict] = []
             fib_data: Dict[str, Any] = {}
             wyckoff: str = "UNKNOWN"
+            elliott_data: Dict[str, Any] = {}
             breakdown: List[Dict] = []
             try:
                 candlestick_data = self._detect_candlestick_patterns(df)
@@ -87,7 +93,11 @@ class TechnicalAnalystAgent:
             except Exception as e:
                 logger.warning("Wyckoff phase detection failed", error=str(e))
             try:
-                breakdown = self._build_analysis_breakdown(indicators, patterns, candlestick_data, fib_data, support, resistance, df)
+                elliott_data = self._elliott_wave(df, indicators)
+            except Exception as e:
+                logger.warning("Elliott Wave analysis failed", error=str(e))
+            try:
+                breakdown = self._build_analysis_breakdown(indicators, patterns, candlestick_data, fib_data, support, resistance, df, elliott_data)
             except Exception as e:
                 logger.warning("Analysis breakdown build failed", error=str(e))
 
@@ -159,6 +169,7 @@ class TechnicalAnalystAgent:
                 "fibonacci_levels": fib_data,
                 "candlestick_patterns": [c["name"] for c in candlestick_data],
                 "wyckoff_phase": wyckoff,
+                "elliott_wave": elliott_data,
             }
 
             # Attach price history + indicator series for frontend charting (last 90 bars)
@@ -911,6 +922,181 @@ class TechnicalAnalystAgent:
 
         return detected
 
+    # ------------------------------------------------------------------
+    # Advanced chart patterns (H&S, Double Top/Bottom, Triangles, Flags)
+    # ------------------------------------------------------------------
+
+    def _find_pivots(self, series: pd.Series, order: int = 5) -> Tuple[List[Tuple[int, float]], List[Tuple[int, float]]]:
+        """Find local swing highs and lows using a rolling window."""
+        highs, lows = [], []
+        n = len(series)
+        for i in range(order, n - order):
+            window = series.iloc[i - order: i + order + 1]
+            val = float(series.iloc[i])
+            if val >= float(window.max()) * 0.9995:
+                highs.append((i, val))
+            if val <= float(window.min()) * 1.0005:
+                lows.append((i, val))
+        # Remove duplicate consecutive pivots — keep extreme
+        def dedupe(pivots: List[Tuple[int, float]], keep_max: bool) -> List[Tuple[int, float]]:
+            out: List[Tuple[int, float]] = []
+            for p in pivots:
+                if out and abs(p[0] - out[-1][0]) < order:
+                    if (keep_max and p[1] > out[-1][1]) or (not keep_max and p[1] < out[-1][1]):
+                        out[-1] = p
+                else:
+                    out.append(p)
+            return out
+        return dedupe(highs, True), dedupe(lows, False)
+
+    def _detect_advanced_patterns(self, df: pd.DataFrame) -> List[str]:
+        """Detect Head & Shoulders, Double Top/Bottom, Triangle, Flag patterns."""
+        patterns: List[str] = []
+        if len(df) < 40:
+            return patterns
+        try:
+            close = df["Close"].tail(80)
+            swing_highs, swing_lows = self._find_pivots(close, order=5)
+
+            # Head & Shoulders (3 highs: left < head > right, shoulders ~equal)
+            if len(swing_highs) >= 3:
+                left, head, right = swing_highs[-3], swing_highs[-2], swing_highs[-1]
+                if (head[1] > left[1] * 1.01 and head[1] > right[1] * 1.01
+                        and abs(left[1] - right[1]) / head[1] < 0.05):
+                    patterns.append("HEAD_AND_SHOULDERS")
+
+            # Inverse H&S (3 lows: left > head < right, troughs ~equal)
+            if len(swing_lows) >= 3:
+                left, head, right = swing_lows[-3], swing_lows[-2], swing_lows[-1]
+                if (head[1] < left[1] * 0.99 and head[1] < right[1] * 0.99
+                        and abs(left[1] - right[1]) / max(left[1], right[1]) < 0.05):
+                    patterns.append("INVERSE_HEAD_AND_SHOULDERS")
+
+            # Double Top (two highs within 3% of each other)
+            if len(swing_highs) >= 2:
+                h1, h2 = swing_highs[-2][1], swing_highs[-1][1]
+                if abs(h1 - h2) / max(h1, h2) < 0.03 and h2 < h1 * 1.01:
+                    patterns.append("DOUBLE_TOP")
+
+            # Double Bottom (two lows within 3% of each other)
+            if len(swing_lows) >= 2:
+                l1, l2 = swing_lows[-2][1], swing_lows[-1][1]
+                if abs(l1 - l2) / max(l1, l2) < 0.03:
+                    patterns.append("DOUBLE_BOTTOM")
+
+            # Triangle patterns (converging trendlines from swing highs/lows)
+            if len(swing_highs) >= 2 and len(swing_lows) >= 2:
+                high_slope = (swing_highs[-1][1] - swing_highs[-2][1]) / max(1, swing_highs[-1][0] - swing_highs[-2][0])
+                low_slope  = (swing_lows[-1][1]  - swing_lows[-2][1])  / max(1, swing_lows[-1][0]  - swing_lows[-2][0])
+                base_price = float(close.iloc[-1])
+                hs_norm = high_slope / base_price * 100
+                ls_norm = low_slope  / base_price * 100
+                if hs_norm < -0.03 and ls_norm > 0.03:
+                    patterns.append("SYMMETRICAL_TRIANGLE")
+                elif abs(hs_norm) < 0.01 and ls_norm > 0.03:
+                    patterns.append("ASCENDING_TRIANGLE")
+                elif hs_norm < -0.03 and abs(ls_norm) < 0.01:
+                    patterns.append("DESCENDING_TRIANGLE")
+
+            # Bull / Bear Flag (sharp move → tight consolidation)
+            if len(close) >= 30:
+                prior_move  = float(close.iloc[-20]) - float(close.iloc[-30])
+                cons_range  = float(close.tail(10).max()) - float(close.tail(10).min())
+                prior_range = abs(prior_move)
+                if prior_range > 0 and cons_range < prior_range * 0.35:
+                    patterns.append("BULL_FLAG" if prior_move > 0 else "BEAR_FLAG")
+
+        except Exception as e:
+            logger.warning("Advanced pattern detection failed", error=str(e))
+        return patterns
+
+    # ------------------------------------------------------------------
+    # Elliott Wave (simplified pivot-count approach)
+    # ------------------------------------------------------------------
+
+    def _elliott_wave(self, df: pd.DataFrame, indicators: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Simplified Elliott Wave: identify likely wave position from recent pivot count.
+        Returns wave_label, phase, confidence, and detail text.
+        """
+        close = df["Close"]
+        if len(close) < 40:
+            return {"wave_label": "UNKNOWN", "phase": "UNKNOWN", "confidence": "LOW",
+                    "detail": "Insufficient data for wave analysis"}
+        try:
+            subset   = close.tail(90)
+            highs, lows = self._find_pivots(subset, order=4)
+
+            # Interleave highs/lows by index, alternating (remove duplicates)
+            all_pivots = sorted([(i, v, "H") for i, v in highs] + [(i, v, "L") for i, v in lows], key=lambda x: x[0])
+            filtered: List[Tuple[int, float, str]] = []
+            for piv in all_pivots:
+                if filtered and filtered[-1][2] == piv[2]:
+                    # Same type → keep more extreme
+                    if (piv[2] == "H" and piv[1] > filtered[-1][1]) or (piv[2] == "L" and piv[1] < filtered[-1][1]):
+                        filtered[-1] = piv
+                else:
+                    filtered.append(piv)
+
+            pivot_count  = len(filtered)
+            current      = float(close.iloc[-1])
+            ma50         = indicators.get("ma_50")
+            overall_bull = bool(ma50 and current > ma50)
+
+            if pivot_count < 3:
+                return {"wave_label": "WAVE_1", "phase": "IMPULSE_EARLY", "confidence": "LOW",
+                        "detail": "Too few pivots — possible Wave 1 forming"}
+
+            recent = filtered[-6:] if len(filtered) >= 6 else filtered
+
+            if overall_bull:
+                # Impulse (uptrend): try to map to 5-wave
+                up_count = sum(1 for i in range(1, len(recent)) if recent[i][1] > recent[i-1][1])
+                at_high  = current >= max(p[1] for p in recent) * 0.98
+                if at_high and up_count >= 2:
+                    label, phase = "WAVE_5", "IMPULSE_TERMINAL"
+                    detail = "Possible Wave 5 — final leg of impulse; watch for reversal"
+                    score_hint = "CAUTION"
+                elif up_count >= 2:
+                    label, phase = "WAVE_3", "IMPULSE_STRONG"
+                    detail = "Possible Wave 3 — typically the strongest, longest wave; bullish momentum"
+                    score_hint = "BULLISH"
+                else:
+                    label, phase = "WAVE_2_or_4", "CORRECTIVE_WITHIN_BULL"
+                    detail = "Possible Wave 2 or 4 pullback within an uptrend — potential entry zone"
+                    score_hint = "NEUTRAL"
+            else:
+                # Corrective (downtrend): map to A-B-C
+                recent_low  = min(p[1] for p in recent)
+                recent_high = max(p[1] for p in recent)
+                at_new_low  = current <= recent_low * 1.02
+                if at_new_low:
+                    label, phase = "WAVE_C", "CORRECTIVE_FINAL"
+                    detail = "Possible Wave C — final corrective leg; watch for reversal / bottom"
+                    score_hint = "NEUTRAL"
+                elif current > (recent_high + recent_low) / 2:
+                    label, phase = "WAVE_B", "CORRECTIVE_BOUNCE"
+                    detail = "Possible Wave B counter-trend bounce — bearish continuation likely"
+                    score_hint = "BEARISH"
+                else:
+                    label, phase = "WAVE_A", "CORRECTIVE_START"
+                    detail = "Possible Wave A — initial corrective move from peak"
+                    score_hint = "BEARISH"
+
+            confidence = "MODERATE" if pivot_count >= 5 else "LOW"
+            return {
+                "wave_label":  label,
+                "phase":       phase,
+                "confidence":  confidence,
+                "detail":      detail,
+                "score_hint":  score_hint,
+                "pivot_count": pivot_count,
+            }
+        except Exception as e:
+            logger.warning("Elliott Wave analysis failed", error=str(e))
+            return {"wave_label": "UNKNOWN", "phase": "UNKNOWN", "confidence": "LOW",
+                    "detail": "Analysis error"}
+
     def _fibonacci_levels(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Calculate Fibonacci retracement levels from the last 90 candles."""
         try:
@@ -1032,6 +1218,7 @@ class TechnicalAnalystAgent:
         support: List[float],
         resistance: List[float],
         df: pd.DataFrame,
+        elliott_data: Optional[Dict[str, Any]] = None,
     ) -> List[Dict]:
         """Build structured breakdown of each analysis module."""
         breakdown: List[Dict] = []
@@ -1389,25 +1576,39 @@ class TechnicalAnalystAgent:
             pass
 
         try:
-            # 10. Chart Patterns (PATTERN)
+            # 10. Chart Patterns (PATTERN) — basic + advanced
             chart_signal = "NEUTRAL"
             chart_score = 0
             chart_details = []
+            pattern_scores: Dict[str, int] = {
+                "UPTREND_20D": 5,   "DOWNTREND_20D": -5,
+                "NEAR_52W_LOW": 8,  "NEAR_52W_HIGH": -5,
+                "DOUBLE_BOTTOM": 10, "DOUBLE_TOP": -10,
+                "INVERSE_HEAD_AND_SHOULDERS": 12, "HEAD_AND_SHOULDERS": -12,
+                "ASCENDING_TRIANGLE": 7,  "DESCENDING_TRIANGLE": -7,
+                "SYMMETRICAL_TRIANGLE": 2,
+                "BULL_FLAG": 8, "BEAR_FLAG": -8,
+                "VOLUME_SPIKE": 0,
+            }
+            pattern_labels: Dict[str, str] = {
+                "UPTREND_20D": "20-day uptrend in progress",
+                "DOWNTREND_20D": "20-day downtrend in progress",
+                "NEAR_52W_LOW": "Near 52-week low — value zone",
+                "NEAR_52W_HIGH": "Near 52-week high — extended",
+                "DOUBLE_BOTTOM": "Double Bottom — strong reversal signal",
+                "DOUBLE_TOP": "Double Top — bearish reversal signal",
+                "INVERSE_HEAD_AND_SHOULDERS": "Inverse H&S — powerful bullish reversal",
+                "HEAD_AND_SHOULDERS": "Head & Shoulders — bearish reversal pattern",
+                "ASCENDING_TRIANGLE": "Ascending Triangle — bullish continuation",
+                "DESCENDING_TRIANGLE": "Descending Triangle — bearish continuation",
+                "SYMMETRICAL_TRIANGLE": "Symmetrical Triangle — breakout imminent",
+                "BULL_FLAG": "Bull Flag — bullish continuation after sharp move",
+                "BEAR_FLAG": "Bear Flag — bearish continuation after sharp drop",
+                "VOLUME_SPIKE": "Unusual volume spike detected",
+            }
             for p in patterns:
-                if p == "UPTREND_20D":
-                    chart_score += 5
-                    chart_details.append("20-day uptrend")
-                elif p == "DOWNTREND_20D":
-                    chart_score -= 5
-                    chart_details.append("20-day downtrend")
-                elif p == "NEAR_52W_HIGH":
-                    chart_score -= 5
-                    chart_details.append("Near 52-week high — potential resistance")
-                elif p == "NEAR_52W_LOW":
-                    chart_score += 8
-                    chart_details.append("Near 52-week low — potential value zone")
-                elif p == "VOLUME_SPIKE":
-                    chart_details.append("Volume spike detected")
+                chart_score += pattern_scores.get(p, 0)
+                chart_details.append(pattern_labels.get(p, p.replace("_", " ")))
             if chart_score > 0:
                 chart_signal = "BULLISH"
             elif chart_score < 0:
@@ -1418,6 +1619,32 @@ class TechnicalAnalystAgent:
                 "signal": chart_signal,
                 "score_impact": max(-25, min(25, chart_score)),
                 "detail": "; ".join(chart_details) if chart_details else "No chart patterns detected",
+            })
+        except Exception:
+            pass
+
+        # 11. Elliott Wave (STRUCTURE)
+        try:
+            ew = elliott_data or {}
+            ew_label   = ew.get("wave_label", "UNKNOWN")
+            ew_phase   = ew.get("phase", "UNKNOWN")
+            ew_detail  = ew.get("detail", "No wave data available")
+            ew_conf    = ew.get("confidence", "LOW")
+            hint       = ew.get("score_hint", "NEUTRAL")
+            ew_signal  = "BULLISH" if hint == "BULLISH" else "BEARISH" if hint == "BEARISH" else "NEUTRAL"
+            ew_score_map = {
+                "WAVE_3": 10, "WAVE_1": 5, "WAVE_2_or_4": 3,
+                "WAVE_5": -3, "WAVE_A": -8, "WAVE_B": -5, "WAVE_C": 6,
+            }
+            ew_score = ew_score_map.get(ew_label, 0)
+            if ew_conf == "LOW":
+                ew_score = ew_score // 2  # halve score for low-confidence readings
+            breakdown.append({
+                "name": "Elliott Wave",
+                "category": "STRUCTURE",
+                "signal": ew_signal,
+                "score_impact": max(-25, min(25, ew_score)),
+                "detail": f"{ew_label} · {ew_phase} · {ew_detail}" if ew_label != "UNKNOWN" else ew_detail,
             })
         except Exception:
             pass

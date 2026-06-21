@@ -287,6 +287,15 @@ export interface TechnicalAnalysis {
   bb_lower_series?: Array<{ date: string; value: number }>;
   rsi_series?: Array<{ date: string; value: number }>;
   macd_series?: Array<{ date: string; value: number }>;
+  // Elliott Wave
+  elliott_wave?: {
+    wave_label: string;
+    phase: string;
+    confidence: "LOW" | "MODERATE" | "HIGH";
+    detail: string;
+    score_hint?: string;
+    pivot_count?: number;
+  };
 }
 
 export interface Recommendation {
