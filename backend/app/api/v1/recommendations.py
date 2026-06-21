@@ -3,6 +3,7 @@ Recommendations API routes - the "Inbox" that users see after login
 GET /recommendations, GET /recommendations/{id}, POST /recommendations/{id}/acknowledge
 GET /inbox (notification inbox with full AI details)
 """
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 import structlog
@@ -354,14 +355,32 @@ async def recompute_quant_models(
     from app.agents.fundamental.agent import get_fundamental_agent
 
     yahoo = YahooFinanceService()
-    market_data = await yahoo.get_stock_info(rec.symbol, force_refresh=True)
+    market_data = await yahoo.get_stock_info(rec.symbol, force_refresh=True) or {}
 
-    if not market_data:
-        # Fall back to whatever partial data we can reconstruct from the stored rec
-        market_data = {
-            "symbol": rec.symbol,
-            "price": float(rec.current_price_at_recommendation or 0),
-        }
+    # On Railway, Yahoo returns price via fast_info but blocks fundamental data
+    # (P/E, FCF, sector, market_cap). Supplement with Alpha Vantage when needed.
+    missing_fundamentals = (
+        not market_data.get("pe_ratio")
+        or not market_data.get("sector")
+        or not market_data.get("market_cap")
+    )
+    if missing_fundamentals:
+        existing_price = float(market_data.get("price") or rec.current_price_at_recommendation or 0)
+        av_data = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: yahoo._fetch_alpha_vantage_info(rec.symbol, existing_price=existing_price)
+        )
+        if av_data:
+            # Merge: Alpha Vantage fills in fundamentals; keep any real values from Yahoo
+            merged = {**av_data}
+            for k, v in market_data.items():
+                if v is not None and v != 0 and v != 0.0 and v != "":
+                    merged[k] = v
+            market_data = merged
+            logger.info("Supplemented market data with Alpha Vantage", symbol=rec.symbol)
+
+    if not market_data.get("price"):
+        market_data["price"] = float(rec.current_price_at_recommendation or 0)
 
     market_data["symbol"] = rec.symbol
 

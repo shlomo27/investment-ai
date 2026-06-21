@@ -595,7 +595,12 @@ class YahooFinanceService:
                 "operating_margin": self._safe_float(ov.get("OperatingMarginTTM")),
                 "roe": self._safe_float(ov.get("ReturnOnEquityTTM")),
                 "roa": self._safe_float(ov.get("ReturnOnAssetsTTM")),
-                "free_cash_flow": None,
+                "free_cash_flow": (
+                    lambda op, cx: (op - abs(cx)) if (op and cx) else None
+                )(
+                    self._safe_float(ov.get("OperatingCashflowTTM")) or 0,
+                    self._safe_float(ov.get("CapitalExpendituresTTM")) or 0,
+                ) or None,
                 "dividend_yield": self._safe_float(ov.get("DividendYield")),
                 "beta": self._safe_float(ov.get("Beta")),
                 "fifty_two_week_high": self._safe_float(ov.get("52WeekHigh")) or 0.0,
