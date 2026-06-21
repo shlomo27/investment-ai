@@ -120,26 +120,30 @@ def _score_ticker(info: dict) -> tuple[float, float]:
     return min(long_pts, 100.0), min(short_pts, 100.0)
 
 
-def _recency_penalty(last_analyzed_at: Optional[datetime]) -> float:
+def _recency_adjustment(last_analyzed_at: Optional[datetime]) -> float:
     """
-    Return a score penalty for recently-analyzed stocks to force rotation.
-    Stocks that haven't been analyzed recently get a freshness bonus instead.
-    This ensures the pre-screener cycles through all S&P500/400 stocks over time
-    rather than always picking the same mega-caps.
+    Return a score ADDITION (positive = bonus, negative = penalty) based on
+    how recently this stock was analyzed.
+
+    Critical for Railway deployment where yfinance.info is often blocked and
+    most stocks end up with score=0.  Without this, the same first-N stocks
+    in the list win every day.  With positive bonuses for stale/never-analyzed
+    stocks, the screener cycles through all S&P500/400 stocks over time even
+    when fundamental data can't be fetched.
     """
     if last_analyzed_at is None:
-        return -10.0  # freshness bonus: never analyzed → prioritize
+        return 30.0   # never analyzed → highest priority
     now = datetime.now(timezone.utc)
     if last_analyzed_at.tzinfo is None:
         last_analyzed_at = last_analyzed_at.replace(tzinfo=timezone.utc)
     days = (now - last_analyzed_at).total_seconds() / 86400
-    if days < 1:
-        return 25.0   # analyzed today: strong penalty, skip this cycle
-    if days < 3:
-        return 15.0   # analyzed 1-3 days ago: moderate penalty
-    if days < 7:
-        return 5.0    # analyzed 3-7 days ago: light penalty
-    return 0.0        # older than 7 days: no penalty
+    if days >= 7:
+        return 20.0   # stale (≥7 days): strong bonus
+    if days >= 3:
+        return 10.0   # semi-stale (3-7 days): moderate bonus
+    if days >= 1:
+        return 3.0    # analyzed 1-3 days ago: tiny bonus
+    return -30.0      # analyzed today: strong penalty → rotate out
 
 
 def _batch_symbols(symbols: list[str]) -> list[list[str]]:
@@ -174,10 +178,11 @@ async def run_pre_screener(db: AsyncSession) -> dict:
                 try:
                     info = tickers.tickers[sym].info or {}
                     long_s, short_s = _score_ticker(info)
-                    # Apply recency penalty so recently-analyzed stocks rotate out
-                    penalty = _recency_penalty(symbol_to_analyzed.get(sym))
-                    long_s = max(0.0, long_s - penalty)
-                    short_s = max(0.0, short_s - penalty)
+                    # Apply staleness adjustment: ensures rotation even when
+                    # yfinance is blocked and all fundamental scores are 0
+                    adj = _recency_adjustment(symbol_to_analyzed.get(sym))
+                    long_s = max(0.0, long_s + adj)
+                    short_s = max(0.0, short_s + adj)
                     scores[sym] = (long_s, short_s)
                 except Exception as e:
                     logger.debug(f"Score failed for {sym}: {e}")
