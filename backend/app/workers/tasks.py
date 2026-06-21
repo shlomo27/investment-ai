@@ -42,8 +42,10 @@ def scan_asset_pool_task(self):
     async def _run():
         from app.core.database import AsyncSessionLocal
         from app.db.models.asset import Asset
+        from app.db.models.recommendation import Recommendation
         from app.agents.workflow import run_investment_workflow
         from sqlalchemy import select
+        from datetime import timedelta
         import asyncio
 
         async with AsyncSessionLocal() as db:
@@ -52,11 +54,24 @@ def scan_asset_pool_task(self):
             )
             assets = result.scalars().all()
 
-        if not assets:
-            logger.warning("No assets in pool to scan")
-            return {"scanned": 0, "approved": 0, "rejected": 0}
+            # Skip symbols already analyzed by the daily scheduler in the last 24 hours
+            # to prevent the same stocks from getting duplicate recommendations every day
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+            recent_result = await db.execute(
+                select(Recommendation.symbol).where(
+                    Recommendation.created_at >= cutoff,
+                    Recommendation.trigger_type == "SCHEDULED",
+                )
+            )
+            recently_scanned = {row[0] for row in recent_result.all()}
 
-        logger.info(f"Scanning {len(assets)} assets in pool")
+        assets = [a for a in assets if a.symbol not in recently_scanned]
+
+        if not assets:
+            logger.info("All active pool stocks already analyzed in last 24h, skipping")
+            return {"scanned": 0, "approved": 0, "rejected": 0, "skipped": len(recently_scanned)}
+
+        logger.info(f"Scanning {len(assets)} assets in pool (skipped {len(recently_scanned)} recently scanned)")
         approved = 0
         rejected = 0
         errors = 0
@@ -380,6 +395,7 @@ def check_price_movements_task():
     async def _run():
         from app.core.database import AsyncSessionLocal
         from app.db.models.asset import Asset
+        from app.db.models.recommendation import Recommendation
         from app.services.market_data.yahoo_service import YahooFinanceService
         from sqlalchemy import select
         from datetime import timedelta
@@ -391,7 +407,16 @@ def check_price_movements_task():
             result = await db.execute(select(Asset).where(Asset.is_active_in_pool == True))
             assets = result.scalars().all()
 
+            # Skip symbols analyzed (any trigger) in the last 4 hours to avoid re-triggering
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=4)
+            recent_result = await db.execute(
+                select(Recommendation.symbol).where(Recommendation.created_at >= cutoff)
+            )
+            already_triggered = {row[0] for row in recent_result.all()}
+
         for asset in assets:
+            if asset.symbol in already_triggered:
+                continue
             try:
                 info = await yahoo.get_stock_info(asset.symbol)
                 current_price = info.get("price") or 0
@@ -479,12 +504,12 @@ def check_breaking_news_task():
             result = await db.execute(select(Asset).where(Asset.is_active_in_pool == True))
             assets = result.scalars().all()
 
-            # Find symbols already scanned in the last 2 hours (avoid duplicate triggers)
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=2)
+            # Skip symbols already analyzed (any trigger) in the last 4 hours to avoid duplicates
+            # This covers: daily SCHEDULED scan + previous NEWS/PRICE triggers
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=4)
             recent_result = await db.execute(
                 select(Recommendation.symbol).where(
                     Recommendation.created_at >= cutoff,
-                    Recommendation.trigger_type.in_(["NEWS_ALERT", "PRICE_ALERT"]),
                 )
             )
             already_triggered_symbols = {row[0] for row in recent_result.all()}

@@ -14,7 +14,7 @@ Activation:
   Rest → is_active_in_pool=False (but stay in universe)
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import yfinance as yf
@@ -120,6 +120,28 @@ def _score_ticker(info: dict) -> tuple[float, float]:
     return min(long_pts, 100.0), min(short_pts, 100.0)
 
 
+def _recency_penalty(last_analyzed_at: Optional[datetime]) -> float:
+    """
+    Return a score penalty for recently-analyzed stocks to force rotation.
+    Stocks that haven't been analyzed recently get a freshness bonus instead.
+    This ensures the pre-screener cycles through all S&P500/400 stocks over time
+    rather than always picking the same mega-caps.
+    """
+    if last_analyzed_at is None:
+        return -10.0  # freshness bonus: never analyzed → prioritize
+    now = datetime.now(timezone.utc)
+    if last_analyzed_at.tzinfo is None:
+        last_analyzed_at = last_analyzed_at.replace(tzinfo=timezone.utc)
+    days = (now - last_analyzed_at).total_seconds() / 86400
+    if days < 1:
+        return 25.0   # analyzed today: strong penalty, skip this cycle
+    if days < 3:
+        return 15.0   # analyzed 1-3 days ago: moderate penalty
+    if days < 7:
+        return 5.0    # analyzed 3-7 days ago: light penalty
+    return 0.0        # older than 7 days: no penalty
+
+
 def _batch_symbols(symbols: list[str]) -> list[list[str]]:
     return [symbols[i:i + BATCH_SIZE] for i in range(0, len(symbols), BATCH_SIZE)]
 
@@ -130,15 +152,16 @@ async def run_pre_screener(db: AsyncSession) -> dict:
     Returns summary dict.
     """
     result = await db.execute(
-        select(Asset.id, Asset.symbol).where(Asset.in_universe == True)
+        select(Asset.id, Asset.symbol, Asset.last_analyzed_at).where(Asset.in_universe == True)
     )
-    universe = result.fetchall()  # [(id, symbol), ...]
+    universe = result.fetchall()  # [(id, symbol, last_analyzed_at), ...]
 
     if not universe:
         logger.warning("Pre-screener: no universe stocks found")
         return {"scored": 0, "long_activated": 0, "short_activated": 0}
 
-    symbol_to_id = {sym: aid for aid, sym in universe}
+    symbol_to_id = {sym: aid for aid, sym, _ in universe}
+    symbol_to_analyzed: dict[str, Optional[datetime]] = {sym: ts for _, sym, ts in universe}
     symbols = list(symbol_to_id.keys())
     logger.info(f"Pre-screener: scoring {len(symbols)} universe stocks")
 
@@ -151,6 +174,10 @@ async def run_pre_screener(db: AsyncSession) -> dict:
                 try:
                     info = tickers.tickers[sym].info or {}
                     long_s, short_s = _score_ticker(info)
+                    # Apply recency penalty so recently-analyzed stocks rotate out
+                    penalty = _recency_penalty(symbol_to_analyzed.get(sym))
+                    long_s = max(0.0, long_s - penalty)
+                    short_s = max(0.0, short_s - penalty)
                     scores[sym] = (long_s, short_s)
                 except Exception as e:
                     logger.debug(f"Score failed for {sym}: {e}")
