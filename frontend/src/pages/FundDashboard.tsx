@@ -65,7 +65,7 @@ const FundDashboard: React.FC = () => {
     setScanRunning(true);
     setScanResult(null);
     try {
-      const result = await marketApi.scanPoolNow(5);
+      const result = await marketApi.scanPoolNow(30);
       setScanResult(result);
       dispatch(fetchRecommendations({}));
     } catch (e: any) {
@@ -332,10 +332,21 @@ const FundDashboard: React.FC = () => {
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
             <h2 className="font-bold mb-1">{isHe ? "סריקת AI מלאה" : "Run Full AI Scan"}</h2>
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-400 mb-2">
               {isHe
-                ? "מריץ את צינור ה-AI המלא (ניתוח פונדמנטלי + סנטימנט + ועדה) על עד 5 מניות מהפול הפעיל. לחץ מספר פעמים לסריקת כל הפול. לא נסרקות מניות שנותחו ב-24 השעות האחרונות."
-                : "Runs the full AI pipeline (fundamental + sentiment + committee) on up to 5 active pool stocks per click. Click multiple times to scan the entire pool. Stocks already scanned in the last 24h are skipped automatically."}
+                ? "מריץ AI מלא (פונדמנטלי + סנטימנט + ועדה) על כל הפול הפעיל — עד 30 מניות. הסריקה לוקחת כ-2-4 דקות."
+                : "Runs the full AI pipeline (fundamental + sentiment + committee) on all active pool stocks — up to 30. Takes ~2-4 minutes."}
+            </p>
+            <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-800/50 rounded-lg px-3 py-2 w-fit">
+              <span className="text-blue-400">1.</span>
+              <span>{isHe ? "רענן יקום" : "Refresh Universe"}</span>
+              <span className="text-gray-700">→</span>
+              <span className="text-blue-400">2.</span>
+              <span>{isHe ? "הרץ סקרינר" : "Run Screener"}</span>
+              <span className="text-gray-700">→</span>
+              <span className="text-green-400">3.</span>
+              <span className="text-green-400 font-medium">{isHe ? "סרוק עכשיו" : "Scan Now"}</span>
+            </div>
             </p>
             {scanResult && !scanResult.error && (
               <div className="mt-3 p-3 rounded-xl bg-green-900/20 border border-green-900/30 text-xs text-green-300 space-y-1">

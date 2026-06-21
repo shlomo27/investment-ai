@@ -388,7 +388,7 @@ export const marketApi = {
     return response.data;
   },
 
-  scanPoolNow: async (batch = 5): Promise<any> => {
+  scanPoolNow: async (batch = 30): Promise<any> => {
     const response = await api.post("/market/pool/scan-now", null, { params: { batch } });
     return response.data;
   },
