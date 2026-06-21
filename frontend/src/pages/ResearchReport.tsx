@@ -453,7 +453,12 @@ const SensitivityModal: React.FC<{ sens: NonNullable<QuantitativeModels["sensiti
 
 type ModelKey = "dcf" | "ddm" | "monte_carlo" | "comps" | "sensitivity";
 
-const QuantModels: React.FC<{ qm: QuantitativeModels; price?: number }> = ({ qm, price }) => {
+const QuantModels: React.FC<{
+  qm: QuantitativeModels;
+  price?: number;
+  onRerun?: () => void;
+  rerunLoading?: boolean;
+}> = ({ qm, price, onRerun, rerunLoading }) => {
   const [open, setOpen] = useState<ModelKey | null>(null);
 
   const dcf  = qm.dcf;
@@ -551,27 +556,41 @@ const QuantModels: React.FC<{ qm: QuantitativeModels; price?: number }> = ({ qm,
       {open === "sensitivity" && <SensitivityModal sens={sens ?? {}} onClose={() => setOpen(null)} />}
 
       <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800 space-y-4">
-        <h2 className="font-bold text-sm uppercase tracking-wide text-gray-300">
-          Quantitative Valuation Models
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="font-bold text-sm uppercase tracking-wide text-gray-300">
+            Quantitative Valuation Models
+          </h2>
+          {onRerun && (
+            <button
+              onClick={onRerun}
+              disabled={rerunLoading}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-blue-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors px-2 py-1 rounded-lg hover:bg-gray-800"
+            >
+              <span className={rerunLoading ? "animate-spin inline-block" : ""}>↻</span>
+              {rerunLoading ? "Computing..." : "Re-run models"}
+            </button>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {cards.map((c) => (
             <button
               key={c.key}
               onClick={() => setOpen(c.key)}
-              className={`text-left bg-gray-800/50 rounded-xl p-4 border border-gray-700/50 transition-all group cursor-pointer ${
+              className={`text-left rounded-xl p-4 border transition-all group cursor-pointer ${
                 c.available
-                  ? `${c.borderCls} hover:bg-gray-800`
-                  : "hover:border-gray-600 hover:bg-gray-800/40 opacity-70 hover:opacity-90"
+                  ? `bg-gray-800/50 border-gray-700/50 ${c.borderCls} hover:bg-gray-800`
+                  : "bg-gray-800/20 border-gray-700/30 hover:border-gray-600 hover:bg-gray-800/40"
               }`}
             >
               <div className="flex items-start justify-between mb-2">
                 <div>
-                  <p className={`text-xs font-bold uppercase tracking-widest ${c.accentCls}`}>{c.label}</p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">{c.sublabel}</p>
+                  <p className={`text-xs font-bold uppercase tracking-widest ${c.available ? c.accentCls : "text-gray-500"}`}>
+                    {c.label}
+                  </p>
+                  <p className="text-[10px] text-gray-600 mt-0.5">{c.sublabel}</p>
                 </div>
-                <span className="text-gray-600 group-hover:text-gray-400 text-xs transition-colors">→</span>
+                <span className="text-gray-600 group-hover:text-gray-300 text-xs transition-colors">→</span>
               </div>
 
               {c.available && c.headline ? (
@@ -585,10 +604,10 @@ const QuantModels: React.FC<{ qm: QuantitativeModels; price?: number }> = ({ qm,
                   )}
                 </div>
               ) : (
-                <p className="text-[10px] text-gray-600 mt-3 italic leading-relaxed">{c.unavailMsg ?? "N/A"}</p>
+                <p className="text-[10px] text-gray-500 mt-3 italic leading-relaxed">{c.unavailMsg ?? "N/A"}</p>
               )}
 
-              <p className={`text-[10px] mt-3 ${c.accentCls} opacity-60 group-hover:opacity-100 transition-opacity`}>
+              <p className={`text-[10px] mt-3 font-medium ${c.available ? c.accentCls : "text-gray-500"} group-hover:brightness-125 transition-all`}>
                 {c.available ? "Click to view full model →" : "Click to view methodology →"}
               </p>
             </button>
@@ -956,7 +975,7 @@ const ResearchReport: React.FC = () => {
         </div>
       )}
       {fa?.quantitative_models && (
-        <QuantModels qm={fa.quantitative_models} price={currentPrice ?? undefined} />
+        <QuantModels qm={fa.quantitative_models} price={currentPrice ?? undefined} onRerun={handleGenerateQuantModels} rerunLoading={quantLoading} />
       )}
 
       {/* Senior Committee Decision */}
