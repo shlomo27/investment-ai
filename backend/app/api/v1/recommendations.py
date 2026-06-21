@@ -353,36 +353,101 @@ async def recompute_quant_models(
     # Fetch market data to supply to the quant model engine
     from app.services.market_data.yahoo_service import YahooFinanceService
     from app.agents.fundamental.agent import get_fundamental_agent
+    import requests as _req
 
     yahoo = YahooFinanceService()
     market_data = await yahoo.get_stock_info(rec.symbol, force_refresh=True) or {}
 
-    # On Railway, Yahoo returns price via fast_info but blocks fundamental data
-    # (P/E, FCF, sector, market_cap). Supplement with Alpha Vantage when needed.
+    # On Railway, Yahoo returns price via fast_info but ticker.info is blocked,
+    # so fundamentals (P/E, FCF, sector, market_cap) are all missing.
+    # Strategy: try v10/quoteSummary directly (same domain as working v8/chart),
+    # then fall back to Alpha Vantage.
+    def _rv(d: dict, key: str):
+        val = d.get(key)
+        return (val.get("raw") if isinstance(val, dict) else val) if val else None
+
     missing_fundamentals = (
         not market_data.get("pe_ratio")
         or not market_data.get("sector")
         or not market_data.get("market_cap")
     )
+
     if missing_fundamentals:
+        # ── Attempt 1: Yahoo v10 quoteSummary with browser headers ──────────
+        try:
+            v10_resp = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: _req.get(
+                    f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{rec.symbol}",
+                    params={"modules": "financialData,defaultKeyStatistics,summaryProfile,summaryDetail"},
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"},
+                    timeout=10,
+                )
+            )
+            if v10_resp.status_code == 200:
+                qs = (v10_resp.json().get("quoteSummary") or {}).get("result") or []
+                if qs:
+                    fd = qs[0].get("financialData") or {}
+                    ks = qs[0].get("defaultKeyStatistics") or {}
+                    sp = qs[0].get("summaryProfile") or {}
+                    sd = qs[0].get("summaryDetail") or {}
+                    candidates = {
+                        "pe_ratio":       _rv(ks, "trailingPE") or _rv(sd, "trailingPE"),
+                        "forward_pe":     _rv(ks, "forwardPE"),
+                        "price_to_book":  _rv(ks, "priceToBook"),
+                        "price_to_sales": _rv(sd, "priceToSalesTrailing12Months"),
+                        "beta":           _rv(ks, "beta"),
+                        "market_cap":     _rv(ks, "marketCap"),
+                        "free_cash_flow": _rv(fd, "freeCashflow"),
+                        "revenue_growth": _rv(fd, "revenueGrowth"),
+                        "earnings_growth":_rv(fd, "earningsGrowth"),
+                        "roe":            _rv(fd, "returnOnEquity"),
+                        "dividend_yield": _rv(sd, "dividendYield"),
+                        "sector":         sp.get("sector"),
+                    }
+                    filled = {k: v for k, v in candidates.items() if v is not None}
+                    # Merge: Yahoo's real values (non-zero, non-None) take priority
+                    for k, v in filled.items():
+                        if not market_data.get(k):
+                            market_data[k] = v
+                    logger.info(
+                        "v10 quoteSummary supplemented market data",
+                        symbol=rec.symbol, fields=list(filled.keys()),
+                    )
+                    missing_fundamentals = (
+                        not market_data.get("pe_ratio")
+                        or not market_data.get("sector")
+                        or not market_data.get("market_cap")
+                    )
+        except Exception as exc:
+            logger.warning("v10 quoteSummary failed", symbol=rec.symbol, error=str(exc))
+
+    if missing_fundamentals:
+        # ── Attempt 2: Alpha Vantage OVERVIEW ───────────────────────────────
         existing_price = float(market_data.get("price") or rec.current_price_at_recommendation or 0)
         av_data = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: yahoo._fetch_alpha_vantage_info(rec.symbol, existing_price=existing_price)
         )
         if av_data:
-            # Merge: Alpha Vantage fills in fundamentals; keep any real values from Yahoo
-            merged = {**av_data}
-            for k, v in market_data.items():
-                if v is not None and v != 0 and v != 0.0 and v != "":
-                    merged[k] = v
-            market_data = merged
-            logger.info("Supplemented market data with Alpha Vantage", symbol=rec.symbol)
+            for k, v in av_data.items():
+                if v is not None and not market_data.get(k):
+                    market_data[k] = v
+            logger.info("Alpha Vantage supplemented market data", symbol=rec.symbol)
 
     if not market_data.get("price"):
         market_data["price"] = float(rec.current_price_at_recommendation or 0)
 
     market_data["symbol"] = rec.symbol
+    logger.info(
+        "Final market data for quant models",
+        symbol=rec.symbol,
+        price=market_data.get("price"),
+        pe=market_data.get("pe_ratio"),
+        fcf=market_data.get("free_cash_flow"),
+        market_cap=market_data.get("market_cap"),
+        sector=market_data.get("sector"),
+    )
 
     # Run quantitative models only (no LLM call)
     agent = get_fundamental_agent()

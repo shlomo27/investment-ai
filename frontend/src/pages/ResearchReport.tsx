@@ -94,117 +94,140 @@ const ResultBanner: React.FC<{ label: string; value: string; upside?: number }> 
   </div>
 );
 
-// DCF Modal
-const DCFModal: React.FC<{ dcf: NonNullable<QuantitativeModels["dcf"]>; onClose: () => void }> = ({ dcf, onClose }) => (
-  <ModalShell title="Discounted Cash Flow (DCF)" subtitle="Intrinsic Valuation" accentCls="text-blue-400" onClose={onClose}>
-    <Section title="Methodology">
-      <p className="text-sm text-gray-400 leading-relaxed">
-        DCF values a company by projecting its free cash flow forward 5 years, then adding a terminal value
-        (the perpetuity value after Year 5). All future cash flows are discounted back to today using WACC
-        (Weighted Average Cost of Capital). The resulting total equity value is divided by shares outstanding
-        to derive intrinsic value per share.
-      </p>
-    </Section>
-
-    <Section title="Assumptions">
-      <Row label="FCF Base (TTM)" value={fmtMM(dcf.fcf_base_mm)} />
-      <Row label="FCF Growth Rate (Years 1–5)" value={`${dcf.fcf_growth_pct}% / yr`} />
-      <Row label="WACC (Discount Rate)" value={`${dcf.wacc_pct}%`} />
-      <Row label="Terminal Growth Rate" value={`${dcf.terminal_growth_pct}%`} />
-      <Row label="Implied Shares Outstanding" value={`${dcf.shares_mm}M`} />
+// Data-unavailable banner shown inside modals when calculation failed
+const NoDataBanner: React.FC<{ reason?: string }> = ({ reason }) => (
+  <div className="bg-gray-800/80 rounded-xl p-4 border border-gray-700 flex items-start gap-3">
+    <span className="text-yellow-400 text-lg shrink-0">⚠</span>
+    <div>
+      <p className="text-xs font-bold text-yellow-400 uppercase tracking-wide mb-1">Calculation Not Available</p>
+      <p className="text-xs text-gray-400 leading-relaxed">{reason ?? "Insufficient financial data to run this model."}</p>
       <p className="text-[10px] text-gray-600 mt-1">
-        WACC = Risk-free 4.5% + Beta × Equity Risk Premium 5.5%. FCF growth capped at 30%.
+        Click "Generate Models" on the research page to retry with fresh market data.
       </p>
-    </Section>
-
-    {dcf.yearly_projections && dcf.yearly_projections.length > 0 && (
-      <Section title="5-Year FCF Projection">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs font-mono">
-            <thead>
-              <tr className="text-gray-500 border-b border-gray-800">
-                <th className="text-left py-1.5 pr-4">Year</th>
-                <th className="text-right py-1.5 pr-4">FCF ($M)</th>
-                <th className="text-right py-1.5 pr-4">PV Factor</th>
-                <th className="text-right py-1.5">PV ($M)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dcf.yearly_projections.map((yr) => (
-                <tr key={yr.year} className="border-b border-gray-800/40">
-                  <td className="py-1.5 pr-4 text-gray-400">Year {yr.year}</td>
-                  <td className="py-1.5 pr-4 text-right text-gray-200">{yr.fcf_mm.toFixed(1)}</td>
-                  <td className="py-1.5 pr-4 text-right text-gray-500">{yr.pv_factor.toFixed(4)}</td>
-                  <td className="py-1.5 text-right text-blue-400">{yr.pv_mm.toFixed(1)}</td>
-                </tr>
-              ))}
-              <tr className="border-t border-gray-700">
-                <td colSpan={3} className="py-1.5 pr-4 text-gray-400">PV of 5-yr FCFs</td>
-                <td className="py-1.5 text-right text-blue-300 font-bold">
-                  ${(dcf.pv_5yr_fcf! / 1e6).toFixed(1)}M
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </Section>
-    )}
-
-    <Section title="Terminal Value">
-      <Row label="Terminal Value (Year 5 FCF × perpetuity)" value={`$${(dcf.terminal_value_total! / 1e6).toFixed(0)}M`} />
-      <Row label="PV of Terminal Value" value={`$${(dcf.pv_terminal! / 1e6).toFixed(0)}M`} />
-      <Row label="Total Equity Value (5yr FCF + Terminal)" value={`$${(dcf.total_equity! / 1e6).toFixed(0)}M`} />
-    </Section>
-
-    <ResultBanner label="Intrinsic Value per Share" value={fmtUsd(dcf.intrinsic_value)} upside={dcf.upside_pct} />
-    <p className="text-[10px] text-gray-600 text-center">
-      Current price {fmtUsd(dcf.current_price)} · WACC {dcf.wacc_pct}% · Terminal growth {dcf.terminal_growth_pct}%
-    </p>
-  </ModalShell>
+    </div>
+  </div>
 );
+
+// DCF Modal
+const DCFModal: React.FC<{ dcf: NonNullable<QuantitativeModels["dcf"]>; onClose: () => void }> = ({ dcf, onClose }) => {
+  const hasData = dcf.intrinsic_value != null;
+  return (
+    <ModalShell title="Discounted Cash Flow (DCF)" subtitle="Intrinsic Valuation" accentCls="text-blue-400" onClose={onClose}>
+      <Section title="Methodology">
+        <p className="text-sm text-gray-400 leading-relaxed">
+          DCF values a company by projecting its free cash flow forward 5 years, then adding a terminal value
+          (the perpetuity value after Year 5). All future cash flows are discounted back to today using WACC
+          (Weighted Average Cost of Capital). The resulting total equity value is divided by shares outstanding
+          to derive intrinsic value per share.
+        </p>
+      </Section>
+
+      <Section title="Required Inputs">
+        <Row label="Free Cash Flow (TTM)" value={hasData ? fmtMM(dcf.fcf_base_mm) : "—"} />
+        <Row label="Market Capitalization" value={hasData && dcf.shares_mm ? `${dcf.shares_mm}M shares implied` : "—"} />
+        <Row label="FCF Growth Rate (Years 1–5)" value={hasData ? `${dcf.fcf_growth_pct}% / yr` : "derived from revenue growth"} />
+        <Row label="WACC (Discount Rate)" value={hasData ? `${dcf.wacc_pct}%` : "= Risk-free 4.5% + Beta × 5.5%"} />
+        <Row label="Terminal Growth Rate" value={hasData ? `${dcf.terminal_growth_pct}%` : "2.5% (default)"} />
+        <p className="text-[10px] text-gray-600 mt-1">FCF growth capped at 30%. Requires positive TTM free cash flow.</p>
+      </Section>
+
+      {!hasData && <NoDataBanner reason={dcf.skipped ?? dcf.error} />}
+
+      {hasData && dcf.yearly_projections && dcf.yearly_projections.length > 0 && (
+        <Section title="5-Year FCF Projection">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs font-mono">
+              <thead>
+                <tr className="text-gray-500 border-b border-gray-800">
+                  <th className="text-left py-1.5 pr-4">Year</th>
+                  <th className="text-right py-1.5 pr-4">FCF ($M)</th>
+                  <th className="text-right py-1.5 pr-4">PV Factor</th>
+                  <th className="text-right py-1.5">PV ($M)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dcf.yearly_projections.map((yr) => (
+                  <tr key={yr.year} className="border-b border-gray-800/40">
+                    <td className="py-1.5 pr-4 text-gray-400">Year {yr.year}</td>
+                    <td className="py-1.5 pr-4 text-right text-gray-200">{yr.fcf_mm.toFixed(1)}</td>
+                    <td className="py-1.5 pr-4 text-right text-gray-500">{yr.pv_factor.toFixed(4)}</td>
+                    <td className="py-1.5 text-right text-blue-400">{yr.pv_mm.toFixed(1)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t border-gray-700">
+                  <td colSpan={3} className="py-1.5 pr-4 text-gray-400">PV of 5-yr FCFs</td>
+                  <td className="py-1.5 text-right text-blue-300 font-bold">
+                    ${((dcf.pv_5yr_fcf ?? 0) / 1e6).toFixed(1)}M
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      )}
+
+      {hasData && (
+        <>
+          <Section title="Terminal Value">
+            <Row label="Terminal Value (Year 5 FCF × perpetuity)" value={`$${((dcf.terminal_value_total ?? 0) / 1e6).toFixed(0)}M`} />
+            <Row label="PV of Terminal Value" value={`$${((dcf.pv_terminal ?? 0) / 1e6).toFixed(0)}M`} />
+            <Row label="Total Equity Value" value={`$${((dcf.total_equity ?? 0) / 1e6).toFixed(0)}M`} />
+          </Section>
+          <ResultBanner label="Intrinsic Value per Share" value={fmtUsd(dcf.intrinsic_value)} upside={dcf.upside_pct} />
+          <p className="text-[10px] text-gray-600 text-center">
+            Current price {fmtUsd(dcf.current_price)} · WACC {dcf.wacc_pct}% · Terminal growth {dcf.terminal_growth_pct}%
+          </p>
+        </>
+      )}
+    </ModalShell>
+  );
+};
 
 // DDM Modal
-const DDMModal: React.FC<{ ddm: NonNullable<QuantitativeModels["ddm"]>; onClose: () => void }> = ({ ddm, onClose }) => (
-  <ModalShell title="Dividend Discount Model (DDM)" subtitle="Gordon Growth Model" accentCls="text-purple-400" onClose={onClose}>
-    <Section title="Methodology">
-      <p className="text-sm text-gray-400 leading-relaxed">
-        The Gordon Growth Model values a stock as the present value of all future dividends growing at a constant
-        rate. It is applicable only to dividend-paying stocks and assumes dividends grow perpetually at a
-        sustainable rate derived from ROE and retention ratio. Formula: <span className="font-mono text-gray-300">P = D₁ / (ke − g)</span>
-      </p>
-    </Section>
-
-    <Section title="Inputs">
-      <Row label="Current Dividend per Share (D₀)" value={fmtUsd(ddm.dividend_per_share)} />
-      <Row label="Next Year Dividend (D₁ = D₀ × (1+g))" value={fmtUsd(ddm.dividend_per_share != null ? ddm.dividend_per_share * (1 + (ddm.growth_rate_pct ?? 0) / 100) : undefined)} />
-      <Row label="Sustainable Growth Rate (g)" value={`${ddm.growth_rate_pct}%`} />
-      <Row label="Cost of Equity (ke)" value={`${ddm.cost_of_equity_pct}%`} />
-      <Row label="ke − g (discount spread)" value={`${((ddm.cost_of_equity_pct ?? 0) - (ddm.growth_rate_pct ?? 0)).toFixed(1)}%`} />
-      <p className="text-[10px] text-gray-600 mt-1">
-        g = ROE × (1 − payout ratio), capped at 12%. ke = 4.5% + beta × 5.5%.
-      </p>
-    </Section>
-
-    <Section title="Formula Application">
-      <div className="bg-gray-800/50 rounded-xl p-4 font-mono text-sm text-center">
-        <p className="text-gray-400">P = D₁ / (ke − g)</p>
-        <p className="text-gray-200 mt-1">
-          = {fmtUsd(ddm.dividend_per_share != null ? ddm.dividend_per_share * (1 + (ddm.growth_rate_pct ?? 0) / 100) : undefined)}
-          {" ÷ "}({ddm.cost_of_equity_pct}% − {ddm.growth_rate_pct}%)
+const DDMModal: React.FC<{ ddm: NonNullable<QuantitativeModels["ddm"]>; onClose: () => void }> = ({ ddm, onClose }) => {
+  const hasData = ddm.intrinsic_value != null;
+  const d1 = ddm.dividend_per_share != null ? ddm.dividend_per_share * (1 + (ddm.growth_rate_pct ?? 0) / 100) : undefined;
+  return (
+    <ModalShell title="Dividend Discount Model (DDM)" subtitle="Gordon Growth Model" accentCls="text-purple-400" onClose={onClose}>
+      <Section title="Methodology">
+        <p className="text-sm text-gray-400 leading-relaxed">
+          The Gordon Growth Model values a stock as the present value of all future dividends growing at a constant
+          rate. Applicable only to dividend-paying stocks. Assumes dividends grow perpetually at a sustainable rate
+          derived from ROE × retention ratio. Formula: <span className="font-mono text-gray-300">P = D₁ / (ke − g)</span>
         </p>
-        <p className="text-blue-300 mt-1 text-lg font-bold">= {fmtUsd(ddm.intrinsic_value)}</p>
-      </div>
-    </Section>
+      </Section>
 
-    <ResultBanner label="DDM Intrinsic Value" value={fmtUsd(ddm.intrinsic_value)} upside={ddm.upside_pct} />
-    <p className="text-[10px] text-gray-600 text-center">
-      Only valid for dividend-paying stocks. Sensitive to growth rate and cost of equity assumptions.
-    </p>
-  </ModalShell>
-);
+      <Section title="Required Inputs">
+        <Row label="Dividend Yield" value={hasData ? `$${ddm.dividend_per_share}/share` : "must be > 0%"} />
+        <Row label="Sustainable Growth Rate (g)" value={hasData ? `${ddm.growth_rate_pct}%` : "= ROE × (1 − payout ratio)"} />
+        <Row label="Cost of Equity (ke)" value={hasData ? `${ddm.cost_of_equity_pct}%` : "= 4.5% + beta × 5.5%"} />
+        <p className="text-[10px] text-gray-600 mt-1">ke must exceed g, otherwise perpetuity is undefined.</p>
+      </Section>
+
+      {!hasData && <NoDataBanner reason={ddm.skipped ?? ddm.error} />}
+
+      {hasData && (
+        <>
+          <Section title="Formula Application">
+            <div className="bg-gray-800/50 rounded-xl p-4 font-mono text-sm text-center space-y-1">
+              <p className="text-gray-400">P = D₁ / (ke − g)</p>
+              <p className="text-gray-200">= {fmtUsd(d1)} ÷ ({ddm.cost_of_equity_pct}% − {ddm.growth_rate_pct}%)</p>
+              <p className="text-purple-300 text-lg font-bold">= {fmtUsd(ddm.intrinsic_value)}</p>
+            </div>
+          </Section>
+          <ResultBanner label="DDM Intrinsic Value" value={fmtUsd(ddm.intrinsic_value)} upside={ddm.upside_pct} />
+          <p className="text-[10px] text-gray-600 text-center">
+            Sensitive to growth rate and cost of equity assumptions. Only valid for dividend-paying stocks.
+          </p>
+        </>
+      )}
+    </ModalShell>
+  );
+};
 
 // Monte Carlo Modal
 const MonteCarloModal: React.FC<{ mc: NonNullable<QuantitativeModels["monte_carlo"]>; price?: number; onClose: () => void }> = ({ mc, price, onClose }) => {
+  const hasData = mc.mean != null;
   const distData = [
     { label: "P10 — Bear", value: mc.p10, cls: "bg-red-700" },
     { label: "P25", value: mc.p25, cls: "bg-orange-700" },
@@ -230,58 +253,63 @@ const MonteCarloModal: React.FC<{ mc: NonNullable<QuantitativeModels["monte_carl
 
       <Section title="Parameters">
         <Row label="Current Price" value={fmtUsd(mc.current_price)} />
-        <Row label="Annual Volatility (σ)" value={`${mc.annual_vol_pct}%`} />
-        <Row label="Annual Drift (μ)" value={`${mc.annual_drift_pct}%`} />
-        <Row label="Simulations" value={`${mc.simulations?.toLocaleString()}`} />
-        <Row label="Horizon" value={`${mc.horizon_days} trading days (1 year)`} />
+        <Row label="Annual Volatility (σ)" value={mc.annual_vol_pct != null ? `${mc.annual_vol_pct}%` : "= beta × 20%"} />
+        <Row label="Annual Drift (μ)" value={mc.annual_drift_pct != null ? `${mc.annual_drift_pct}%` : "= revenue growth"} />
+        <Row label="Simulations" value={mc.simulations ? mc.simulations.toLocaleString() : "1,000"} />
+        <Row label="Horizon" value={mc.horizon_days ? `${mc.horizon_days} trading days (1 year)` : "252 days"} />
         <p className="text-[10px] text-gray-600 mt-1">σ = beta × market vol 20%. μ = revenue growth (capped 30%).</p>
       </Section>
 
-      <Section title="Price Distribution at 1-Year Horizon">
-        <div className="space-y-2 mt-1">
-          {distData.map(({ label, value, cls }) => {
-            if (value == null) return null;
-            const pct = barPct(value);
-            const isCurrent = price != null && Math.abs(value - price) < (price * 0.01);
-            return (
-              <div key={label} className="flex items-center gap-3">
-                <span className="text-[10px] text-gray-500 w-20 shrink-0">{label}</span>
-                <div className="flex-1 bg-gray-800 rounded-full h-2 relative">
-                  <div className={`${cls} h-2 rounded-full`} style={{ width: `${pct}%` }} />
-                </div>
-                <span className={`font-mono text-xs w-20 text-right ${upColor(price ? (value - price) / price * 100 : 0)}`}>
-                  {fmtUsd(value)}
-                </span>
-              </div>
-            );
-          })}
-          {price != null && (
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] text-white/50 w-20 shrink-0">▶ Current</span>
-              <div className="flex-1 bg-gray-800 rounded-full h-2 relative">
-                <div className="bg-white/40 h-2 rounded-full" style={{ width: `${barPct(price)}%` }} />
-              </div>
-              <span className="font-mono text-xs w-20 text-right text-white/60">{fmtUsd(price)}</span>
-            </div>
-          )}
-        </div>
-      </Section>
+      {!hasData && <NoDataBanner reason={mc.skipped ?? mc.error} />}
 
-      <Section title="Probability Statistics">
-        <Row
-          label={`Probability price ends above ${fmtUsd(price ?? mc.current_price)}`}
-          value={`${mc.prob_above_pct}%`}
-          cls={upColor((mc.prob_above_pct ?? 50) - 50)}
-        />
-        <Row label="Expected mean price" value={fmtUsd(mc.mean)} cls={upColor(price ? (mc.mean ?? 0) - price : 0)} />
-        {price && mc.mean != null && (
-          <Row
-            label="Mean implied upside"
-            value={fmtPct((mc.mean - price) / price * 100)}
-            cls={upColor((mc.mean - price) / price * 100)}
-          />
-        )}
-      </Section>
+      {hasData && (
+        <>
+          <Section title="Price Distribution at 1-Year Horizon">
+            <div className="space-y-2 mt-1">
+              {distData.map(({ label, value, cls }) => {
+                if (value == null) return null;
+                const pct = barPct(value);
+                return (
+                  <div key={label} className="flex items-center gap-3">
+                    <span className="text-[10px] text-gray-500 w-20 shrink-0">{label}</span>
+                    <div className="flex-1 bg-gray-800 rounded-full h-2 relative">
+                      <div className={`${cls} h-2 rounded-full`} style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className={`font-mono text-xs w-20 text-right ${upColor(price ? (value - price) / price * 100 : 0)}`}>
+                      {fmtUsd(value)}
+                    </span>
+                  </div>
+                );
+              })}
+              {price != null && (
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] text-white/50 w-20 shrink-0">▶ Current</span>
+                  <div className="flex-1 bg-gray-800 rounded-full h-2 relative">
+                    <div className="bg-white/40 h-2 rounded-full" style={{ width: `${barPct(price)}%` }} />
+                  </div>
+                  <span className="font-mono text-xs w-20 text-right text-white/60">{fmtUsd(price)}</span>
+                </div>
+              )}
+            </div>
+          </Section>
+
+          <Section title="Probability Statistics">
+            <Row
+              label={`Probability price ends above ${fmtUsd(price ?? mc.current_price)}`}
+              value={`${mc.prob_above_pct}%`}
+              cls={upColor((mc.prob_above_pct ?? 50) - 50)}
+            />
+            <Row label="Expected mean price" value={fmtUsd(mc.mean)} cls={upColor(price ? (mc.mean ?? 0) - price : 0)} />
+            {price && mc.mean != null && (
+              <Row
+                label="Mean implied upside"
+                value={fmtPct((mc.mean - price) / price * 100)}
+                cls={upColor((mc.mean - price) / price * 100)}
+              />
+            )}
+          </Section>
+        </>
+      )}
     </ModalShell>
   );
 };
@@ -289,6 +317,7 @@ const MonteCarloModal: React.FC<{ mc: NonNullable<QuantitativeModels["monte_carl
 // Comps Modal
 const CompsModal: React.FC<{ comps: NonNullable<QuantitativeModels["comps"]>; onClose: () => void }> = ({ comps, onClose }) => {
   const cmp = comps.comparisons ?? {};
+  const hasData = Object.keys(cmp).length > 0;
   const multiples: Array<{ key: "pe" | "pb" | "ps"; label: string; desc: string }> = [
     { key: "pe", label: "P/E Ratio", desc: "Price to Earnings — measures how much investors pay per dollar of earnings" },
     { key: "pb", label: "P/B Ratio", desc: "Price to Book — compares market value to accounting book value" },
@@ -318,7 +347,9 @@ const CompsModal: React.FC<{ comps: NonNullable<QuantitativeModels["comps"]>; on
         </Section>
       )}
 
-      {multiples.map(({ key, label, desc }) => {
+      {!hasData && <NoDataBanner reason="No P/E, P/B, or P/S data available — sector multiples cannot be compared. Try 'Generate Models' to refresh market data." />}
+
+      {hasData && multiples.map(({ key, label, desc }) => {
         const m = cmp[key];
         if (!m) return null;
         return (
@@ -336,33 +367,34 @@ const CompsModal: React.FC<{ comps: NonNullable<QuantitativeModels["comps"]>; on
           </Section>
         );
       })}
-
-      {Object.keys(cmp).length === 0 && (
-        <p className="text-sm text-gray-500 italic">No multiples available (missing P/E, P/B, P/S data)</p>
-      )}
     </ModalShell>
   );
 };
 
 // Sensitivity Modal
-const SensitivityModal: React.FC<{ sens: NonNullable<QuantitativeModels["sensitivity"]>; onClose: () => void }> = ({ sens, onClose }) => (
+const SensitivityModal: React.FC<{ sens: NonNullable<QuantitativeModels["sensitivity"]>; onClose: () => void }> = ({ sens, onClose }) => {
+  const hasData = sens.table != null;
+  return (
   <ModalShell title="Sensitivity Analysis" subtitle="P/E × EPS Growth Scenario Grid" accentCls="text-rose-400" onClose={onClose}>
     <Section title="Methodology">
       <p className="text-sm text-gray-400 leading-relaxed">
         Tests how share price changes across different combinations of EPS growth and P/E multiple expansion
-        or contraction. This is a scenario-based model: each cell shows the implied price if earnings grow by
-        the row's rate and the market re-rates the stock to the column's P/E multiple.
-        Formula: <span className="font-mono text-gray-300">Implied Price = Current EPS × (1 + EPS Growth) × P/E Multiple</span>
+        or contraction. Each cell shows the implied price if earnings grow by the row's rate and the market
+        re-rates the stock to the column's P/E multiple.
+        Formula: <span className="font-mono text-gray-300">Implied Price = EPS × (1 + Growth) × P/E Multiple</span>
       </p>
     </Section>
 
-    <Section title="Base Inputs">
-      <Row label="Current EPS (TTM)" value={`$${sens.current_eps}`} />
-      <Row label="Current P/E Multiple" value={`${sens.current_pe}x`} />
-      <Row label="Current Share Price" value={fmtUsd(sens.current_price)} />
+    <Section title="Required Inputs">
+      <Row label="Current EPS (TTM)" value={hasData ? `$${sens.current_eps}` : "derived from Price ÷ P/E ratio"} />
+      <Row label="Current P/E Multiple" value={hasData ? `${sens.current_pe}x` : "must be available"} />
+      <Row label="Current Share Price" value={hasData ? fmtUsd(sens.current_price) : "—"} />
+      <p className="text-[10px] text-gray-600 mt-1">Requires a positive P/E ratio to derive EPS.</p>
     </Section>
 
-    <Section title="Price Grid — EPS Growth vs P/E Multiple">
+    {!hasData && <NoDataBanner reason={sens.skipped ?? sens.error ?? "P/E ratio not available — cannot derive EPS for the grid."} />}
+
+    {hasData && <Section title="Price Grid — EPS Growth vs P/E Multiple">
       <div className="overflow-x-auto">
         <table className="w-full text-xs font-mono border-collapse">
           <thead>
@@ -412,9 +444,10 @@ const SensitivityModal: React.FC<{ sens: NonNullable<QuantitativeModels["sensiti
         <span><span className="text-red-500">■</span> &gt;5% downside</span>
         <span><span className="text-red-300">■</span> &gt;20% downside</span>
       </div>
-    </Section>
+    </Section>}
   </ModalShell>
-);
+  );
+};
 
 // ─── Summary cards + modal controller ────────────────────────────────────────────
 
@@ -510,12 +543,12 @@ const QuantModels: React.FC<{ qm: QuantitativeModels; price?: number }> = ({ qm,
 
   return (
     <>
-      {/* Active modal */}
-      {open === "dcf" && dcf?.intrinsic_value != null && <DCFModal dcf={dcf} onClose={() => setOpen(null)} />}
-      {open === "ddm" && ddm?.intrinsic_value != null && <DDMModal ddm={ddm} onClose={() => setOpen(null)} />}
-      {open === "monte_carlo" && mc?.mean != null && <MonteCarloModal mc={mc} price={price} onClose={() => setOpen(null)} />}
-      {open === "comps" && comp && <CompsModal comps={comp} onClose={() => setOpen(null)} />}
-      {open === "sensitivity" && sens?.table != null && <SensitivityModal sens={sens} onClose={() => setOpen(null)} />}
+      {/* Active modal — always render when open, pass availability so modal can show "no data" section */}
+      {open === "dcf" && <DCFModal dcf={dcf ?? {}} onClose={() => setOpen(null)} />}
+      {open === "ddm" && <DDMModal ddm={ddm ?? {}} onClose={() => setOpen(null)} />}
+      {open === "monte_carlo" && <MonteCarloModal mc={mc ?? {}} price={price} onClose={() => setOpen(null)} />}
+      {open === "comps" && <CompsModal comps={comp ?? {}} onClose={() => setOpen(null)} />}
+      {open === "sensitivity" && <SensitivityModal sens={sens ?? {}} onClose={() => setOpen(null)} />}
 
       <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800 space-y-4">
         <h2 className="font-bold text-sm uppercase tracking-wide text-gray-300">
@@ -526,11 +559,11 @@ const QuantModels: React.FC<{ qm: QuantitativeModels; price?: number }> = ({ qm,
           {cards.map((c) => (
             <button
               key={c.key}
-              onClick={() => c.available ? setOpen(c.key) : undefined}
-              className={`text-left bg-gray-800/50 rounded-xl p-4 border border-gray-700/50 transition-all group ${
+              onClick={() => setOpen(c.key)}
+              className={`text-left bg-gray-800/50 rounded-xl p-4 border border-gray-700/50 transition-all group cursor-pointer ${
                 c.available
-                  ? `cursor-pointer ${c.borderCls} hover:bg-gray-800`
-                  : "cursor-default opacity-50"
+                  ? `${c.borderCls} hover:bg-gray-800`
+                  : "hover:border-gray-600 hover:bg-gray-800/40 opacity-70 hover:opacity-90"
               }`}
             >
               <div className="flex items-start justify-between mb-2">
@@ -538,9 +571,7 @@ const QuantModels: React.FC<{ qm: QuantitativeModels; price?: number }> = ({ qm,
                   <p className={`text-xs font-bold uppercase tracking-widest ${c.accentCls}`}>{c.label}</p>
                   <p className="text-[10px] text-gray-500 mt-0.5">{c.sublabel}</p>
                 </div>
-                {c.available && (
-                  <span className="text-gray-600 group-hover:text-gray-400 text-xs transition-colors">→</span>
-                )}
+                <span className="text-gray-600 group-hover:text-gray-400 text-xs transition-colors">→</span>
               </div>
 
               {c.available && c.headline ? (
@@ -557,11 +588,9 @@ const QuantModels: React.FC<{ qm: QuantitativeModels; price?: number }> = ({ qm,
                 <p className="text-[10px] text-gray-600 mt-3 italic leading-relaxed">{c.unavailMsg ?? "N/A"}</p>
               )}
 
-              {c.available && (
-                <p className={`text-[10px] mt-3 ${c.accentCls} opacity-70 group-hover:opacity-100 transition-opacity`}>
-                  Click to view full model →
-                </p>
-              )}
+              <p className={`text-[10px] mt-3 ${c.accentCls} opacity-60 group-hover:opacity-100 transition-opacity`}>
+                {c.available ? "Click to view full model →" : "Click to view methodology →"}
+              </p>
             </button>
           ))}
         </div>
