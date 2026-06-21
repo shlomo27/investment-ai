@@ -6,9 +6,11 @@ Supports Long/Short hedge fund mode via direction_bias parameter.
 """
 import asyncio
 import json
+import math
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import structlog
+import numpy as np
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -73,14 +75,18 @@ class FundamentalAnalystAgent:
             direction_bias=direction_bias,
         )
 
+        quant_models = self._compute_financial_models(market_data)
+        logger.info("Quantitative models computed", symbol=market_data["symbol"], models=list(quant_models.keys()))
+
         prompt = self._build_analysis_prompt(
-            market_data, portfolio_context, news_analysis, macro_analysis, direction_bias
+            market_data, portfolio_context, news_analysis, macro_analysis, direction_bias,
+            quant_models=quant_models,
         )
 
         llm = self._get_llm()
         if llm is None:
             logger.warning("Claude LLM unavailable (missing API key), returning fallback", symbol=market_data["symbol"])
-            return self._fallback_analysis(market_data, "ANTHROPIC_API_KEY not configured")
+            return self._fallback_analysis(market_data, "ANTHROPIC_API_KEY not configured", quant_models)
 
         try:
             response = await asyncio.get_event_loop().run_in_executor(
@@ -99,6 +105,7 @@ class FundamentalAnalystAgent:
 
             analysis = json.loads(content)
             analysis = self._validate_and_normalize(analysis, market_data, direction_bias)
+            analysis["quantitative_models"] = quant_models
 
             logger.info(
                 "FundamentalAnalystAgent completed",
@@ -112,10 +119,10 @@ class FundamentalAnalystAgent:
 
         except json.JSONDecodeError as e:
             logger.error("JSON parse error in fundamental analysis", error=str(e))
-            return self._fallback_analysis(market_data, f"JSON parse error: {e}")
+            return self._fallback_analysis(market_data, f"JSON parse error: {e}", quant_models)
         except Exception as e:
             logger.error("Fundamental analysis failed", symbol=market_data["symbol"], error=str(e))
-            return self._fallback_analysis(market_data, str(e))
+            return self._fallback_analysis(market_data, str(e), quant_models)
 
     @staticmethod
     def _v(value: Any, default: Any = "N/A") -> Any:
@@ -128,6 +135,7 @@ class FundamentalAnalystAgent:
         news_analysis: Optional[Dict[str, Any]] = None,
         macro_analysis: Optional[Dict[str, Any]] = None,
         direction_bias: Optional[str] = None,
+        quant_models: Optional[Dict[str, Any]] = None,
     ) -> str:
         v = self._v
         news_summary = "\n".join([
@@ -179,6 +187,8 @@ Current Holdings: {portfolio_context.get('holdings_count', 0)} positions
 Max Single Asset Exposure: {portfolio_context.get('max_exposure_pct', 3)}%
 Existing Position in {data['symbol']}: {portfolio_context.get('existing_position', 'None')}
 """
+
+        quant_section = self._format_quant_models(quant_models) if quant_models else ""
 
         prompt = f"""Perform comprehensive fundamental analysis for {data['symbol']} ({data['exchange']}).
 {direction_block}
@@ -236,6 +246,8 @@ Key Themes: {', '.join(sentiment.get('key_themes', [])[:5])}
 
 === GEMINI MACRO CONTEXT ===
 {self._format_macro_analysis(macro_analysis)}
+
+{quant_section}
 {portfolio_section}
 === COMPANY CONTEXT ===
 {data.get('company_description', 'No description available.')}
@@ -302,6 +314,286 @@ Based on ALL the above data and the screener directive, provide your analysis in
             f"Key Macro Catalysts: {', '.join(macro.get('key_macro_catalysts') or [])}"
         )
 
+    @staticmethod
+    def _compute_financial_models(data: MarketDataState) -> Dict[str, Any]:
+        """Run DCF, DDM, Sensitivity Analysis, Monte Carlo, and Comps purely in Python."""
+        models: Dict[str, Any] = {}
+
+        price       = float(data.get("price") or 0)
+        pe          = data.get("pe_ratio")
+        forward_pe  = data.get("forward_pe")
+        pb          = data.get("price_to_book")
+        ps          = data.get("price_to_sales")
+        beta        = float(data.get("beta") or 1.2)
+        fcf         = float(data.get("free_cash_flow") or 0)
+        market_cap  = float(data.get("market_cap") or 0)
+        rev_growth  = float(data.get("revenue_growth") or 0.05)
+        earn_growth = float(data.get("earnings_growth") or 0.05)
+        roe         = float(data.get("roe") or 0)
+        div_yield   = float(data.get("dividend_yield") or 0)
+        sector      = (data.get("sector") or "").lower()
+
+        RISK_FREE        = 0.045
+        ERP              = 0.055
+        TERMINAL_GROWTH  = 0.025
+        beta = max(0.3, min(beta, 3.0))
+        ke   = RISK_FREE + beta * ERP  # cost of equity
+
+        # ── DCF ────────────────────────────────────────────────────────────
+        try:
+            if fcf > 0 and market_cap > 0 and price > 0:
+                fcf_g = min(max(rev_growth, earn_growth, 0.0), 0.30)
+                wacc  = ke
+                fcf_t = fcf
+                pv_fcf = 0.0
+                for t in range(1, 6):
+                    fcf_t  *= (1 + fcf_g)
+                    pv_fcf += fcf_t / (1 + wacc) ** t
+                term_value   = fcf_t * (1 + TERMINAL_GROWTH) / (wacc - TERMINAL_GROWTH)
+                pv_terminal  = term_value / (1 + wacc) ** 5
+                total_equity = pv_fcf + pv_terminal
+                shares       = market_cap / price
+                intrinsic    = total_equity / shares
+                upside       = (intrinsic - price) / price * 100
+                models["dcf"] = {
+                    "intrinsic_value": round(intrinsic, 2),
+                    "current_price":   round(price, 2),
+                    "upside_pct":      round(upside, 1),
+                    "wacc_pct":        round(wacc * 100, 1),
+                    "fcf_growth_pct":  round(fcf_g * 100, 1),
+                    "terminal_growth_pct": round(TERMINAL_GROWTH * 100, 1),
+                    "pv_5yr_fcf":      round(pv_fcf, 0),
+                    "pv_terminal":     round(pv_terminal, 0),
+                }
+            else:
+                models["dcf"] = {"skipped": "Negative/zero FCF or missing market cap — DCF not applicable"}
+        except Exception as exc:
+            models["dcf"] = {"error": str(exc)}
+
+        # ── DDM (Gordon Growth Model) ──────────────────────────────────────
+        try:
+            if div_yield > 0 and price > 0:
+                d0 = price * div_yield
+                if roe > 0 and pe and float(pe) > 0:
+                    eps     = price / float(pe)
+                    payout  = min(max(d0 / eps, 0.0), 0.95) if eps > 0 else 0.5
+                    g_ddm   = min(roe * (1 - payout), 0.12)
+                else:
+                    g_ddm = 0.03
+                if ke > g_ddm:
+                    intrinsic_ddm = d0 * (1 + g_ddm) / (ke - g_ddm)
+                    upside_ddm    = (intrinsic_ddm - price) / price * 100
+                    models["ddm"] = {
+                        "intrinsic_value":    round(intrinsic_ddm, 2),
+                        "current_price":      round(price, 2),
+                        "upside_pct":         round(upside_ddm, 1),
+                        "dividend_per_share": round(d0, 2),
+                        "growth_rate_pct":    round(g_ddm * 100, 1),
+                        "cost_of_equity_pct": round(ke * 100, 1),
+                    }
+                else:
+                    models["ddm"] = {"skipped": f"Sustainable growth ({g_ddm:.1%}) ≥ cost of equity ({ke:.1%})"}
+            else:
+                models["ddm"] = {"skipped": "Non-dividend paying stock — DDM not applicable"}
+        except Exception as exc:
+            models["ddm"] = {"error": str(exc)}
+
+        # ── Sensitivity Analysis (P/E × EPS-growth grid) ──────────────────
+        try:
+            eps_base = None
+            pe_used  = None
+            if pe and float(pe) > 0 and price > 0:
+                eps_base = price / float(pe);  pe_used = float(pe)
+            elif forward_pe and float(forward_pe) > 0 and price > 0:
+                eps_base = price / float(forward_pe);  pe_used = float(forward_pe)
+
+            if eps_base and eps_base > 0:
+                pe_multiples   = [12, 15, 18, 20, 22, 25]
+                growth_rates   = [-0.10, 0.0, 0.05, 0.10, 0.15, 0.20]
+                table: Dict[str, Dict[str, float]] = {}
+                for g in growth_rates:
+                    row: Dict[str, float] = {}
+                    for pe_m in pe_multiples:
+                        row[str(pe_m)] = round(eps_base * (1 + g) * pe_m, 2)
+                    table[f"{g:+.0%}"] = row
+                models["sensitivity"] = {
+                    "current_eps":     round(eps_base, 2),
+                    "current_pe":      round(pe_used, 1),
+                    "current_price":   round(price, 2),
+                    "pe_scenarios":    pe_multiples,
+                    "growth_scenarios": [f"{g:+.0%}" for g in growth_rates],
+                    "table":           table,
+                }
+            else:
+                models["sensitivity"] = {"skipped": "No EPS available (missing P/E) — sensitivity not computed"}
+        except Exception as exc:
+            models["sensitivity"] = {"error": str(exc)}
+
+        # ── Monte Carlo (GBM, 1 000 paths, 252 days) ──────────────────────
+        try:
+            if price > 0:
+                rng          = np.random.default_rng(seed=42)
+                N_SIMS, DAYS = 1_000, 252
+                annual_vol   = beta * 0.20
+                annual_drift = min(max(rev_growth, 0.0), 0.30)
+                daily_drift  = annual_drift / DAYS
+                daily_vol    = annual_vol / math.sqrt(DAYS)
+                shocks       = rng.normal(daily_drift, daily_vol, (N_SIMS, DAYS))
+                finals       = price * np.exp(np.cumsum(shocks, axis=1))[:, -1]
+                models["monte_carlo"] = {
+                    "current_price":       round(price, 2),
+                    "p10":                 round(float(np.percentile(finals, 10)), 2),
+                    "p25":                 round(float(np.percentile(finals, 25)), 2),
+                    "mean":                round(float(np.mean(finals)), 2),
+                    "p75":                 round(float(np.percentile(finals, 75)), 2),
+                    "p90":                 round(float(np.percentile(finals, 90)), 2),
+                    "prob_above_pct":      round(float(np.mean(finals > price) * 100), 1),
+                    "annual_vol_pct":      round(annual_vol * 100, 1),
+                    "annual_drift_pct":    round(annual_drift * 100, 1),
+                    "simulations":         N_SIMS,
+                    "horizon_days":        DAYS,
+                }
+            else:
+                models["monte_carlo"] = {"skipped": "No price available"}
+        except Exception as exc:
+            models["monte_carlo"] = {"error": str(exc)}
+
+        # ── Comps (Sector Comparable Multiples) ───────────────────────────
+        SECTOR_MULTIPLES: Dict[str, Dict[str, float]] = {
+            "technology":              {"pe": 28.0, "pb": 7.0,  "ps": 6.0, "ev_ebitda": 22.0},
+            "semiconductors":          {"pe": 25.0, "pb": 5.5,  "ps": 5.0, "ev_ebitda": 18.0},
+            "software":                {"pe": 35.0, "pb": 8.0,  "ps": 8.0, "ev_ebitda": 28.0},
+            "healthcare":              {"pe": 22.0, "pb": 3.5,  "ps": 2.5, "ev_ebitda": 14.0},
+            "biotechnology":           {"pe": 40.0, "pb": 5.0,  "ps": 8.0, "ev_ebitda": 30.0},
+            "financials":              {"pe": 13.0, "pb": 1.4,  "ps": 2.0, "ev_ebitda": 10.0},
+            "banks":                   {"pe": 11.0, "pb": 1.2,  "ps": 2.0, "ev_ebitda":  9.0},
+            "consumer discretionary":  {"pe": 22.0, "pb": 4.5,  "ps": 1.8, "ev_ebitda": 14.0},
+            "consumer staples":        {"pe": 19.0, "pb": 5.5,  "ps": 1.5, "ev_ebitda": 13.0},
+            "energy":                  {"pe": 13.0, "pb": 1.6,  "ps": 1.2, "ev_ebitda":  7.0},
+            "utilities":               {"pe": 17.0, "pb": 1.8,  "ps": 1.5, "ev_ebitda": 11.0},
+            "industrials":             {"pe": 20.0, "pb": 3.5,  "ps": 1.5, "ev_ebitda": 13.0},
+            "real estate":             {"pe": 40.0, "pb": 2.0,  "ps": 6.0, "ev_ebitda": 18.0},
+            "communication services":  {"pe": 18.0, "pb": 3.0,  "ps": 2.5, "ev_ebitda": 10.0},
+            "materials":               {"pe": 16.0, "pb": 2.2,  "ps": 1.3, "ev_ebitda":  9.0},
+        }
+        DEFAULT_MULT = {"pe": 20.0, "pb": 3.0, "ps": 2.5, "ev_ebitda": 13.0}
+
+        try:
+            sect_key   = next((k for k in SECTOR_MULTIPLES if k in sector or sector in k), None)
+            sect_mult  = SECTOR_MULTIPLES.get(sect_key, DEFAULT_MULT) if sect_key else DEFAULT_MULT
+            comparisons: Dict[str, Any] = {}
+
+            if pe and float(pe) > 0 and price > 0:
+                c_pe   = float(pe)
+                s_pe   = sect_mult["pe"]
+                eps_c  = price / c_pe
+                fair_pe = eps_c * s_pe
+                comparisons["pe"] = {
+                    "company": round(c_pe, 1), "sector_avg": s_pe,
+                    "premium_pct": round((c_pe / s_pe - 1) * 100, 1),
+                    "implied_price": round(fair_pe, 2),
+                    "upside_pct": round((fair_pe / price - 1) * 100, 1),
+                }
+            if pb and float(pb) > 0 and price > 0:
+                c_pb   = float(pb)
+                s_pb   = sect_mult["pb"]
+                bvps   = price / c_pb
+                fair_pb = bvps * s_pb
+                comparisons["pb"] = {
+                    "company": round(c_pb, 1), "sector_avg": s_pb,
+                    "premium_pct": round((c_pb / s_pb - 1) * 100, 1),
+                    "implied_price": round(fair_pb, 2),
+                    "upside_pct": round((fair_pb / price - 1) * 100, 1),
+                }
+            if ps and float(ps) > 0 and price > 0:
+                c_ps   = float(ps)
+                s_ps   = sect_mult["ps"]
+                sps    = price / c_ps
+                fair_ps = sps * s_ps
+                comparisons["ps"] = {
+                    "company": round(c_ps, 1), "sector_avg": s_ps,
+                    "premium_pct": round((c_ps / s_ps - 1) * 100, 1),
+                    "implied_price": round(fair_ps, 2),
+                    "upside_pct": round((fair_ps / price - 1) * 100, 1),
+                }
+
+            models["comps"] = {
+                "sector": data.get("sector") or "Unknown",
+                "matched_key": sect_key or "default",
+                "sector_averages": sect_mult,
+                "comparisons": comparisons,
+            }
+        except Exception as exc:
+            models["comps"] = {"error": str(exc)}
+
+        return models
+
+    @staticmethod
+    def _format_quant_models(models: Dict[str, Any]) -> str:
+        """Summarise quantitative model outputs for the LLM prompt."""
+        lines = ["=== QUANTITATIVE MODEL OUTPUTS (Python-computed) ==="]
+
+        dcf = models.get("dcf", {})
+        if dcf.get("intrinsic_value"):
+            lines.append(
+                f"DCF Intrinsic Value: ${dcf['intrinsic_value']:.2f} "
+                f"({dcf['upside_pct']:+.1f}% vs current) | "
+                f"WACC {dcf['wacc_pct']}% | FCF growth {dcf['fcf_growth_pct']}%"
+            )
+        else:
+            lines.append(f"DCF: {dcf.get('skipped') or dcf.get('error', 'N/A')}")
+
+        ddm = models.get("ddm", {})
+        if ddm.get("intrinsic_value"):
+            lines.append(
+                f"DDM (Gordon) Intrinsic Value: ${ddm['intrinsic_value']:.2f} "
+                f"({ddm['upside_pct']:+.1f}%) | Div/share ${ddm['dividend_per_share']:.2f} | "
+                f"g={ddm['growth_rate_pct']}% | ke={ddm['cost_of_equity_pct']}%"
+            )
+        else:
+            lines.append(f"DDM: {ddm.get('skipped') or ddm.get('error', 'N/A')}")
+
+        mc = models.get("monte_carlo", {})
+        if mc.get("mean"):
+            lines.append(
+                f"Monte Carlo (1 000 sims, 1yr): "
+                f"P10=${mc['p10']} | P25=${mc['p25']} | Mean=${mc['mean']} | "
+                f"P75=${mc['p75']} | P90=${mc['p90']} | "
+                f"Prob>current: {mc['prob_above_pct']}% | "
+                f"Vol {mc['annual_vol_pct']}% | Drift {mc['annual_drift_pct']}%"
+            )
+        else:
+            lines.append(f"Monte Carlo: {mc.get('skipped') or mc.get('error', 'N/A')}")
+
+        comps = models.get("comps", {})
+        cmp = comps.get("comparisons", {})
+        if cmp:
+            parts = []
+            if "pe" in cmp:
+                parts.append(f"P/E {cmp['pe']['company']}x vs {cmp['pe']['sector_avg']}x sector → implied ${cmp['pe']['implied_price']} ({cmp['pe']['upside_pct']:+.1f}%)")
+            if "pb" in cmp:
+                parts.append(f"P/B {cmp['pb']['company']}x vs {cmp['pb']['sector_avg']}x → implied ${cmp['pb']['implied_price']} ({cmp['pb']['upside_pct']:+.1f}%)")
+            if "ps" in cmp:
+                parts.append(f"P/S {cmp['ps']['company']}x vs {cmp['ps']['sector_avg']}x → implied ${cmp['ps']['implied_price']} ({cmp['ps']['upside_pct']:+.1f}%)")
+            lines.append(f"Comps vs {comps.get('sector', '?')} sector: " + " | ".join(parts))
+        else:
+            lines.append(f"Comps: {comps.get('error', 'N/A')}")
+
+        sens = models.get("sensitivity", {})
+        if "current_eps" in sens:
+            lines.append(
+                f"Sensitivity (EPS ${sens['current_eps']} × P/E grid): "
+                f"e.g. at 0% growth → P/E 15={sens['table'].get('0%', {}).get('15', 'N/A')} | "
+                f"P/E 20={sens['table'].get('0%', {}).get('20', 'N/A')} | "
+                f"P/E 25={sens['table'].get('0%', {}).get('25', 'N/A')}"
+            )
+
+        lines.append(
+            "\nUse these models as DATA POINTS to calibrate your valuation assessment and "
+            "target price. Reference the most relevant models in analyst_notes."
+        )
+        return "\n".join(lines)
+
     def _validate_and_normalize(
         self,
         analysis: Dict[str, Any],
@@ -336,7 +628,7 @@ Based on ALL the above data and the screener directive, provide your analysis in
 
         return analysis
 
-    def _fallback_analysis(self, data: MarketDataState, error: str) -> Dict[str, Any]:
+    def _fallback_analysis(self, data: MarketDataState, error: str, quant_models: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         return {
             "recommendation_type": "HOLD",
             "direction_bias": "NEUTRAL",
@@ -362,6 +654,7 @@ Based on ALL the above data and the screener directive, provide your analysis in
             "analysis_timestamp": datetime.now(timezone.utc).isoformat(),
             "analyst_id": "fundamental_agent_v1",
             "error": error,
+            "quantitative_models": quant_models or {},
         }
 
 

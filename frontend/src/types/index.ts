@@ -171,6 +171,85 @@ export interface Order {
   cancelled_at?: string;
 }
 
+export interface QuantDCF {
+  intrinsic_value?: number;
+  current_price?: number;
+  upside_pct?: number;
+  wacc_pct?: number;
+  fcf_growth_pct?: number;
+  terminal_growth_pct?: number;
+  pv_5yr_fcf?: number;
+  pv_terminal?: number;
+  skipped?: string;
+  error?: string;
+}
+
+export interface QuantDDM {
+  intrinsic_value?: number;
+  current_price?: number;
+  upside_pct?: number;
+  dividend_per_share?: number;
+  growth_rate_pct?: number;
+  cost_of_equity_pct?: number;
+  skipped?: string;
+  error?: string;
+}
+
+export interface QuantSensitivity {
+  current_eps?: number;
+  current_pe?: number;
+  current_price?: number;
+  pe_scenarios?: number[];
+  growth_scenarios?: string[];
+  table?: Record<string, Record<string, number>>;
+  skipped?: string;
+  error?: string;
+}
+
+export interface QuantMonteCarlo {
+  current_price?: number;
+  p10?: number;
+  p25?: number;
+  mean?: number;
+  p75?: number;
+  p90?: number;
+  prob_above_pct?: number;
+  annual_vol_pct?: number;
+  annual_drift_pct?: number;
+  simulations?: number;
+  horizon_days?: number;
+  skipped?: string;
+  error?: string;
+}
+
+export interface QuantCompsMultiple {
+  company: number;
+  sector_avg: number;
+  premium_pct: number;
+  implied_price: number;
+  upside_pct: number;
+}
+
+export interface QuantComps {
+  sector?: string;
+  matched_key?: string;
+  sector_averages?: Record<string, number>;
+  comparisons?: {
+    pe?: QuantCompsMultiple;
+    pb?: QuantCompsMultiple;
+    ps?: QuantCompsMultiple;
+  };
+  error?: string;
+}
+
+export interface QuantitativeModels {
+  dcf?: QuantDCF;
+  ddm?: QuantDDM;
+  sensitivity?: QuantSensitivity;
+  monte_carlo?: QuantMonteCarlo;
+  comps?: QuantComps;
+}
+
 export interface FundamentalAnalysis {
   recommendation_type: RecommendationType;
   direction_bias?: "LONG" | "SHORT" | "NEUTRAL";
@@ -195,6 +274,7 @@ export interface FundamentalAnalysis {
   sentiment_cross_check: string;
   analyst_notes: string;
   expected_return_pct?: number;
+  quantitative_models?: QuantitativeModels;
 }
 
 export interface SentimentData {

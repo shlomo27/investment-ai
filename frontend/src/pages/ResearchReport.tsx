@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useAppSelector } from "../store";
 import { recommendationsApi, ordersApi } from "../api/client";
-import { Recommendation, RecommendationType, OrderType } from "../types";
+import { Recommendation, RecommendationType, OrderType, QuantitativeModels } from "../types";
 import ConfirmTradeModal from "../components/Trading/ConfirmTradeModal";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
@@ -31,6 +31,245 @@ const ScoreBar: React.FC<{ value: number; max?: number; color?: string }> = ({
     <span className="text-xs text-gray-300 w-8 text-right">{value.toFixed(0)}</span>
   </div>
 );
+
+// ─── Quant model helpers ─────────────────────────────────────────────────────────
+
+const upColor = (pct?: number) =>
+  pct == null ? "text-gray-400" : pct >= 0 ? "text-green-400" : "text-red-400";
+
+const fmtPct = (v?: number) =>
+  v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+
+const fmtUsd = (v?: number) =>
+  v == null ? "—" : `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const Chip: React.FC<{ label: string; value: React.ReactNode; cls?: string }> = ({ label, value, cls }) => (
+  <div className="bg-gray-800/60 rounded-xl p-3 flex flex-col gap-0.5">
+    <p className="text-[10px] text-gray-500 uppercase tracking-wider">{label}</p>
+    <p className={`text-sm font-bold font-mono ${cls ?? "text-gray-200"}`}>{value}</p>
+  </div>
+);
+
+const ModelSkipBadge: React.FC<{ msg?: string }> = ({ msg }) => (
+  <p className="text-xs text-gray-500 italic py-1">{msg ?? "Not available"}</p>
+);
+
+const QuantModels: React.FC<{ qm: QuantitativeModels; price?: number }> = ({ qm, price }) => {
+  const dcf  = qm.dcf;
+  const ddm  = qm.ddm;
+  const mc   = qm.monte_carlo;
+  const sens = qm.sensitivity;
+  const comp = qm.comps;
+
+  const hasDcf  = dcf?.intrinsic_value != null;
+  const hasDdm  = ddm?.intrinsic_value != null;
+  const hasMc   = mc?.mean != null;
+  const hasSens = sens?.table != null;
+  const hasComp = comp?.comparisons && Object.keys(comp.comparisons).length > 0;
+
+  const anyModel = hasDcf || hasDdm || hasMc || hasSens || hasComp;
+  if (!anyModel) return null;
+
+  return (
+    <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800 space-y-6">
+      <h2 className="font-bold text-sm uppercase tracking-wide text-gray-300">
+        Quantitative Valuation Models
+      </h2>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        {/* DCF */}
+        <div className="space-y-3">
+          <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">
+            DCF — Discounted Cash Flow
+          </p>
+          {hasDcf ? (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <Chip label="Intrinsic Value" value={fmtUsd(dcf!.intrinsic_value)} />
+                <Chip
+                  label="Upside vs Current"
+                  value={fmtPct(dcf!.upside_pct)}
+                  cls={upColor(dcf!.upside_pct)}
+                />
+                <Chip label="WACC" value={`${dcf!.wacc_pct}%`} />
+                <Chip label="FCF Growth Assumed" value={`${dcf!.fcf_growth_pct}%`} />
+                <Chip label="Terminal Growth" value={`${dcf!.terminal_growth_pct}%`} />
+                <Chip label="PV 5-yr FCF" value={`$${Number(dcf!.pv_5yr_fcf).toLocaleString()}`} />
+              </div>
+            </>
+          ) : (
+            <ModelSkipBadge msg={dcf?.skipped ?? dcf?.error} />
+          )}
+        </div>
+
+        {/* DDM */}
+        <div className="space-y-3">
+          <p className="text-xs font-bold text-purple-400 uppercase tracking-widest">
+            DDM — Gordon Growth Model
+          </p>
+          {hasDdm ? (
+            <div className="grid grid-cols-2 gap-2">
+              <Chip label="Intrinsic Value" value={fmtUsd(ddm!.intrinsic_value)} />
+              <Chip
+                label="Upside vs Current"
+                value={fmtPct(ddm!.upside_pct)}
+                cls={upColor(ddm!.upside_pct)}
+              />
+              <Chip label="Div / Share" value={fmtUsd(ddm!.dividend_per_share)} />
+              <Chip label="Sustainable Growth" value={`${ddm!.growth_rate_pct}%`} />
+              <Chip label="Cost of Equity" value={`${ddm!.cost_of_equity_pct}%`} />
+            </div>
+          ) : (
+            <ModelSkipBadge msg={ddm?.skipped ?? ddm?.error} />
+          )}
+        </div>
+
+        {/* Monte Carlo */}
+        <div className="space-y-3">
+          <p className="text-xs font-bold text-amber-400 uppercase tracking-widest">
+            Monte Carlo — 1 000 Simulations · 1-Year
+          </p>
+          {hasMc ? (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                <Chip label="P10 (Bear)" value={fmtUsd(mc!.p10)} cls="text-red-400" />
+                <Chip label="P25" value={fmtUsd(mc!.p25)} cls="text-orange-400" />
+                <Chip label="Mean" value={fmtUsd(mc!.mean)} />
+                <Chip label="P75" value={fmtUsd(mc!.p75)} cls="text-lime-400" />
+                <Chip label="P90 (Bull)" value={fmtUsd(mc!.p90)} cls="text-green-400" />
+                <Chip
+                  label="Prob > Current"
+                  value={`${mc!.prob_above_pct}%`}
+                  cls={upColor((mc!.prob_above_pct ?? 50) - 50)}
+                />
+              </div>
+              <p className="text-[10px] text-gray-600 font-mono">
+                vol {mc!.annual_vol_pct}%/yr · drift {mc!.annual_drift_pct}%/yr · {mc!.simulations} paths · GBM
+              </p>
+              {/* Distribution bar */}
+              <div className="relative h-5 bg-gray-800 rounded-full overflow-hidden mt-1">
+                {price && mc && mc.p10 && mc.p90 && (() => {
+                  const lo = mc.p10 * 0.95, hi = mc.p90 * 1.05, range = hi - lo;
+                  const pct = (v: number) => `${Math.max(0, Math.min(100, (v - lo) / range * 100)).toFixed(1)}%`;
+                  return (
+                    <>
+                      <div className="absolute inset-y-0 bg-gradient-to-r from-red-900/50 via-amber-700/40 to-green-900/50 rounded-full"
+                        style={{ left: pct(mc.p10!), right: `${100 - parseFloat(pct(mc.p90!))}%` }} />
+                      <div className="absolute inset-y-0 w-0.5 bg-white/60" style={{ left: pct(price) }} />
+                    </>
+                  );
+                })()}
+              </div>
+              <div className="flex justify-between text-[9px] text-gray-600 font-mono">
+                <span>P10 {fmtUsd(mc!.p10)}</span>
+                {price && <span className="text-white/50">▲ current {fmtUsd(price)}</span>}
+                <span>P90 {fmtUsd(mc!.p90)}</span>
+              </div>
+            </>
+          ) : (
+            <ModelSkipBadge msg={mc?.skipped ?? mc?.error} />
+          )}
+        </div>
+
+        {/* Comps */}
+        <div className="space-y-3">
+          <p className="text-xs font-bold text-cyan-400 uppercase tracking-widest">
+            Comps — Sector Comparable Multiples
+            {comp?.sector && <span className="ml-2 normal-case font-normal text-gray-500">({comp.sector})</span>}
+          </p>
+          {hasComp ? (
+            <div className="space-y-2">
+              {(["pe", "pb", "ps"] as const).map((key) => {
+                const m = comp!.comparisons![key];
+                if (!m) return null;
+                const labelMap = { pe: "P/E", pb: "P/B", ps: "P/S" };
+                return (
+                  <div key={key} className="bg-gray-800/60 rounded-xl p-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-gray-400 font-mono">{labelMap[key]}</span>
+                      <span className={`text-xs font-bold ${m.premium_pct >= 0 ? "text-red-400" : "text-green-400"}`}>
+                        {m.premium_pct >= 0 ? "+" : ""}{m.premium_pct.toFixed(1)}% vs sector
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs font-mono">
+                      <span>Co: <span className="text-gray-200">{m.company}x</span></span>
+                      <span>Sect: <span className="text-gray-400">{m.sector_avg}x</span></span>
+                      <span className="ml-auto">
+                        Implied <span className={upColor(m.upside_pct)}>{fmtUsd(m.implied_price)}</span>
+                        <span className={`ml-1 ${upColor(m.upside_pct)}`}>({fmtPct(m.upside_pct)})</span>
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+              {comp?.sector_averages && (
+                <p className="text-[10px] text-gray-600 font-mono pt-1">
+                  Sector avg: P/E {comp.sector_averages.pe}x · P/B {comp.sector_averages.pb}x · P/S {comp.sector_averages.ps}x · EV/EBITDA {comp.sector_averages.ev_ebitda}x
+                </p>
+              )}
+            </div>
+          ) : (
+            <ModelSkipBadge msg={comp?.error} />
+          )}
+        </div>
+      </div>
+
+      {/* Sensitivity Table */}
+      {hasSens && sens!.table && (
+        <div className="space-y-3">
+          <p className="text-xs font-bold text-rose-400 uppercase tracking-widest">
+            Sensitivity Analysis — EPS ${sens!.current_eps} × P/E Multiple
+            <span className="ml-2 normal-case font-normal text-gray-500">
+              (current: P/E {sens!.current_pe}x @ {fmtUsd(sens!.current_price)})
+            </span>
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs font-mono border-collapse">
+              <thead>
+                <tr>
+                  <th className="text-left text-gray-500 pb-2 pr-3">EPS Growth →</th>
+                  {sens!.pe_scenarios?.map((pe) => (
+                    <th key={pe} className="text-center text-gray-500 pb-2 px-2">P/E {pe}x</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sens!.growth_scenarios?.map((g) => {
+                  const row = sens!.table![g];
+                  if (!row) return null;
+                  return (
+                    <tr key={g} className="border-t border-gray-800/60">
+                      <td className="pr-3 py-1.5 text-gray-400">{g}</td>
+                      {sens!.pe_scenarios?.map((pe) => {
+                        const v = row[String(pe)];
+                        const current = sens!.current_price ?? 0;
+                        const diff = current > 0 ? (v - current) / current : 0;
+                        return (
+                          <td key={pe} className={`text-center py-1.5 px-2 ${
+                            diff > 0.15 ? "text-green-400 bg-green-900/10" :
+                            diff > 0 ? "text-green-600" :
+                            diff < -0.15 ? "text-red-400 bg-red-900/10" :
+                            diff < 0 ? "text-red-600" : "text-gray-400"
+                          }`}>
+                            ${v.toFixed(0)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[10px] text-gray-600">
+            Cells show implied share price. Green = above current price, red = below. Current: {fmtUsd(sens!.current_price)}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ─── Signal colour helper (used in technical preview card) ───────────────────────
 
@@ -341,6 +580,11 @@ const ResearchReport: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* Quantitative Models */}
+      {fa?.quantitative_models && (
+        <QuantModels qm={fa.quantitative_models} price={currentPrice ?? undefined} />
       )}
 
       {/* Senior Committee Decision */}
