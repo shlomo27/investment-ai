@@ -2,6 +2,7 @@
 Market Data API routes
 GET /market/search, GET /market/asset/{symbol}, GET /market/tase/search, GET /market/pool
 """
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -342,6 +343,81 @@ async def run_screener_endpoint(
     from app.workers.pre_screener import run_pre_screener
     result = await run_pre_screener(db)
     return result
+
+
+@router.post("/pool/scan-now")
+async def scan_pool_now(
+    batch: int = 5,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Manually trigger full AI pipeline on active pool stocks.
+    Runs synchronously (no Celery needed) — useful when Celery worker is not running.
+    `batch` controls how many stocks to scan per call (default 5, max 10).
+    """
+    import asyncio
+    from datetime import timedelta
+    from sqlalchemy import select
+    from app.db.models.asset import Asset
+    from app.db.models.recommendation import Recommendation
+    from app.agents.workflow import run_investment_workflow
+
+    batch = min(max(batch, 1), 10)
+
+    # Fetch active pool
+    result = await db.execute(select(Asset).where(Asset.is_active_in_pool == True))
+    assets = result.scalars().all()
+
+    if not assets:
+        return {"error": "No assets in active pool. Run the screener first.", "scanned": 0}
+
+    # Skip stocks already scanned (SCHEDULED) in the last 24 hours
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    recent = await db.execute(
+        select(Recommendation.symbol).where(
+            Recommendation.created_at >= cutoff,
+            Recommendation.trigger_type == "SCHEDULED",
+        )
+    )
+    recently_scanned = {row[0] for row in recent.all()}
+    to_scan = [a for a in assets if a.symbol not in recently_scanned][:batch]
+
+    if not to_scan:
+        return {
+            "message": "All active pool stocks were already scanned in the last 24 hours.",
+            "scanned": 0,
+            "skipped": len(recently_scanned),
+        }
+
+    tasks = [
+        run_investment_workflow(
+            symbol=asset.symbol,
+            exchange=asset.exchange.value,
+            direction_bias=getattr(asset, "direction_bias", None),
+        )
+        for asset in to_scan
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    approved = sum(
+        1 for r in results
+        if isinstance(r, dict) and r.get("workflow_status") in ("completed", "saved")
+    )
+    rejected = sum(
+        1 for r in results
+        if isinstance(r, dict) and r.get("workflow_status") in ("rejected", "rejected_logged")
+    )
+    errors = sum(1 for r in results if isinstance(r, Exception))
+
+    return {
+        "scanned": len(to_scan),
+        "approved": approved,
+        "rejected": rejected,
+        "errors": errors,
+        "symbols": [a.symbol for a in to_scan],
+        "remaining_in_pool": len(assets) - len(recently_scanned) - len(to_scan),
+    }
 
 
 @router.get("/universe/stats")

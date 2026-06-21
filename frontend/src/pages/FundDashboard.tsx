@@ -18,6 +18,8 @@ const FundDashboard: React.FC = () => {
   const [screenerResult, setScreenerResult] = useState<any>(null);
   const [universeLoading, setUniverseLoading] = useState(false);
   const [universeResult, setUniverseResult] = useState<any>(null);
+  const [scanRunning, setScanRunning] = useState(false);
+  const [scanResult, setScanResult] = useState<any>(null);
 
   useEffect(() => {
     dispatch(fetchPortfolioSummary());
@@ -57,6 +59,19 @@ const FundDashboard: React.FC = () => {
       setUniverseResult({ error: e?.response?.data?.detail || "Failed" });
     }
     setUniverseLoading(false);
+  };
+
+  const handleScanNow = async () => {
+    setScanRunning(true);
+    setScanResult(null);
+    try {
+      const result = await marketApi.scanPoolNow(5);
+      setScanResult(result);
+      dispatch(fetchRecommendations({}));
+    } catch (e: any) {
+      setScanResult({ error: e?.response?.data?.detail || "Scan failed" });
+    }
+    setScanRunning(false);
   };
 
   const fmt = (v: number, prefix = "$") =>
@@ -309,6 +324,65 @@ const FundDashboard: React.FC = () => {
               )}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* AI Full Scan Trigger */}
+      <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <h2 className="font-bold mb-1">{isHe ? "סריקת AI מלאה" : "Run Full AI Scan"}</h2>
+            <p className="text-xs text-gray-400">
+              {isHe
+                ? "מריץ את צינור ה-AI המלא (ניתוח פונדמנטלי + סנטימנט + ועדה) על עד 5 מניות מהפול הפעיל. לחץ מספר פעמים לסריקת כל הפול. לא נסרקות מניות שנותחו ב-24 השעות האחרונות."
+                : "Runs the full AI pipeline (fundamental + sentiment + committee) on up to 5 active pool stocks per click. Click multiple times to scan the entire pool. Stocks already scanned in the last 24h are skipped automatically."}
+            </p>
+            {scanResult && !scanResult.error && (
+              <div className="mt-3 p-3 rounded-xl bg-green-900/20 border border-green-900/30 text-xs text-green-300 space-y-1">
+                <p>
+                  {isHe ? "נסרקו" : "Scanned"}: <strong>{scanResult.scanned}</strong> |{" "}
+                  {isHe ? "אושרו" : "Approved"}: <strong>{scanResult.approved}</strong> |{" "}
+                  {isHe ? "נדחו" : "Rejected"}: <strong>{scanResult.rejected}</strong>
+                </p>
+                {scanResult.symbols?.length > 0 && (
+                  <p className="font-mono text-gray-400">{scanResult.symbols.join(", ")}</p>
+                )}
+                {scanResult.remaining_in_pool > 0 && (
+                  <p className="text-yellow-400">
+                    {isHe
+                      ? `נותרו ${scanResult.remaining_in_pool} מניות לסריקה — לחץ שוב להמשיך`
+                      : `${scanResult.remaining_in_pool} more stocks remaining — click again to continue`}
+                  </p>
+                )}
+                {scanResult.remaining_in_pool === 0 && (
+                  <p className="text-green-400">{isHe ? "✓ כל הפול נסרק!" : "✓ Entire pool scanned!"}</p>
+                )}
+              </div>
+            )}
+            {scanResult?.error && (
+              <div className="mt-3 p-3 rounded-xl bg-red-900/20 text-red-400 text-xs">{scanResult.error}</div>
+            )}
+            {scanResult?.message && (
+              <div className="mt-3 p-3 rounded-xl bg-gray-800 text-gray-400 text-xs">{scanResult.message}</div>
+            )}
+          </div>
+          <button
+            onClick={handleScanNow}
+            disabled={scanRunning}
+            className="shrink-0 flex items-center gap-2 bg-green-700 hover:bg-green-600 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-3 rounded-xl transition-colors"
+          >
+            {scanRunning ? (
+              <>
+                <span className="animate-spin">⟳</span>
+                {isHe ? "סורק..." : "Scanning..."}
+              </>
+            ) : (
+              <>
+                <span>⚡</span>
+                {isHe ? "סרוק עכשיו" : "Scan Now"}
+              </>
+            )}
+          </button>
         </div>
       </div>
 

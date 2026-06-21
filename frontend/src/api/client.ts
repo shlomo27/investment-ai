@@ -387,6 +387,11 @@ export const marketApi = {
     const response = await api.post("/market/universe/load");
     return response.data;
   },
+
+  scanPoolNow: async (batch = 5): Promise<any> => {
+    const response = await api.post("/market/pool/scan-now", null, { params: { batch } });
+    return response.data;
+  },
 };
 
 // ─── Watchlist API ────────────────────────────────────────────────────────────
