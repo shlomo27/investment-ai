@@ -312,6 +312,15 @@ export const recommendationsApi = {
     );
     return response.data;
   },
+
+  recomputeQuantModels: async (
+    recommendationId: number
+  ): Promise<{ quantitative_models: any }> => {
+    const response = await api.post<{ quantitative_models: any }>(
+      `/recommendations/${recommendationId}/recompute-quant-models`
+    );
+    return response.data;
+  },
 };
 
 // ─── Market API ──────────────────────────────────────────────────────────────

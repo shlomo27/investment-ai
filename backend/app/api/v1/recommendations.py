@@ -322,3 +322,69 @@ async def request_technical_analysis(
         "message": "Technical analysis completed",
         "technical_analysis": technical_result.get("technical_analysis"),
     }
+
+
+@router.post("/{recommendation_id}/recompute-quant-models")
+async def recompute_quant_models(
+    recommendation_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Compute (or recompute) quantitative financial models for an existing recommendation.
+    Fetches fresh market data, runs DCF / DDM / Monte Carlo / Comps / Sensitivity,
+    and merges the result into the recommendation's fundamental_analysis JSON.
+    """
+    result = await db.execute(
+        select(Recommendation).where(Recommendation.id == recommendation_id)
+    )
+    rec = result.scalar_one_or_none()
+
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recommendation not found")
+
+    if not rec.fundamental_analysis:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fundamental analysis stored — run full analysis first",
+        )
+
+    # Fetch market data to supply to the quant model engine
+    from app.services.market_data.yahoo_service import YahooFinanceService
+    from app.agents.fundamental.agent import get_fundamental_agent
+
+    yahoo = YahooFinanceService()
+    market_data = await yahoo.get_stock_info(rec.symbol, force_refresh=True)
+
+    if not market_data:
+        # Fall back to whatever partial data we can reconstruct from the stored rec
+        market_data = {
+            "symbol": rec.symbol,
+            "price": float(rec.current_price_at_recommendation or 0),
+        }
+
+    market_data["symbol"] = rec.symbol
+
+    # Run quantitative models only (no LLM call)
+    agent = get_fundamental_agent()
+    quant_models = agent._compute_financial_models(market_data)
+
+    # Merge into fundamental_analysis JSON (copy-on-write for SQLAlchemy JSON column)
+    fa = dict(rec.fundamental_analysis)
+    fa["quantitative_models"] = quant_models
+    rec.fundamental_analysis = fa
+
+    await db.flush()
+    await db.commit()
+
+    logger.info(
+        "Quantitative models recomputed",
+        recommendation_id=recommendation_id,
+        symbol=rec.symbol,
+        models=list(quant_models.keys()),
+    )
+
+    return {
+        "message": "Quantitative models computed",
+        "quantitative_models": quant_models,
+    }

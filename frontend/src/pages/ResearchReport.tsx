@@ -592,6 +592,7 @@ const ResearchReport: React.FC = () => {
   const [rec, setRec] = useState<Recommendation | null>(null);
   const [loading, setLoading] = useState(true);
   const [tradeModal, setTradeModal] = useState<{ type: OrderType } | null>(null);
+  const [quantLoading, setQuantLoading] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -605,6 +606,26 @@ const ResearchReport: React.FC = () => {
       setLoading(false);
     })();
   }, [id]);
+
+  const handleGenerateQuantModels = async () => {
+    if (!rec) return;
+    setQuantLoading(true);
+    try {
+      const result = await recommendationsApi.recomputeQuantModels(rec.id);
+      if (result.quantitative_models && rec.fundamental_analysis) {
+        setRec({
+          ...rec,
+          fundamental_analysis: {
+            ...rec.fundamental_analysis,
+            quantitative_models: result.quantitative_models,
+          },
+        });
+      }
+    } catch (e: any) {
+      alert(e.response?.data?.detail || "Failed to compute models");
+    }
+    setQuantLoading(false);
+  };
 
   const handleConfirmTrade = async (quantity: number, price: number) => {
     if (!rec || !tradeModal) return;
@@ -882,6 +903,29 @@ const ResearchReport: React.FC = () => {
       )}
 
       {/* Quantitative Models */}
+      {fa && !fa.quantitative_models && (
+        <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-bold text-gray-300">
+              {isHe ? "מודלים כמותיים — DCF · DDM · Monte Carlo · Comps · Sensitivity" : "Quantitative Models — DCF · DDM · Monte Carlo · Comps · Sensitivity"}
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {isHe ? "לא חושבו עבור המלצה זו. לחץ להרצה." : "Not yet computed for this recommendation. Click to generate."}
+            </p>
+          </div>
+          <button
+            onClick={handleGenerateQuantModels}
+            disabled={quantLoading}
+            className="shrink-0 bg-blue-700 hover:bg-blue-600 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors flex items-center gap-2"
+          >
+            {quantLoading ? (
+              <><span className="animate-spin inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full" />{isHe ? "מחשב..." : "Computing..."}</>
+            ) : (
+              isHe ? "הרץ מודלים ←" : "Generate Models →"
+            )}
+          </button>
+        </div>
+      )}
       {fa?.quantitative_models && (
         <QuantModels qm={fa.quantitative_models} price={currentPrice ?? undefined} />
       )}
