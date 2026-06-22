@@ -20,10 +20,15 @@ import ResearchReport from "./pages/ResearchReport";
 import TechnicalAnalysisPage from "./pages/TechnicalAnalysisPage";
 import Orders from "./pages/Orders";
 import Watchlist from "./pages/Watchlist";
+import MasterList from "./pages/MasterList";
 
 // Layout
 import Navbar from "./components/Layout/Navbar";
 import Sidebar from "./components/Layout/Sidebar";
+
+// Services
+import { initPushNotifications } from "./services/pushNotifications";
+import { authApi } from "./api/client";
 
 // ─── Protected Route ────────────────────────────────────────────────────────────
 
@@ -76,10 +81,15 @@ const App: React.FC = () => {
   useEffect(() => {
     if (isAuthenticated) {
       dispatch(fetchUnreadCount());
-      // Poll for unread count every 60 seconds
       const interval = setInterval(() => {
         dispatch(fetchUnreadCount());
       }, 60000);
+
+      // Initialize push notifications (silently skipped if Firebase not configured)
+      initPushNotifications(async (token) => {
+        await authApi.updateProfile({ push_token: token });
+      }).catch(() => {});
+
       return () => clearInterval(interval);
     }
   }, [isAuthenticated, dispatch]);
@@ -190,6 +200,16 @@ const App: React.FC = () => {
             <ProtectedRoute>
               <AppLayout>
                 <TechnicalAnalysisPage />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/master-list"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <MasterList />
               </AppLayout>
             </ProtectedRoute>
           }

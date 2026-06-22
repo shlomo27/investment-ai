@@ -538,3 +538,127 @@ async def universe_stats(
             for r in top_result.fetchall()
         ],
     }
+
+
+# ─── Master List ──────────────────────────────────────────────────────────────
+
+@router.get("/master-list")
+async def get_master_list(db: AsyncSession = Depends(get_db)):
+    """Return the active quarterly master list of curated stock picks."""
+    from app.db.models.master_list import MasterListEntry
+
+    result = await db.execute(
+        select(MasterListEntry)
+        .where(MasterListEntry.is_active == True)
+        .order_by(MasterListEntry.confidence_score.desc())
+    )
+    entries = result.scalars().all()
+    quarter = entries[0].quarter if entries else None
+    return {
+        "quarter": quarter,
+        "entries": [
+            {
+                "id": e.id,
+                "symbol": e.symbol,
+                "asset_name": e.asset_name,
+                "recommendation_type": e.recommendation_type,
+                "confidence_score": e.confidence_score,
+                "target_price": e.target_price,
+                "stop_loss": e.stop_loss,
+                "current_price": e.current_price,
+                "expected_return_pct": e.expected_return_pct,
+                "thesis": e.thesis,
+                "sector": e.sector,
+                "quarter": e.quarter,
+                "published_at": e.published_at.isoformat() if e.published_at else None,
+                "recommendation_id": e.recommendation_id,
+            }
+            for e in entries
+        ],
+    }
+
+
+@router.post("/master-list/publish")
+async def publish_master_list(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """Admin: publish a new quarterly master list from top approved recommendations.
+
+    Deactivates all existing entries, then creates new entries from:
+    - Top 20 BUY / STRONG_BUY approved recommendations
+    - Top 10 SELL / STRONG_SELL approved recommendations
+    """
+    from app.db.models.master_list import MasterListEntry
+    from app.db.models.recommendation import Recommendation, RecommendationStatus, RecommendationType
+    from app.db.models.asset import Asset as AssetModel
+    from sqlalchemy import update as sa_update
+
+    now = datetime.now(timezone.utc)
+    month = now.month
+    quarter_num = (month - 1) // 3 + 1
+    quarter = f"Q{quarter_num}-{now.year}"
+
+    # Deactivate all existing master list entries
+    await db.execute(sa_update(MasterListEntry).values(is_active=False))
+
+    approved_statuses = [
+        RecommendationStatus.APPROVED,
+        RecommendationStatus.PRESENTED_TO_USER,
+        RecommendationStatus.ACTIONED,
+    ]
+    buy_types = [RecommendationType.BUY, RecommendationType.STRONG_BUY]
+    sell_types = [RecommendationType.SELL, RecommendationType.STRONG_SELL]
+
+    # Top 20 buys
+    buy_result = await db.execute(
+        select(Recommendation, AssetModel.name.label("asset_name"), AssetModel.sector)
+        .join(AssetModel, AssetModel.id == Recommendation.asset_id)
+        .where(Recommendation.recommendation_type.in_(buy_types))
+        .where(Recommendation.status.in_(approved_statuses))
+        .order_by(Recommendation.confidence_score.desc())
+        .limit(20)
+    )
+    buy_rows = buy_result.all()
+
+    # Top 10 sells
+    sell_result = await db.execute(
+        select(Recommendation, AssetModel.name.label("asset_name"), AssetModel.sector)
+        .join(AssetModel, AssetModel.id == Recommendation.asset_id)
+        .where(Recommendation.recommendation_type.in_(sell_types))
+        .where(Recommendation.status.in_(approved_statuses))
+        .order_by(Recommendation.confidence_score.desc())
+        .limit(10)
+    )
+    sell_rows = sell_result.all()
+
+    entries = []
+    for rec, asset_name, sector in (buy_rows + sell_rows):
+        thesis = rec.fundamental_analysis.get("thesis") if rec.fundamental_analysis else None
+        entry = MasterListEntry(
+            symbol=rec.symbol,
+            asset_name=asset_name,
+            recommendation_type=rec.recommendation_type.value if hasattr(rec.recommendation_type, "value") else rec.recommendation_type,
+            confidence_score=rec.confidence_score,
+            target_price=rec.target_price,
+            stop_loss=rec.stop_loss,
+            current_price=rec.current_price_at_recommendation,
+            expected_return_pct=rec.expected_return_pct,
+            thesis=thesis,
+            sector=sector,
+            quarter=quarter,
+            published_at=now,
+            is_active=True,
+            recommendation_id=rec.id,
+        )
+        entries.append(entry)
+
+    db.add_all(entries)
+    await db.flush()
+
+    return {
+        "published": len(entries),
+        "quarter": quarter,
+        "buys": len(buy_rows),
+        "sells": len(sell_rows),
+    }

@@ -16,6 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/portfolio", icon: "📊", label_he: "תיק השקעות", label_en: "Portfolio" },
   { to: "/orders", icon: "📋", label_he: "עסקאות", label_en: "Orders" },
   { to: "/watchlist", icon: "👁", label_he: "מעקב", label_en: "Watchlist" },
+  { to: "/master-list", icon: "📋", label_he: "רשימת מאסטר", label_en: "Master List" },
 ];
 
 const Sidebar: React.FC = () => {

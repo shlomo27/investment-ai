@@ -397,6 +397,16 @@ export const marketApi = {
     const response = await api.get("/market/pool/scan-status");
     return response.data;
   },
+
+  getMasterList: async (): Promise<any> => {
+    const response = await api.get("/market/master-list");
+    return response.data;
+  },
+
+  publishMasterList: async (): Promise<any> => {
+    const response = await api.post("/market/master-list/publish");
+    return response.data;
+  },
 };
 
 // ─── Watchlist API ────────────────────────────────────────────────────────────
