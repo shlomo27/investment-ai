@@ -245,20 +245,10 @@ const FundDashboard: React.FC = () => {
                   <p className="text-xl font-bold text-white">{universeStats.universe_total.toLocaleString()}</p>
                   <p className="text-xs text-gray-500">S&P 500 + S&P 400</p>
                 </div>
-                <div className="bg-gray-800 rounded-xl p-3">
-                  <p className="text-xs text-gray-400">{isHe ? "ביקום זרוע" : "Curated Pool"}</p>
-                  <p className="text-xl font-bold text-white">{universeStats.seeded_pool.toLocaleString()}</p>
-                  <p className="text-xs text-gray-500">{isHe ? "נבחרים ידנית" : "Hand-picked"}</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-green-900/20 border border-green-900/40 rounded-xl p-3">
-                  <p className="text-xs text-green-400">{isHe ? "LONG פעיל" : "Active LONG"}</p>
-                  <p className="text-xl font-bold text-green-400">{universeStats.active_long}</p>
-                </div>
-                <div className="bg-red-900/20 border border-red-900/40 rounded-xl p-3">
-                  <p className="text-xs text-red-400">{isHe ? "SHORT פעיל" : "Active SHORT"}</p>
-                  <p className="text-xl font-bold text-red-400">{universeStats.active_short}</p>
+                <div className="bg-blue-900/20 border border-blue-900/40 rounded-xl p-3">
+                  <p className="text-xs text-blue-400">{isHe ? "ממתינות לסריקה היום" : "Today's Scan Pool"}</p>
+                  <p className="text-xl font-bold text-blue-400">{universeStats.active_pool}</p>
+                  <p className="text-xs text-gray-500">{isHe ? "מניות לניתוח AI" : "stocks for AI analysis"}</p>
                 </div>
               </div>
             </div>
@@ -291,38 +281,19 @@ const FundDashboard: React.FC = () => {
           </div>
           <p className="text-xs text-gray-400 mb-4">
             {isHe
-              ? "מדרג את כל ~900 מניות ה-S&P500+S&P400 ובוחר 80 LONG + 20 SHORT לניתוח AI יומי. מניות שנותחו לאחרונה מקבלות קנס כדי להבטיח רוטציה — כיסוי מלא תוך ~9 ימים."
-              : "Scores all ~900 S&P500+S&P400 stocks and selects 80 LONG + 20 SHORT for daily AI analysis. Recently-analyzed stocks are penalized to ensure rotation — full coverage in ~9 days."}
+              ? "בוחר 100 מניות מתוך ~900 לניתוח AI יומי לפי רוטציה — מניות שלא נותחו לאחרונה מקבלות עדיפות. ה-AI מחליט בעצמו לקנות/למכור/לדלג. כיסוי מלא של כל היקום תוך ~9 ימים."
+              : "Selects 100 stocks from ~900 for daily AI analysis by rotation — stocks not recently analyzed get priority. The AI freely decides BUY/SELL/HOLD. Full universe coverage in ~9 days."}
           </p>
 
-          {universeStats && (universeStats.top_long.length > 0 || universeStats.top_short.length > 0) ? (
+          {universeStats && universeStats.top_candidates?.length > 0 ? (
             <div className="space-y-2 mb-4">
               <p className="text-xs text-gray-500 uppercase tracking-wide">
-                {isHe ? "מועמדים LONG מובילים" : "Top LONG Candidates"}
+                {isHe ? "מניות לסריקת היום" : "Today's Scan Queue"}
               </p>
-              {universeStats.top_long.slice(0, 5).map((c) => (
+              {universeStats.top_candidates.slice(0, 8).map((c) => (
                 <div key={c.symbol} className="flex items-center justify-between text-xs">
                   <span className="font-mono font-bold text-white">{c.symbol}</span>
-                  <div className="flex items-center gap-2">
-                    <div className="w-20 bg-gray-800 rounded-full h-1.5">
-                      <div className="bg-green-500 h-1.5 rounded-full" style={{ width: `${c.long_score}%` }} />
-                    </div>
-                    <span className="text-green-400 w-8 text-right">{c.long_score.toFixed(0)}</span>
-                  </div>
-                </div>
-              ))}
-              <p className="text-xs text-gray-500 uppercase tracking-wide mt-3">
-                {isHe ? "מועמדים SHORT מובילים" : "Top SHORT Candidates"}
-              </p>
-              {universeStats.top_short.slice(0, 5).map((c) => (
-                <div key={c.symbol} className="flex items-center justify-between text-xs">
-                  <span className="font-mono font-bold text-white">{c.symbol}</span>
-                  <div className="flex items-center gap-2">
-                    <div className="w-20 bg-gray-800 rounded-full h-1.5">
-                      <div className="bg-red-500 h-1.5 rounded-full" style={{ width: `${c.short_score}%` }} />
-                    </div>
-                    <span className="text-red-400 w-8 text-right">{c.short_score.toFixed(0)}</span>
-                  </div>
+                  <span className="text-gray-400 text-xs">{isHe ? "ממתין" : "queued"}</span>
                 </div>
               ))}
             </div>
@@ -343,8 +314,7 @@ const FundDashboard: React.FC = () => {
               {screenerResult.error ? screenerResult.error : (
                 <span>
                   {isHe ? "דורגו" : "Scored"} {screenerResult.scored} |{" "}
-                  <span className="text-green-400">Long {screenerResult.long_activated}</span> |{" "}
-                  <span className="text-red-400">Short {screenerResult.short_activated}</span>
+                  <span className="text-blue-300">{isHe ? "נבחרו לסריקה" : "Selected for scan"}: {screenerResult.activated}</span>
                 </span>
               )}
             </div>

@@ -1,20 +1,12 @@
 """
 Pre-Screener
-Scores all universe stocks and activates the top candidates for full AI analysis.
+Selects 100 stocks per day from the ~900-stock universe for full AI analysis.
 
-Scoring:
-  Base score = stored long_score / short_score from previous analyses (0-100).
-  Recency adjustment = bonus for never/rarely analyzed stocks, penalty for today.
+Selection logic: pure recency rotation — stocks not analyzed recently get
+priority. The AI in the full scan decides BUY/SELL/HOLD freely, with no
+pre-assigned direction bias.
 
-  On Railway, yfinance .info is blocked — all base scores start at 0.
-  The recency adjustment is therefore the primary driver of stock selection,
-  which is exactly what we want: rotate through all ~900 S&P500+400 stocks
-  evenly over time (~9 day cycle for 100 stocks/day).
-
-Activation:
-  Top LONG_SLOTS stocks  → direction_bias=LONG,  is_active_in_pool=True
-  Top SHORT_SLOTS stocks → direction_bias=SHORT, is_active_in_pool=True
-  Rest → is_active_in_pool=False (stay in universe for future cycles)
+Rotation cycle: 100 stocks/day × 9 days ≈ full S&P500+S&P400 coverage.
 """
 import logging
 from datetime import datetime, timezone
@@ -29,119 +21,91 @@ from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-LONG_SLOTS = 80   # LONG candidates per day  → 80 × 9 days ≈ 720 (S&P500)
-SHORT_SLOTS = 20  # SHORT candidates per day → 20 × 9 days ≈ 180 (S&P400 tail)
+POOL_SIZE = 100  # stocks selected per day for AI analysis
 
 
-def _recency_adjustment(last_analyzed_at: Optional[datetime]) -> float:
+def _recency_score(last_analyzed_at: Optional[datetime]) -> float:
     """
-    Score bonus/penalty based on how recently this stock was AI-analyzed.
-    This drives rotation: never-analyzed stocks are always picked first.
+    Priority score based on how long since last AI analysis.
+    Never analyzed = highest priority; analyzed today = lowest.
     """
     if last_analyzed_at is None:
-        return 30.0   # never analyzed → top priority
+        return 30.0
     now = datetime.now(timezone.utc)
     if last_analyzed_at.tzinfo is None:
         last_analyzed_at = last_analyzed_at.replace(tzinfo=timezone.utc)
     days = (now - last_analyzed_at).total_seconds() / 86400
     if days >= 7:
-        return 20.0   # stale ≥ 7 days: strong bonus
+        return 20.0
     if days >= 3:
-        return 10.0   # 3-7 days: moderate bonus
+        return 10.0
     if days >= 1:
-        return  3.0   # 1-3 days: small bonus
-    return -30.0      # analyzed today: strong penalty → skip today
+        return  3.0
+    return -30.0  # analyzed today → skip
 
 
 async def run_pre_screener(db: AsyncSession) -> dict:
     """
-    Score all in-universe assets and activate top LONG/SHORT candidates.
-    Pure DB operation — no external HTTP calls.
+    Select the top POOL_SIZE universe stocks by recency and mark them active.
+    No direction bias assigned — the AI decides BUY/SELL/HOLD freely.
     """
     result = await db.execute(
-        select(Asset.id, Asset.symbol, Asset.last_analyzed_at, Asset.long_score, Asset.short_score)
+        select(Asset.id, Asset.symbol, Asset.last_analyzed_at)
         .where(Asset.in_universe == True)
     )
     universe = result.fetchall()
 
     if not universe:
-        logger.warning("Pre-screener: no universe stocks found — run universe loader first")
-        return {"scored": 0, "long_activated": 0, "short_activated": 0}
+        logger.warning("Pre-screener: no universe stocks — run universe loader first")
+        return {"scored": 0, "activated": 0}
 
-    logger.info(f"Pre-screener: scoring {len(universe)} universe stocks (DB-only, no yfinance)")
+    logger.info(f"Pre-screener: ranking {len(universe)} universe stocks by recency")
 
-    # Apply recency adjustment to stored scores
-    scores: dict[str, tuple[float, float]] = {}
-    for _id, sym, analyzed_at, long_s, short_s in universe:
-        adj = _recency_adjustment(analyzed_at)
-        scores[sym] = (max(0.0, long_s + adj), max(0.0, short_s + adj))
-
-    # Rank by LONG score
-    long_ranked = sorted(scores.items(), key=lambda x: x[1][0], reverse=True)
-    long_top = {sym for sym, _ in long_ranked[:LONG_SLOTS]}
-
-    # SHORT candidates: highest short_score EXCLUDING stocks already in LONG pool.
-    # When all scores are tied (base=0, adj=30), long_ranked and short_ranked are
-    # in the same order — so without this filter, short_top would be empty.
-    short_ranked = sorted(scores.items(), key=lambda x: x[1][1], reverse=True)
-    short_candidates = [sym for sym, _ in short_ranked if sym not in long_top]
-    short_top = set(short_candidates[:SHORT_SLOTS])
+    # Score and rank — pure recency, no yfinance
+    scored = [
+        (sym, _recency_score(analyzed_at))
+        for _id, sym, analyzed_at in universe
+    ]
+    ranked = sorted(scored, key=lambda x: x[1], reverse=True)
+    top_100 = [sym for sym, _ in ranked[:POOL_SIZE]]
+    top_set = set(top_100)
 
     now = datetime.now(timezone.utc)
 
-    # Deactivate ALL universe stocks in one query
+    # Deactivate all universe stocks
     await db.execute(
         update(Asset)
         .where(Asset.in_universe == True)
         .values(is_active_in_pool=False, direction_bias="NEUTRAL")
     )
 
-    # Bulk-activate LONG candidates (one UPDATE per symbol)
-    for sym in long_top:
-        long_s, short_s = scores[sym]
+    # Activate top 100 with no direction bias
+    for sym, score in ranked[:POOL_SIZE]:
         await db.execute(
             update(Asset).where(Asset.symbol == sym).values(
                 is_active_in_pool=True,
-                direction_bias="LONG",
-                long_score=long_s,
-                short_score=short_s,
-                screener_activated_at=now,
-            )
-        )
-
-    # Bulk-activate SHORT candidates
-    for sym in short_top:
-        long_s, short_s = scores[sym]
-        await db.execute(
-            update(Asset).where(Asset.symbol == sym).values(
-                is_active_in_pool=True,
-                direction_bias="SHORT",
-                long_score=long_s,
-                short_score=short_s,
+                direction_bias="NEUTRAL",
+                long_score=max(0.0, score),
                 screener_activated_at=now,
             )
         )
 
     await db.flush()
 
-    long_activated = len(long_top)
-    short_activated = len(short_top)
-    logger.info(
-        f"Pre-screener complete: scored={len(scores)}, "
-        f"long={long_activated}, short={short_activated}"
-    )
+    activated = len(top_100)
+    logger.info(f"Pre-screener complete: scored={len(universe)}, activated={activated}")
     return {
-        "scored": len(scores),
-        "long_activated": long_activated,
-        "short_activated": short_activated,
-        "top_long": [{"symbol": sym, "long_score": round(scores[sym][0], 1)} for sym, _ in long_ranked[:5]],
-        "top_short": [{"symbol": sym, "short_score": round(scores[sym][1], 1)} for sym, _ in short_ranked if sym in short_top][:5],
+        "scored": len(universe),
+        "activated": activated,
+        "top_candidates": [
+            {"symbol": sym, "score": round(score, 1)}
+            for sym, score in ranked[:10]
+        ],
     }
 
 
 @celery_app.task(name="run_pre_screener", bind=True, max_retries=1)
 def run_pre_screener_task(self):
-    """Daily pre-screener: scores universe and activates top LONG/SHORT candidates."""
     import asyncio
 
     async def _run():

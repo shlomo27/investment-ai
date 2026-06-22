@@ -419,10 +419,8 @@ export interface Recommendation {
 export interface UniverseStats {
   universe_total: number;
   seeded_pool: number;
-  active_long: number;
-  active_short: number;
-  top_long: Array<{ symbol: string; long_score: number; direction: string }>;
-  top_short: Array<{ symbol: string; short_score: number; direction: string }>;
+  active_pool: number;
+  top_candidates: Array<{ symbol: string; score: number }>;
 }
 
 export interface Notification {

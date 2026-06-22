@@ -513,44 +513,28 @@ async def universe_stats(
     total_universe = await db.execute(
         select(sqlfunc.count(Asset.id)).where(Asset.in_universe == True)
     )
-    active_long = await db.execute(
-        select(sqlfunc.count(Asset.id)).where(
-            Asset.is_active_in_pool == True, Asset.direction_bias == "LONG"
-        )
-    )
-    active_short = await db.execute(
-        select(sqlfunc.count(Asset.id)).where(
-            Asset.is_active_in_pool == True, Asset.direction_bias == "SHORT"
-        )
-    )
-    seeded = await db.execute(
+    active_pool = await db.execute(
         select(sqlfunc.count(Asset.id)).where(Asset.is_active_in_pool == True)
     )
-
-    top_long_result = await db.execute(
-        select(Asset.symbol, Asset.long_score, Asset.direction_bias)
-        .where(Asset.is_active_in_pool == True, Asset.direction_bias == "LONG")
-        .order_by(Asset.long_score.desc())
-        .limit(10)
+    seeded = await db.execute(
+        select(sqlfunc.count(Asset.id)).where(
+            Asset.is_active_in_pool == True, Asset.in_universe == False
+        )
     )
-    top_short_result = await db.execute(
-        select(Asset.symbol, Asset.short_score, Asset.direction_bias)
-        .where(Asset.is_active_in_pool == True, Asset.direction_bias == "SHORT")
-        .order_by(Asset.short_score.desc())
+
+    top_result = await db.execute(
+        select(Asset.symbol, Asset.long_score)
+        .where(Asset.is_active_in_pool == True)
+        .order_by(Asset.long_score.desc())
         .limit(10)
     )
 
     return {
         "universe_total": total_universe.scalar(),
         "seeded_pool": seeded.scalar(),
-        "active_long": active_long.scalar(),
-        "active_short": active_short.scalar(),
-        "top_long": [
-            {"symbol": r[0], "long_score": r[1], "direction": r[2]}
-            for r in top_long_result.fetchall()
-        ],
-        "top_short": [
-            {"symbol": r[0], "short_score": r[1], "direction": r[2]}
-            for r in top_short_result.fetchall()
+        "active_pool": active_pool.scalar(),
+        "top_candidates": [
+            {"symbol": r[0], "score": round(r[1], 1)}
+            for r in top_result.fetchall()
         ],
     }
