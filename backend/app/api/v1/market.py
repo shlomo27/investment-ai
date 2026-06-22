@@ -347,61 +347,59 @@ async def run_screener_endpoint(
 
 @router.post("/pool/scan-now")
 async def scan_pool_now(
-    batch: int = 10,
+    batch: int = 3,
+    offset: int = 0,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Manually trigger full AI pipeline on active pool stocks.
-    Runs synchronously (no Celery needed) — useful when Celery worker is not running.
-    Scans up to `batch` stocks per call (default 10, max 30).
-    No 24h dedup — this is a manual trigger, user explicitly wants a scan now.
-    Run the pre-screener first to rotate which stocks are in the active pool.
+    Runs synchronously without Celery. Processes `batch` stocks (default 3, max 5)
+    starting from `offset` so the UI can page through the full pool.
     """
     import asyncio
     from sqlalchemy import select
     from app.db.models.asset import Asset
     from app.agents.workflow import run_investment_workflow
 
-    batch = min(max(batch, 1), 30)
+    CONCURRENT = 3   # max concurrent AI calls — avoids timeout / resource exhaustion
+    batch = min(max(batch, 1), CONCURRENT)
 
-    # Fetch active pool
     result = await db.execute(select(Asset).where(Asset.is_active_in_pool == True))
     assets = result.scalars().all()
 
     if not assets:
         return {"error": "No assets in active pool. Run the screener first.", "scanned": 0}
 
-    # Take the next batch — no 24h dedup for manual scans
-    to_scan = assets[:batch]
+    to_scan = assets[offset: offset + batch]
+    if not to_scan:
+        return {"scanned": 0, "remaining_in_pool": 0, "message": "All pool stocks have been scanned in this batch."}
 
-    tasks = [
-        run_investment_workflow(
-            symbol=asset.symbol,
-            exchange=asset.exchange.value,
-            direction_bias=getattr(asset, "direction_bias", None),
-        )
-        for asset in to_scan
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    approved = sum(
-        1 for r in results
-        if isinstance(r, dict) and r.get("workflow_status") in ("completed", "saved")
+    results = await asyncio.gather(
+        *[
+            run_investment_workflow(
+                symbol=a.symbol,
+                exchange=a.exchange.value,
+                direction_bias=getattr(a, "direction_bias", None),
+            )
+            for a in to_scan
+        ],
+        return_exceptions=True,
     )
-    rejected = sum(
-        1 for r in results
-        if isinstance(r, dict) and r.get("workflow_status") in ("rejected", "rejected_logged")
-    )
-    errors = sum(1 for r in results if isinstance(r, Exception))
 
+    approved = sum(1 for r in results if isinstance(r, dict) and r.get("workflow_status") in ("completed", "saved"))
+    rejected = sum(1 for r in results if isinstance(r, dict) and r.get("workflow_status") in ("rejected", "rejected_logged"))
+    errors   = sum(1 for r in results if isinstance(r, Exception))
+
+    next_offset = offset + batch
     return {
         "scanned": len(to_scan),
         "approved": approved,
         "rejected": rejected,
         "errors": errors,
         "symbols": [a.symbol for a in to_scan],
-        "remaining_in_pool": max(0, len(assets) - batch),
+        "next_offset": next_offset,
+        "remaining_in_pool": max(0, len(assets) - next_offset),
     }
 
 

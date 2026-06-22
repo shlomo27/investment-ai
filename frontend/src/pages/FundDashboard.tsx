@@ -20,6 +20,8 @@ const FundDashboard: React.FC = () => {
   const [universeResult, setUniverseResult] = useState<any>(null);
   const [scanRunning, setScanRunning] = useState(false);
   const [scanResult, setScanResult] = useState<any>(null);
+  const [scanOffset, setScanOffset] = useState(0);
+  const [scanProgress, setScanProgress] = useState<{ approved: number; rejected: number; scanned: number; symbols: string[] }>({ approved: 0, rejected: 0, scanned: 0, symbols: [] });
 
   useEffect(() => {
     dispatch(fetchPortfolioSummary());
@@ -62,14 +64,40 @@ const FundDashboard: React.FC = () => {
   };
 
   const handleScanNow = async () => {
+    // Reset progress on fresh start (offset = 0)
+    const startingFresh = scanOffset === 0;
     setScanRunning(true);
     setScanResult(null);
-    try {
-      const result = await marketApi.scanPoolNow(30);
-      setScanResult(result);
-      dispatch(fetchRecommendations({}));
-    } catch (e: any) {
-      setScanResult({ error: e?.response?.data?.detail || "Scan failed" });
+    if (startingFresh) setScanProgress({ approved: 0, rejected: 0, scanned: 0, symbols: [] });
+
+    let currentOffset = startingFresh ? 0 : scanOffset;
+
+    // Auto-advance through the entire pool, 3 stocks at a time
+    while (true) {
+      try {
+        const result = await marketApi.scanPoolNow(3, currentOffset);
+
+        setScanProgress(prev => ({
+          approved: prev.approved + (result.approved || 0),
+          rejected: prev.rejected + (result.rejected || 0),
+          scanned: prev.scanned + (result.scanned || 0),
+          symbols: [...prev.symbols, ...(result.symbols || [])],
+        }));
+
+        if (!result.scanned || result.remaining_in_pool === 0) {
+          // Done
+          setScanResult({ done: true });
+          setScanOffset(0);
+          dispatch(fetchRecommendations({}));
+          break;
+        }
+        currentOffset = result.next_offset;
+        setScanOffset(currentOffset);
+      } catch (e: any) {
+        setScanResult({ error: e?.response?.data?.detail || "Scan failed — try again" });
+        setScanOffset(currentOffset); // preserve offset so user can retry from here
+        break;
+      }
     }
     setScanRunning(false);
   };
@@ -334,10 +362,10 @@ const FundDashboard: React.FC = () => {
             <h2 className="font-bold mb-1">{isHe ? "סריקת AI מלאה" : "Run Full AI Scan"}</h2>
             <p className="text-xs text-gray-400 mb-2">
               {isHe
-                ? "מריץ AI מלא (פונדמנטלי + סנטימנט + ועדה) על כל הפול הפעיל — עד 30 מניות. הסריקה לוקחת כ-2-4 דקות."
-                : "Runs the full AI pipeline (fundamental + sentiment + committee) on all active pool stocks — up to 30. Takes ~2-4 minutes."}
+                ? "מריץ AI מלא (פונדמנטלי + סנטימנט + ועדה) על כל הפול הפעיל — 3 מניות במקביל עד סיום. כ-30 שניות לכל קבוצה."
+                : "Runs the full AI pipeline (fundamental + sentiment + committee) on all active pool stocks — 3 at a time until done. ~30s per batch."}
             </p>
-            <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-800/50 rounded-lg px-3 py-2 w-fit">
+            <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-800/50 rounded-lg px-3 py-2 w-fit flex-wrap">
               <span className="text-blue-400">1.</span>
               <span>{isHe ? "רענן יקום" : "Refresh Universe"}</span>
               <span className="text-gray-700">→</span>
@@ -347,35 +375,56 @@ const FundDashboard: React.FC = () => {
               <span className="text-green-400">3.</span>
               <span className="text-green-400 font-medium">{isHe ? "סרוק עכשיו" : "Scan Now"}</span>
             </div>
-            </p>
-            {scanResult && !scanResult.error && (
-              <div className="mt-3 p-3 rounded-xl bg-green-900/20 border border-green-900/30 text-xs text-green-300 space-y-1">
+
+            {/* Live progress during scan */}
+            {scanRunning && scanProgress.scanned > 0 && (
+              <div className="mt-3 p-3 rounded-xl bg-blue-900/20 border border-blue-900/30 text-xs text-blue-300 space-y-1">
+                <p className="font-medium">{isHe ? "סורק..." : "Scanning..."}</p>
                 <p>
-                  {isHe ? "נסרקו" : "Scanned"}: <strong>{scanResult.scanned}</strong> |{" "}
-                  {isHe ? "אושרו" : "Approved"}: <strong>{scanResult.approved}</strong> |{" "}
-                  {isHe ? "נדחו" : "Rejected"}: <strong>{scanResult.rejected}</strong>
+                  {isHe ? "נסרקו" : "Scanned"}: <strong>{scanProgress.scanned}</strong> |{" "}
+                  <span className="text-green-400">{isHe ? "אושרו" : "Approved"}: {scanProgress.approved}</span> |{" "}
+                  <span className="text-red-400">{isHe ? "נדחו" : "Rejected"}: {scanProgress.rejected}</span>
                 </p>
-                {scanResult.symbols?.length > 0 && (
-                  <p className="font-mono text-gray-400">{scanResult.symbols.join(", ")}</p>
-                )}
-                {scanResult.remaining_in_pool > 0 && (
-                  <p className="text-yellow-400">
-                    {isHe
-                      ? `נותרו ${scanResult.remaining_in_pool} מניות לסריקה — לחץ שוב להמשיך`
-                      : `${scanResult.remaining_in_pool} more stocks remaining — click again to continue`}
-                  </p>
-                )}
-                {scanResult.remaining_in_pool === 0 && (
-                  <p className="text-green-400">{isHe ? "✓ כל הפול נסרק!" : "✓ Entire pool scanned!"}</p>
+                {scanProgress.symbols.length > 0 && (
+                  <p className="font-mono text-gray-400">{scanProgress.symbols.join(", ")}</p>
                 )}
               </div>
             )}
+
+            {/* Final result */}
+            {!scanRunning && scanResult?.done && (
+              <div className="mt-3 p-3 rounded-xl bg-green-900/20 border border-green-900/30 text-xs text-green-300 space-y-1">
+                <p className="font-medium text-green-400">✓ {isHe ? "הסריקה הושלמה!" : "Scan complete!"}</p>
+                <p>
+                  {isHe ? "נסרקו" : "Scanned"}: <strong>{scanProgress.scanned}</strong> |{" "}
+                  <span className="text-green-400">{isHe ? "אושרו" : "Approved"}: {scanProgress.approved}</span> |{" "}
+                  <span className="text-red-400">{isHe ? "נדחו" : "Rejected"}: {scanProgress.rejected}</span>
+                </p>
+                {scanProgress.symbols.length > 0 && (
+                  <p className="font-mono text-gray-400">{scanProgress.symbols.join(", ")}</p>
+                )}
+              </div>
+            )}
+
             {scanResult?.error && (
-              <div className="mt-3 p-3 rounded-xl bg-red-900/20 text-red-400 text-xs">{scanResult.error}</div>
+              <div className="mt-3 p-3 rounded-xl bg-red-900/20 text-red-400 text-xs">
+                {scanResult.error}
+                {scanOffset > 0 && (
+                  <p className="mt-1 text-yellow-400">{isHe ? `נכשל במניה ${scanOffset + 1} — לחץ שוב להמשיך` : `Failed at stock ${scanOffset + 1} — click again to resume`}</p>
+                )}
+              </div>
             )}
-            {scanResult?.message && (
-              <div className="mt-3 p-3 rounded-xl bg-gray-800 text-gray-400 text-xs">{scanResult.message}</div>
+
+            {!scanRunning && scanResult === null && scanOffset > 0 && (
+              <div className="mt-3 p-3 rounded-xl bg-yellow-900/20 text-yellow-400 text-xs">
+                {isHe ? `ממשיך מ-מניה ${scanOffset + 1}...` : `Resuming from stock ${scanOffset + 1}...`}
+              </div>
             )}
+
+            {!scanRunning && !scanResult && scanProgress.scanned === 0 && (
+              <p className="text-xs text-gray-600 mt-3">{isHe ? "הסריקה תמשיך אוטומטית עד שכל הפול נסרק" : "Scan auto-advances until the entire pool is done"}</p>
+            )}
+
           </div>
           <button
             onClick={handleScanNow}
