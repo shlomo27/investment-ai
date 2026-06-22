@@ -69,15 +69,25 @@ const Recommendations: React.FC = () => {
     }
   };
 
-  const filteredRecs = recommendations.filter((r) => {
-    if (dirFilter === "LONG") return isLong(r.recommendation_type);
-    if (dirFilter === "SHORT") return isShort(r.recommendation_type);
-    return true;
-  });
+  const BUY_LIMIT = 20;
+  const SELL_LIMIT = 10;
+
+  // Sort all recommendations by confidence DESC
+  const sorted = [...recommendations].sort((a, b) => b.confidence_score - a.confidence_score);
+
+  // Top 20 BUY + top 10 SELL (by confidence)
+  const topBuys = sorted.filter((r) => isLong(r.recommendation_type)).slice(0, BUY_LIMIT);
+  const topSells = sorted.filter((r) => isShort(r.recommendation_type)).slice(0, SELL_LIMIT);
+  const topPicks = [...topBuys, ...topSells].sort((a, b) => b.confidence_score - a.confidence_score);
+
+  const filteredRecs =
+    dirFilter === "LONG" ? topBuys :
+    dirFilter === "SHORT" ? topSells :
+    topPicks;
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
-  const longCount = recommendations.filter((r) => isLong(r.recommendation_type)).length;
-  const shortCount = recommendations.filter((r) => isShort(r.recommendation_type)).length;
+  const longCount = topBuys.length;
+  const shortCount = topSells.length;
 
   const getTriggerBadge = (triggerType?: string) => {
     if (triggerType === "PRICE_ALERT") return { label: isHe ? "מחיר" : "Price", cls: "bg-orange-900/40 text-orange-300" };

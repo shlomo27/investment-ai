@@ -272,7 +272,7 @@ const FundDashboard: React.FC = () => {
             <div className={`mt-3 p-3 rounded-xl text-xs ${universeResult.error ? "bg-red-900/20 text-red-400" : "bg-green-900/20 text-green-400"}`}>
               {universeResult.error
                 ? universeResult.error
-                : `${isHe ? "נוספו" : "Inserted"} ${universeResult.inserted} | ${isHe ? "קיים" : "Skipped"} ${universeResult.skipped}`}
+                : `${isHe ? "נוספו" : "Inserted"} ${universeResult.inserted} | ${isHe ? "עודכנו" : "Updated"} ${universeResult.updated ?? 0} | ${isHe ? "סה\"כ" : "Total"} ${universeResult.total ?? ""}`}
             </div>
           )}
         </div>
