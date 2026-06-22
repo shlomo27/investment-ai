@@ -345,33 +345,59 @@ async def run_screener_endpoint(
     return result
 
 
-# ─── In-process scan state ────────────────────────────────────────────────────
-# Shared within the same uvicorn worker. BackgroundTasks update this dict;
-# the status endpoint exposes it to the frontend for polling.
-_scan_state: dict = {
-    "running": False,
-    "total": 0,
-    "scanned": 0,
-    "approved": 0,
-    "rejected": 0,
-    "errors": 0,
-    "symbols_done": [],
-    "started_at": None,
-    "finished_at": None,
-    "error": None,
+# ─── Redis-backed scan state ──────────────────────────────────────────────────
+# Railway runs 4 uvicorn workers (separate processes). An in-process dict is
+# NOT shared across workers — the POST and GET would hit different workers and
+# the status would always read as 0. Redis is shared, so all workers see the
+# same state.
+
+import json as _json
+
+_SCAN_KEY = "investment_ai:scan_state"
+_SCAN_DEFAULT: dict = {
+    "running": False, "total": 0, "scanned": 0, "approved": 0,
+    "rejected": 0, "errors": 0, "symbols_done": [],
+    "started_at": None, "finished_at": None, "error": None,
 }
 
 
+async def _scan_state_get() -> dict:
+    try:
+        import redis.asyncio as aioredis
+        from app.core.config import settings
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        data = await r.get(_SCAN_KEY)
+        await r.aclose()
+        return _json.loads(data) if data else dict(_SCAN_DEFAULT)
+    except Exception:
+        return dict(_SCAN_DEFAULT)
+
+
+async def _scan_state_set(state: dict) -> None:
+    try:
+        import redis.asyncio as aioredis
+        from app.core.config import settings
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        await r.set(_SCAN_KEY, _json.dumps(state), ex=7200)
+        await r.aclose()
+    except Exception:
+        pass
+
+
 async def _run_scan_background(symbols_with_meta: list[dict]) -> None:
-    """Background task: scan stocks 3 at a time, update _scan_state as we go."""
+    """Background task: scan stocks 3 at a time, update Redis state as we go."""
     import asyncio as _aio
     from app.agents.workflow import run_investment_workflow
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.asset import Asset as AssetModel
+    from sqlalchemy import update as sa_update
 
-    global _scan_state
-    _scan_state.update({
+    state = await _scan_state_get()
+    state.update({
         "running": True, "scanned": 0, "approved": 0, "rejected": 0,
         "errors": 0, "symbols_done": [], "finished_at": None, "error": None,
     })
+    await _scan_state_set(state)
 
     BATCH = 3
     try:
@@ -388,21 +414,40 @@ async def _run_scan_background(symbols_with_meta: list[dict]) -> None:
                 ],
                 return_exceptions=True,
             )
+            now = datetime.now(timezone.utc)
+            analyzed_symbols: list[str] = []
             for s, r in zip(batch, results):
-                _scan_state["scanned"] += 1
-                _scan_state["symbols_done"].append(s["symbol"])
+                state["scanned"] += 1
+                state["symbols_done"].append(s["symbol"])
                 if isinstance(r, Exception):
-                    _scan_state["errors"] += 1
+                    state["errors"] += 1
                 elif isinstance(r, dict) and r.get("workflow_status") in ("completed", "saved"):
-                    _scan_state["approved"] += 1
+                    state["approved"] += 1
+                    analyzed_symbols.append(s["symbol"])
                 else:
-                    _scan_state["rejected"] += 1
-            await _aio.sleep(1)  # brief pause between batches
+                    state["rejected"] += 1
+
+            # Update last_analyzed_at so next pre-screener run rotates correctly
+            if analyzed_symbols:
+                try:
+                    async with AsyncSessionLocal() as db:
+                        await db.execute(
+                            sa_update(AssetModel)
+                            .where(AssetModel.symbol.in_(analyzed_symbols))
+                            .values(last_analyzed_at=now)
+                        )
+                        await db.commit()
+                except Exception as db_exc:
+                    logger.warning("Failed to update last_analyzed_at", error=str(db_exc))
+
+            await _scan_state_set(state)
+            await _aio.sleep(1)
     except Exception as exc:
-        _scan_state["error"] = str(exc)
+        state["error"] = str(exc)
     finally:
-        _scan_state["running"] = False
-        _scan_state["finished_at"] = datetime.now(timezone.utc).isoformat()
+        state["running"] = False
+        state["finished_at"] = datetime.now(timezone.utc).isoformat()
+        await _scan_state_set(state)
 
 
 @router.post("/pool/scan-now")
@@ -418,13 +463,9 @@ async def scan_pool_now(
     from sqlalchemy import select
     from app.db.models.asset import Asset
 
-    global _scan_state
-    if _scan_state["running"]:
-        return {
-            "started": False,
-            "message": "Scan already running",
-            "status": _scan_state,
-        }
+    current = await _scan_state_get()
+    if current.get("running"):
+        return {"started": False, "message": "Scan already running", "status": current}
 
     result = await db.execute(select(Asset).where(Asset.is_active_in_pool == True))
     assets = result.scalars().all()
@@ -436,10 +477,15 @@ async def scan_pool_now(
         {"symbol": a.symbol, "exchange": a.exchange.value, "direction_bias": getattr(a, "direction_bias", None)}
         for a in assets
     ]
-    _scan_state["total"] = len(symbols_meta)
-    _scan_state["started_at"] = datetime.now(timezone.utc).isoformat()
 
-    # Fire-and-forget: create asyncio task so the HTTP response returns immediately
+    # Write initial state to Redis before starting the task
+    init_state = dict(_SCAN_DEFAULT)
+    init_state.update({
+        "running": True, "total": len(symbols_meta),
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    })
+    await _scan_state_set(init_state)
+
     asyncio.create_task(_run_scan_background(symbols_meta))
 
     return {
@@ -451,8 +497,8 @@ async def scan_pool_now(
 
 @router.get("/pool/scan-status")
 async def scan_status(current_user: User = Depends(get_current_active_user)):
-    """Return current background scan progress."""
-    return _scan_state
+    """Return current background scan progress (reads from Redis — shared across all workers)."""
+    return await _scan_state_get()
 
 
 @router.get("/universe/stats")

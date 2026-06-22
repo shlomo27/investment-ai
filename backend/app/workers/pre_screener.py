@@ -172,32 +172,38 @@ async def run_pre_screener(db: AsyncSession) -> dict:
     scores: dict[str, tuple[float, float]] = {}
 
     for batch in _batch_symbols(symbols):
+        # Fetch yfinance data — failures just mean empty info dicts
+        batch_info: dict[str, dict] = {}
         try:
             tickers = yf.Tickers(" ".join(batch))
             for sym in batch:
                 try:
-                    info = tickers.tickers[sym].info or {}
-                    long_s, short_s = _score_ticker(info)
-                    # Apply staleness adjustment: ensures rotation even when
-                    # yfinance is blocked and all fundamental scores are 0
-                    adj = _recency_adjustment(symbol_to_analyzed.get(sym))
-                    long_s = max(0.0, long_s + adj)
-                    short_s = max(0.0, short_s + adj)
-                    scores[sym] = (long_s, short_s)
+                    batch_info[sym] = tickers.tickers[sym].info or {}
                 except Exception as e:
-                    logger.debug(f"Score failed for {sym}: {e}")
-                    scores[sym] = (0.0, 0.0)
+                    logger.debug(f"yfinance info failed for {sym}: {e}")
+                    batch_info[sym] = {}
         except Exception as e:
-            logger.error(f"Batch fetch failed: {e}")
+            logger.error(f"yfinance batch fetch failed: {e}")
             for sym in batch:
-                scores[sym] = (0.0, 0.0)
+                batch_info[sym] = {}
+
+        # Score each symbol — recency adjustment ALWAYS applied regardless of
+        # whether yfinance returned data (critical on Railway where .info is blocked)
+        for sym in batch:
+            long_s, short_s = _score_ticker(batch_info.get(sym, {}))
+            adj = _recency_adjustment(symbol_to_analyzed.get(sym))
+            scores[sym] = (max(0.0, long_s + adj), max(0.0, short_s + adj))
 
     # Sort by score to pick top candidates
     long_ranked = sorted(scores.items(), key=lambda x: x[1][0], reverse=True)
     short_ranked = sorted(scores.items(), key=lambda x: x[1][1], reverse=True)
 
     long_top = {sym for sym, _ in long_ranked[:LONG_SLOTS]}
-    short_top = {sym for sym, _ in short_ranked[:SHORT_SLOTS] if sym not in long_top}
+    # SHORT candidates are picked from stocks NOT already selected as LONG.
+    # Without this, when all scores are tied, short_ranked[:SHORT_SLOTS] returns
+    # the same symbols as long_ranked[:SHORT_SLOTS] (all in long_top) → 0 shorts.
+    short_candidates = [sym for sym, _ in short_ranked if sym not in long_top]
+    short_top = set(short_candidates[:SHORT_SLOTS])
 
     now = datetime.now(timezone.utc)
 
