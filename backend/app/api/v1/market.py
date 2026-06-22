@@ -525,8 +525,8 @@ async def universe_stats(
     top_result = await db.execute(
         select(Asset.symbol, Asset.long_score)
         .where(Asset.is_active_in_pool == True)
-        .order_by(Asset.long_score.desc())
-        .limit(10)
+        .order_by(Asset.long_score.desc(), Asset.symbol.asc())
+        .limit(20)
     )
 
     return {

@@ -288,13 +288,22 @@ const FundDashboard: React.FC = () => {
           {universeStats && universeStats.top_candidates?.length > 0 ? (
             <div className="space-y-2 mb-4">
               <p className="text-xs text-gray-500 uppercase tracking-wide">
-                {isHe ? "מניות לסריקת היום" : "Today's Scan Queue"}
+                {isHe ? `מניות לסריקת היום (${universeStats.active_pool} נבחרו)` : `Today's Scan Queue (${universeStats.active_pool} selected)`}
               </p>
-              {universeStats.top_candidates.slice(0, 8).map((c) => (
-                <div key={c.symbol} className="flex items-center justify-between text-xs">
-                  <span className="font-mono font-bold text-white">{c.symbol}</span>
-                </div>
-              ))}
+              <div className="grid grid-cols-5 gap-1">
+                {universeStats.top_candidates.map((c) => (
+                  <span key={c.symbol} className="font-mono font-bold text-white text-xs bg-gray-800 rounded px-1.5 py-1 text-center">
+                    {c.symbol}
+                  </span>
+                ))}
+              </div>
+              {universeStats.active_pool > universeStats.top_candidates.length && (
+                <p className="text-xs text-gray-600">
+                  {isHe
+                    ? `+ ${universeStats.active_pool - universeStats.top_candidates.length} מניות נוספות`
+                    : `+ ${universeStats.active_pool - universeStats.top_candidates.length} more stocks`}
+                </p>
+              )}
             </div>
           ) : universeStats ? (
             <div className="flex flex-col items-center justify-center py-6 text-center mb-4">
