@@ -27,8 +27,8 @@ from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
-LONG_SLOTS = 20   # top LONG candidates to activate
-SHORT_SLOTS = 10  # top SHORT candidates to activate
+LONG_SLOTS = 80   # top LONG candidates to activate  (~9-day cycle for S&P500+400)
+SHORT_SLOTS = 20  # top SHORT candidates to activate
 BATCH_SIZE = 50   # symbols per yfinance download batch
 
 

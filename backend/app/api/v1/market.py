@@ -363,7 +363,7 @@ async def scan_pool_now(
     from app.agents.workflow import run_investment_workflow
 
     CONCURRENT = 3   # max concurrent AI calls — avoids timeout / resource exhaustion
-    batch = min(max(batch, 1), CONCURRENT)
+    batch = min(max(batch, 1), 5)
 
     result = await db.execute(select(Asset).where(Asset.is_active_in_pool == True))
     assets = result.scalars().all()

@@ -294,8 +294,8 @@ const FundDashboard: React.FC = () => {
           </div>
           <p className="text-xs text-gray-400 mb-4">
             {isHe
-              ? "מדרג את כל מניות היקום לפי ואלואציה, מומנטום וסנטימנט אנליסטים. מפעיל את ה-Top 20 LONG + Top 10 SHORT לניתוח AI מלא."
-              : "Scores universe stocks on valuation, momentum, and analyst sentiment. Activates Top 20 LONG + Top 10 SHORT for full AI analysis."}
+              ? "מדרג את כל ~900 מניות ה-S&P500+S&P400 ובוחר 80 LONG + 20 SHORT לניתוח AI יומי. מניות שנותחו לאחרונה מקבלות קנס כדי להבטיח רוטציה — כיסוי מלא תוך ~9 ימים."
+              : "Scores all ~900 S&P500+S&P400 stocks and selects 80 LONG + 20 SHORT for daily AI analysis. Recently-analyzed stocks are penalized to ensure rotation — full coverage in ~9 days."}
           </p>
 
           {universeStats && (universeStats.top_long.length > 0 || universeStats.top_short.length > 0) ? (
@@ -362,8 +362,8 @@ const FundDashboard: React.FC = () => {
             <h2 className="font-bold mb-1">{isHe ? "סריקת AI מלאה" : "Run Full AI Scan"}</h2>
             <p className="text-xs text-gray-400 mb-2">
               {isHe
-                ? "מריץ AI מלא (פונדמנטלי + סנטימנט + ועדה) על כל הפול הפעיל — 3 מניות במקביל עד סיום. כ-30 שניות לכל קבוצה."
-                : "Runs the full AI pipeline (fundamental + sentiment + committee) on all active pool stocks — 3 at a time until done. ~30s per batch."}
+                ? "מריץ AI מלא על כל 100 המניות הפעילות היומיות (80 LONG + 20 SHORT) — 3 במקביל עד סיום. מחזור של 9 ימים לכיסוי כל ה-S&P500+S&P400."
+                : "Runs full AI on all 100 active stocks (80 LONG + 20 SHORT) — 3 concurrent until done. 9-day cycle covers all S&P500+S&P400."}
             </p>
             <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-800/50 rounded-lg px-3 py-2 w-fit flex-wrap">
               <span className="text-blue-400">1.</span>
