@@ -61,12 +61,14 @@ async def run_pre_screener(db: AsyncSession) -> dict:
 
     logger.info(f"Pre-screener: ranking {len(universe)} universe stocks by recency")
 
-    # Score and rank — pure recency, no yfinance
+    # Score and rank — pure recency, no yfinance.
+    # Tiebreaker: symbol alphabetically so equal-scored stocks always rank
+    # in the same order → same 100 selected every run until scans update last_analyzed_at.
     scored = [
         (sym, _recency_score(analyzed_at))
         for _id, sym, analyzed_at in universe
     ]
-    ranked = sorted(scored, key=lambda x: x[1], reverse=True)
+    ranked = sorted(scored, key=lambda x: (-x[1], x[0]))
     top_100 = [sym for sym, _ in ranked[:POOL_SIZE]]
     top_set = set(top_100)
 
