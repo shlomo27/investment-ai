@@ -136,8 +136,28 @@ async def lifespan(app: FastAPI):
         claude_model=settings.CLAUDE_MODEL,
     )
 
+    # ── In-process scheduler (replaces Celery Beat on Railway) ──────────────
+    # Uses APScheduler with a PostgreSQL job store so across all uvicorn
+    # workers each scheduled job fires exactly once (DB-level row locking).
+    scheduler = None
+    try:
+        from app.workers.in_process_scheduler import create_scheduler
+        sync_db_url = settings.DATABASE_URL.replace(
+            "postgresql+asyncpg://", "postgresql+psycopg2://"
+        )
+        scheduler = create_scheduler(sync_db_url)
+        scheduler.start()
+        logger.info(
+            "In-process scheduler started",
+            jobs=["load_universe Sun 07:00 IL", "prescreener daily 08:00 IL", "full_scan daily 09:00 IL"],
+        )
+    except Exception as exc:
+        logger.warning("In-process scheduler failed to start — manual scans still available", error=str(exc))
+
     yield
 
+    if scheduler and scheduler.running:
+        scheduler.shutdown(wait=False)
     logger.info("Investment AI Platform shutting down...")
 
 
