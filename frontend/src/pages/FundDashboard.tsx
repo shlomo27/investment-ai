@@ -293,7 +293,6 @@ const FundDashboard: React.FC = () => {
               {universeStats.top_candidates.slice(0, 8).map((c) => (
                 <div key={c.symbol} className="flex items-center justify-between text-xs">
                   <span className="font-mono font-bold text-white">{c.symbol}</span>
-                  <span className="text-gray-400 text-xs">{isHe ? "ממתין" : "queued"}</span>
                 </div>
               ))}
             </div>
