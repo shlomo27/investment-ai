@@ -345,62 +345,114 @@ async def run_screener_endpoint(
     return result
 
 
+# ─── In-process scan state ────────────────────────────────────────────────────
+# Shared within the same uvicorn worker. BackgroundTasks update this dict;
+# the status endpoint exposes it to the frontend for polling.
+_scan_state: dict = {
+    "running": False,
+    "total": 0,
+    "scanned": 0,
+    "approved": 0,
+    "rejected": 0,
+    "errors": 0,
+    "symbols_done": [],
+    "started_at": None,
+    "finished_at": None,
+    "error": None,
+}
+
+
+async def _run_scan_background(symbols_with_meta: list[dict]) -> None:
+    """Background task: scan stocks 3 at a time, update _scan_state as we go."""
+    import asyncio as _aio
+    from app.agents.workflow import run_investment_workflow
+
+    global _scan_state
+    _scan_state.update({
+        "running": True, "scanned": 0, "approved": 0, "rejected": 0,
+        "errors": 0, "symbols_done": [], "finished_at": None, "error": None,
+    })
+
+    BATCH = 3
+    try:
+        for i in range(0, len(symbols_with_meta), BATCH):
+            batch = symbols_with_meta[i: i + BATCH]
+            results = await _aio.gather(
+                *[
+                    run_investment_workflow(
+                        symbol=s["symbol"],
+                        exchange=s["exchange"],
+                        direction_bias=s.get("direction_bias"),
+                    )
+                    for s in batch
+                ],
+                return_exceptions=True,
+            )
+            for s, r in zip(batch, results):
+                _scan_state["scanned"] += 1
+                _scan_state["symbols_done"].append(s["symbol"])
+                if isinstance(r, Exception):
+                    _scan_state["errors"] += 1
+                elif isinstance(r, dict) and r.get("workflow_status") in ("completed", "saved"):
+                    _scan_state["approved"] += 1
+                else:
+                    _scan_state["rejected"] += 1
+            await _aio.sleep(1)  # brief pause between batches
+    except Exception as exc:
+        _scan_state["error"] = str(exc)
+    finally:
+        _scan_state["running"] = False
+        _scan_state["finished_at"] = datetime.now(timezone.utc).isoformat()
+
+
 @router.post("/pool/scan-now")
 async def scan_pool_now(
-    batch: int = 3,
-    offset: int = 0,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Manually trigger full AI pipeline on active pool stocks.
-    Runs synchronously without Celery. Processes `batch` stocks (default 3, max 5)
-    starting from `offset` so the UI can page through the full pool.
+    Start a full AI scan of all active pool stocks in the background.
+    Returns immediately — poll GET /pool/scan-status for progress.
     """
     import asyncio
     from sqlalchemy import select
     from app.db.models.asset import Asset
-    from app.agents.workflow import run_investment_workflow
 
-    CONCURRENT = 3   # max concurrent AI calls — avoids timeout / resource exhaustion
-    batch = min(max(batch, 1), 5)
+    global _scan_state
+    if _scan_state["running"]:
+        return {
+            "started": False,
+            "message": "Scan already running",
+            "status": _scan_state,
+        }
 
     result = await db.execute(select(Asset).where(Asset.is_active_in_pool == True))
     assets = result.scalars().all()
 
     if not assets:
-        return {"error": "No assets in active pool. Run the screener first.", "scanned": 0}
+        return {"started": False, "error": "No assets in active pool. Run the screener first."}
 
-    to_scan = assets[offset: offset + batch]
-    if not to_scan:
-        return {"scanned": 0, "remaining_in_pool": 0, "message": "All pool stocks have been scanned in this batch."}
+    symbols_meta = [
+        {"symbol": a.symbol, "exchange": a.exchange.value, "direction_bias": getattr(a, "direction_bias", None)}
+        for a in assets
+    ]
+    _scan_state["total"] = len(symbols_meta)
+    _scan_state["started_at"] = datetime.now(timezone.utc).isoformat()
 
-    results = await asyncio.gather(
-        *[
-            run_investment_workflow(
-                symbol=a.symbol,
-                exchange=a.exchange.value,
-                direction_bias=getattr(a, "direction_bias", None),
-            )
-            for a in to_scan
-        ],
-        return_exceptions=True,
-    )
+    # Fire-and-forget: create asyncio task so the HTTP response returns immediately
+    asyncio.create_task(_run_scan_background(symbols_meta))
 
-    approved = sum(1 for r in results if isinstance(r, dict) and r.get("workflow_status") in ("completed", "saved"))
-    rejected = sum(1 for r in results if isinstance(r, dict) and r.get("workflow_status") in ("rejected", "rejected_logged"))
-    errors   = sum(1 for r in results if isinstance(r, Exception))
-
-    next_offset = offset + batch
     return {
-        "scanned": len(to_scan),
-        "approved": approved,
-        "rejected": rejected,
-        "errors": errors,
-        "symbols": [a.symbol for a in to_scan],
-        "next_offset": next_offset,
-        "remaining_in_pool": max(0, len(assets) - next_offset),
+        "started": True,
+        "total": len(symbols_meta),
+        "message": f"Scanning {len(symbols_meta)} stocks in background. Poll /pool/scan-status for progress.",
     }
+
+
+@router.get("/pool/scan-status")
+async def scan_status(current_user: User = Depends(get_current_active_user)):
+    """Return current background scan progress."""
+    return _scan_state
 
 
 @router.get("/universe/stats")
