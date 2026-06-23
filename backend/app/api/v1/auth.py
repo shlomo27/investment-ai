@@ -87,6 +87,7 @@ class UserResponse(BaseModel):
     allows_short: bool = False
     is_active: bool
     is_onboarded: bool
+    is_admin: bool
     preferred_language: str
     notification_email: bool
     notification_sms: bool

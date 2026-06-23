@@ -30,11 +30,9 @@ import Sidebar from "./components/Layout/Sidebar";
 import { initPushNotifications } from "./services/pushNotifications";
 import { authApi } from "./api/client";
 
-// ─── Protected Route ────────────────────────────────────────────────────────────
+// ─── Protected Routes ───────────────────────────────────────────────────────────
 
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAppSelector((state) => state.auth);
 
   if (isLoading) {
@@ -45,10 +43,23 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
     );
   }
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+};
+
+const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, isLoading, user } = useAppSelector((state) => state.auth);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500" />
+      </div>
+    );
   }
 
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!user?.is_admin) return <Navigate to="/master-list" replace />;
   return <>{children}</>;
 };
 
@@ -111,7 +122,7 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               {user?.is_onboarded ? (
-                <Navigate to="/fund" replace />
+                <Navigate to={user?.is_admin ? "/fund" : "/master-list"} replace />
               ) : (
                 <Onboarding />
               )}
@@ -147,11 +158,11 @@ const App: React.FC = () => {
         <Route
           path="/recommendations"
           element={
-            <ProtectedRoute>
+            <AdminRoute>
               <AppLayout>
                 <Recommendations />
               </AppLayout>
-            </ProtectedRoute>
+            </AdminRoute>
           }
         />
         <Route
@@ -177,11 +188,11 @@ const App: React.FC = () => {
         <Route
           path="/fund"
           element={
-            <ProtectedRoute>
+            <AdminRoute>
               <AppLayout>
                 <FundDashboard />
               </AppLayout>
-            </ProtectedRoute>
+            </AdminRoute>
           }
         />
         <Route
@@ -215,10 +226,16 @@ const App: React.FC = () => {
           }
         />
 
-        {/* Catch-all redirect */}
+        {/* Catch-all: admin → fund dashboard, client → master list */}
         <Route
           path="/"
-          element={<Navigate to={isAuthenticated ? "/fund" : "/login"} replace />}
+          element={
+            !isAuthenticated
+              ? <Navigate to="/login" replace />
+              : user?.is_admin
+              ? <Navigate to="/fund" replace />
+              : <Navigate to="/master-list" replace />
+          }
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -36,6 +36,7 @@ class User(Base):
     allows_short: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_onboarded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     preferred_language: Mapped[str] = mapped_column(String(10), default="he", nullable=False)
     push_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
     notification_email: Mapped[bool] = mapped_column(Boolean, default=True)

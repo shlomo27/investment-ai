@@ -656,6 +656,35 @@ async def publish_master_list(
     db.add_all(entries)
     await db.flush()
 
+    # Notify all active users that a new master list is published
+    try:
+        from app.db.models.user import User as UserModel
+        from app.db.models.notification import NotificationType
+        from app.services.notifications.service import NotificationService
+
+        users_result = await db.execute(
+            select(UserModel).where(UserModel.is_active == True)
+        )
+        all_users = users_result.scalars().all()
+
+        notification_service = NotificationService()
+        for u in all_users:
+            title = (
+                f"רשימת המאסטר {quarter} פורסמה"
+                if u.preferred_language == "he"
+                else f"Master List {quarter} Published"
+            )
+            await notification_service.send_notification(
+                user_id=u.id,
+                recommendation_id=None,
+                internal_detail={"quarter": quarter, "total": len(entries), "buys": len(buy_rows), "sells": len(sell_rows)},
+                db=db,
+                notification_type=NotificationType.SYSTEM,
+                title=title,
+            )
+    except Exception as _notify_exc:
+        logger.warning(f"Master list publish notifications failed: {_notify_exc}")
+
     return {
         "published": len(entries),
         "quarter": quarter,

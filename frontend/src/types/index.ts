@@ -89,6 +89,7 @@ export interface User {
   cash_balance: number;
   max_single_asset_exposure: number;
   is_active: boolean;
+  is_admin: boolean;
   is_onboarded: boolean;
   preferred_language: "he" | "en";
   notification_email: boolean;

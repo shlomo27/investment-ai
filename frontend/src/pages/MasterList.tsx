@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAppSelector } from "../store";
-import { marketApi } from "../api/client";
-import { RecommendationType } from "../types";
+import { marketApi, watchlistApi } from "../api/client";
 
 interface MasterListEntry {
   id: number;
@@ -21,11 +20,6 @@ interface MasterListEntry {
   recommendation_id?: number;
 }
 
-interface MasterListResponse {
-  quarter: string | null;
-  entries: MasterListEntry[];
-}
-
 const recBadgeClass = (type: string) => {
   if (type === "STRONG_BUY") return "bg-green-500/20 text-green-300 border border-green-600/40";
   if (type === "BUY") return "bg-green-900/30 text-green-400 border border-green-700/40";
@@ -39,20 +33,31 @@ const isLong = (type: string) => type === "BUY" || type === "STRONG_BUY";
 const MasterList: React.FC = () => {
   const { user } = useAppSelector((s) => s.auth);
   const isHe = user?.preferred_language === "he";
+  const isAdmin = user?.is_admin ?? false;
 
-  const [data, setData] = useState<MasterListResponse | null>(null);
+  const [entries, setEntries] = useState<MasterListEntry[]>([]);
+  const [quarter, setQuarter] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<string | null>(null);
   const [dirFilter, setDirFilter] = useState<"ALL" | "LONG" | "SHORT">("ALL");
 
+  // Track which symbols are already in watchlist
+  const [watchedSymbols, setWatchedSymbols] = useState<Set<string>>(new Set());
+  const [addingToWatch, setAddingToWatch] = useState<string | null>(null);
+
   const load = async () => {
     setIsLoading(true);
     try {
-      const res = await marketApi.getMasterList();
-      setData(res);
+      const [listRes, watchRes] = await Promise.all([
+        marketApi.getMasterList(),
+        watchlistApi.getWatchlist(),
+      ]);
+      setEntries(listRes.entries ?? []);
+      setQuarter(listRes.quarter);
+      setWatchedSymbols(new Set(watchRes.map((w: any) => w.symbol)));
     } catch {
-      setData({ quarter: null, entries: [] });
+      setEntries([]);
     } finally {
       setIsLoading(false);
     }
@@ -71,16 +76,25 @@ const MasterList: React.FC = () => {
           : `Published! ${res.buys} buys + ${res.sells} sells for ${res.quarter}`
       );
       await load();
-    } catch (e: any) {
-      setPublishResult(
-        isHe ? "שגיאה בפרסום" : "Failed to publish"
-      );
+    } catch {
+      setPublishResult(isHe ? "שגיאה בפרסום" : "Failed to publish");
     } finally {
       setIsPublishing(false);
     }
   };
 
-  const entries = data?.entries ?? [];
+  const handleAddToWatchlist = async (symbol: string) => {
+    setAddingToWatch(symbol);
+    try {
+      await watchlistApi.addToWatchlist({ symbol, alert_on_technical_signal: true });
+      setWatchedSymbols((prev) => new Set([...prev, symbol]));
+    } catch {
+      // already in watchlist or error — ignore
+    } finally {
+      setAddingToWatch(null);
+    }
+  };
+
   const longs = entries.filter((e) => isLong(e.recommendation_type));
   const shorts = entries.filter((e) => !isLong(e.recommendation_type));
   const filtered = dirFilter === "LONG" ? longs : dirFilter === "SHORT" ? shorts : entries;
@@ -93,13 +107,13 @@ const MasterList: React.FC = () => {
           <h1 className="text-2xl font-bold">
             {isHe ? "רשימת המאסטר — המלצות רבעוניות" : "Master List — Quarterly Picks"}
           </h1>
-          {data?.quarter && (
+          {quarter && (
             <p className="text-sm text-gray-400 mt-0.5">
-              {isHe ? `רבעון פעיל: ${data.quarter}` : `Active quarter: ${data.quarter}`}
+              {isHe ? `רבעון פעיל: ${quarter}` : `Active quarter: ${quarter}`}
             </p>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        {isAdmin && (
           <button
             onClick={handlePublish}
             disabled={isPublishing}
@@ -109,10 +123,7 @@ const MasterList: React.FC = () => {
               ? (isHe ? "מפרסם..." : "Publishing...")
               : (isHe ? "פרסם רשימה חדשה" : "Publish New List")}
           </button>
-          <Link to="/recommendations" className="text-xs text-gray-400 hover:text-gray-200">
-            {isHe ? "← סיגנלים" : "Signals →"}
-          </Link>
-        </div>
+        )}
       </div>
 
       {publishResult && (
@@ -177,9 +188,9 @@ const MasterList: React.FC = () => {
             {isHe ? "אין רשימת מאסטר פעילה" : "No active master list"}
           </p>
           <p className="text-sm">
-            {isHe
-              ? "לחץ על \"פרסם רשימה חדשה\" כדי ליצור את רשימת 50 המניות הרבעונית (30 קנייה + 20 מכירה)"
-              : "Click \"Publish New List\" to create the quarterly 50-stock list (30 buys + 20 sells)"}
+            {isAdmin
+              ? (isHe ? "לחץ \"פרסם רשימה חדשה\" לאחר שהסריקות הושלמו" : "Click \"Publish New List\" after scans are complete")
+              : (isHe ? "הרשימה הרבעונית תפורסם בקרוב" : "The quarterly list will be published soon")}
           </p>
         </div>
       )}
@@ -189,6 +200,9 @@ const MasterList: React.FC = () => {
         <div className="space-y-3">
           {filtered.map((entry, idx) => {
             const long = isLong(entry.recommendation_type);
+            const watched = watchedSymbols.has(entry.symbol);
+            const adding = addingToWatch === entry.symbol;
+
             return (
               <div
                 key={entry.id}
@@ -198,7 +212,7 @@ const MasterList: React.FC = () => {
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    {/* Rank + Symbol + Badge */}
+                    {/* Rank + Symbol + Badges */}
                     <div className="flex items-center gap-2 flex-wrap mb-2">
                       <span className="text-xs text-gray-600 font-mono w-5">#{idx + 1}</span>
                       <span className="font-mono font-bold text-lg">{entry.symbol}</span>
@@ -212,14 +226,14 @@ const MasterList: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Asset name or thesis */}
+                    {/* Thesis or name */}
                     {entry.thesis ? (
                       <p className="text-sm text-gray-300 line-clamp-2">{entry.thesis}</p>
                     ) : entry.asset_name ? (
                       <p className="text-sm text-gray-400">{entry.asset_name}</p>
                     ) : null}
 
-                    {/* Key metrics */}
+                    {/* Metrics */}
                     <div className="flex items-center gap-4 mt-2 text-xs text-gray-400 flex-wrap">
                       <span>
                         {isHe ? "ביטחון:" : "Conf:"}{" "}
@@ -234,7 +248,7 @@ const MasterList: React.FC = () => {
                       {entry.target_price && (
                         <span>
                           {isHe ? "יעד:" : "Target:"}{" "}
-                          <span className={long ? "text-green-400" : "text-red-400"} style={{ fontWeight: 500 }}>
+                          <span className={long ? "text-green-400 font-medium" : "text-red-400 font-medium"}>
                             ${entry.target_price.toFixed(2)}
                           </span>
                         </span>
@@ -251,14 +265,29 @@ const MasterList: React.FC = () => {
                   </div>
 
                   {/* Actions */}
-                  {entry.recommendation_id && (
-                    <Link
-                      to={`/research/${entry.recommendation_id}`}
-                      className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg flex-shrink-0"
-                    >
-                      {isHe ? "דוח מחקר" : "Research"}
-                    </Link>
-                  )}
+                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                    {entry.recommendation_id && (
+                      <Link
+                        to={`/research/${entry.recommendation_id}`}
+                        className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg"
+                      >
+                        {isHe ? "דוח מחקר" : "Research"}
+                      </Link>
+                    )}
+                    {watched ? (
+                      <span className="text-xs text-gray-500 px-3 py-1.5 border border-gray-700 rounded-lg">
+                        {isHe ? "במעקב ✓" : "Watching ✓"}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleAddToWatchlist(entry.symbol)}
+                        disabled={adding}
+                        className="text-xs bg-blue-900/40 hover:bg-blue-800/50 text-blue-300 border border-blue-700/40 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {adding ? "..." : (isHe ? "+ מעקב" : "+ Watch")}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
