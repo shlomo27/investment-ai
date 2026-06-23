@@ -8,7 +8,7 @@ across the 4 uvicorn workers only ONE worker actually executes each job
 Schedule (Asia/Jerusalem timezone):
   Sunday 07:00  — load_universe            (refresh S&P500+S&P400 from Wikipedia)
   Daily  07:30  — earnings_watcher         (only during earnings seasons; ≥20 fresh stocks → trigger quarterly scan)
-  Daily  08:30  — daily_ta_scan            (TA for all 50 master-list stocks — no Claude)
+  כל 30 דק'    — ta_scan                  (TA for all 50 master-list stocks — free, no Claude)
   Every 30 min  — news_watcher             (news+social for master-list stocks → alerts to holders)
   Daily  12:00  — quarterly_scan_batch     (processes 50 universe stocks/day when quarterly scan is active)
 
@@ -209,11 +209,13 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
-    # Daily technical analysis — 08:30 IL (cheap, pandas-ta, no Claude)
+    # Technical analysis — every 30 minutes (free: pandas-ta + yfinance, no Claude)
+    # Covers all 50 Master List stocks each run to catch intraday signals.
     scheduler.add_job(
         job_daily_ta_scan,
-        CronTrigger(hour=8, minute=30, timezone="Asia/Jerusalem"),
-        id="scheduled_daily_ta_scan",
+        "interval",
+        minutes=30,
+        id="scheduled_ta_scan",
         replace_existing=True,
     )
 
