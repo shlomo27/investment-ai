@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     SENIOR_APPROVAL_THRESHOLD: float = 0.30
     MAX_CONCURRENT_SCANS: int = 10
     MAX_SCAN_STOCKS: int = 20  # limit daily full scan to save API tokens (override via Railway env var)
+    MIN_EARNINGS_TRIGGER: int = 20  # min stocks with fresh earnings to trigger quarterly scan
 
     # Market Hours (Israel Time UTC+3)
     TASE_OPEN_HOUR: int = 9

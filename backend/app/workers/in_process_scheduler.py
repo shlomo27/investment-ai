@@ -6,12 +6,14 @@ across the 4 uvicorn workers only ONE worker actually executes each job
 (SQLAlchemy job store uses DB-level locking for coordination).
 
 Schedule (Asia/Jerusalem timezone):
-  Sunday 07:00  — load_universe      (refresh S&P500+S&P400 from Wikipedia)
-  Daily  08:30  — daily_ta_scan      (technical analysis for all 50 master list stocks — no Claude)
-  Every 30 min  — news_watcher       (scan news/Twitter for master list stocks → alerts)
+  Sunday 07:00  — load_universe       (refresh S&P500+S&P400 from Wikipedia)
+  Daily  07:30  — earnings_watcher    (check for fresh earnings → trigger Claude scan when ≥20 stocks)
+  Daily  08:30  — daily_ta_scan       (technical analysis for all master list stocks — no Claude)
+  Every 30 min  — news_watcher        (scan news/Twitter for master list stocks → alerts)
 
-The quarterly fundamental scan (Claude) is triggered MANUALLY by the admin
-via the Fund Dashboard button — NOT run automatically.
+The quarterly Claude scan fires automatically via earnings_watcher when enough
+stocks in the universe have published new earnings reports (MIN_EARNINGS_TRIGGER=20).
+Admin can also trigger it manually from the Fund Dashboard at any time.
 """
 import asyncio
 import logging
@@ -193,6 +195,17 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+    # Daily earnings check — 07:30 IL
+    # Monitors universe stocks for fresh earnings releases.
+    # Accumulates in Redis queue; fires Claude scan when ≥ MIN_EARNINGS_TRIGGER stocks queued.
+    from app.workers.earnings_watcher import job_earnings_queue_check
+    scheduler.add_job(
+        job_earnings_queue_check,
+        CronTrigger(hour=7, minute=30, timezone="Asia/Jerusalem"),
+        id="scheduled_earnings_watcher",
+        replace_existing=True,
+    )
+
     # Daily technical analysis — 08:30 IL (cheap, pandas-ta, no Claude)
     scheduler.add_job(
         job_daily_ta_scan,
@@ -211,7 +224,7 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
-    # NOTE: The quarterly Claude scan (prescreener + full_scan) is NOT scheduled
-    # automatically. It is triggered manually by the admin from the Fund Dashboard.
+    # NOTE: Manual quarterly scan still available in Fund Dashboard
+    # (for cases where admin wants to scan outside earnings cycle)
 
     return scheduler
