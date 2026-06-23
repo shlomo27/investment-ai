@@ -586,8 +586,8 @@ async def publish_master_list(
     """Admin: publish a new quarterly master list from top approved recommendations.
 
     Deactivates all existing entries, then creates new entries from:
-    - Top 20 BUY / STRONG_BUY approved recommendations
-    - Top 10 SELL / STRONG_SELL approved recommendations
+    - Top 30 BUY / STRONG_BUY approved recommendations
+    - Top 20 SELL / STRONG_SELL approved recommendations
     """
     from app.db.models.master_list import MasterListEntry
     from app.db.models.recommendation import Recommendation, RecommendationStatus, RecommendationType
@@ -610,25 +610,25 @@ async def publish_master_list(
     buy_types = [RecommendationType.BUY, RecommendationType.STRONG_BUY]
     sell_types = [RecommendationType.SELL, RecommendationType.STRONG_SELL]
 
-    # Top 20 buys
+    # Top 30 buys
     buy_result = await db.execute(
         select(Recommendation, AssetModel.name.label("asset_name"), AssetModel.sector)
         .join(AssetModel, AssetModel.id == Recommendation.asset_id)
         .where(Recommendation.recommendation_type.in_(buy_types))
         .where(Recommendation.status.in_(approved_statuses))
         .order_by(Recommendation.confidence_score.desc())
-        .limit(20)
+        .limit(30)
     )
     buy_rows = buy_result.all()
 
-    # Top 10 sells
+    # Top 20 sells
     sell_result = await db.execute(
         select(Recommendation, AssetModel.name.label("asset_name"), AssetModel.sector)
         .join(AssetModel, AssetModel.id == Recommendation.asset_id)
         .where(Recommendation.recommendation_type.in_(sell_types))
         .where(Recommendation.status.in_(approved_statuses))
         .order_by(Recommendation.confidence_score.desc())
-        .limit(10)
+        .limit(20)
     )
     sell_rows = sell_result.all()
 

@@ -178,8 +178,8 @@ const MasterList: React.FC = () => {
           </p>
           <p className="text-sm">
             {isHe
-              ? "לחץ על \"פרסם רשימה חדשה\" כדי ליצור את רשימת המאסטר הרבעונית מהמלצות מאושרות"
-              : "Click \"Publish New List\" to create the quarterly master list from approved recommendations"}
+              ? "לחץ על \"פרסם רשימה חדשה\" כדי ליצור את רשימת 50 המניות הרבעונית (30 קנייה + 20 מכירה)"
+              : "Click \"Publish New List\" to create the quarterly 50-stock list (30 buys + 20 sells)"}
           </p>
         </div>
       )}
