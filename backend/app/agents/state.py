@@ -132,6 +132,8 @@ class AgentWorkflowState(TypedDict):
     trigger_details: Optional[str]
     # Screener bias: LONG | SHORT | NEUTRAL — passed from pre-screener activation
     direction_bias: Optional[str]
+    # Output language for AI-generated text: "en" | "he"
+    language: Optional[str]
 
 
 class TechnicalWorkflowState(TypedDict):
@@ -144,3 +146,4 @@ class TechnicalWorkflowState(TypedDict):
     watchlist_item_id: Optional[int]
     user_id: Optional[int]
     fallback_price: Optional[float]
+    language: Optional[str]

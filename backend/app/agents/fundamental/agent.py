@@ -60,6 +60,18 @@ class FundamentalAnalystAgent:
             )
         return self._llm
 
+    @staticmethod
+    def _language_instruction(language: str) -> str:
+        if language == "he":
+            return (
+                "\n\nLANGUAGE: Write ALL free-text fields in Hebrew (עברית). "
+                "This includes: thesis, bull_case, bear_case, risk_factors, catalysts, "
+                "key_metrics_summary, valuation_assessment, financial_health, analyst_notes. "
+                "Keep stock symbols, numeric values, percentages, and enum values "
+                "(BUY, STRONG_BUY, HOLD, SELL, STRONG_SELL) in English."
+            )
+        return ""
+
     async def analyze(
         self,
         market_data: MarketDataState,
@@ -67,6 +79,7 @@ class FundamentalAnalystAgent:
         news_analysis: Optional[Dict[str, Any]] = None,
         macro_analysis: Optional[Dict[str, Any]] = None,
         direction_bias: Optional[str] = None,
+        language: str = "en",
     ) -> Dict[str, Any]:
         logger.info(
             "FundamentalAnalystAgent starting analysis",
@@ -88,11 +101,13 @@ class FundamentalAnalystAgent:
             logger.warning("Claude LLM unavailable (missing API key), returning fallback", symbol=market_data["symbol"])
             return self._fallback_analysis(market_data, "ANTHROPIC_API_KEY not configured", quant_models)
 
+        system_content = SYSTEM_PROMPT + self._language_instruction(language)
+
         try:
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: llm.invoke([
-                    SystemMessage(content=SYSTEM_PROMPT),
+                    SystemMessage(content=system_content),
                     HumanMessage(content=prompt)
                 ])
             )

@@ -1,5 +1,5 @@
 import React from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { useAppSelector } from "../../store";
 
 interface NavItem {
@@ -23,6 +23,7 @@ const CLIENT_ITEMS: NavItem[] = [
 ];
 
 const Sidebar: React.FC = () => {
+  const navigate = useNavigate();
   const { user } = useAppSelector((state) => state.auth);
   const { unreadCount } = useAppSelector((state) => state.notifications);
   const isHe = user?.preferred_language === "he";
@@ -84,17 +85,21 @@ const Sidebar: React.FC = () => {
         {CLIENT_ITEMS.map(renderItem)}
       </nav>
 
-      {/* User Info */}
+      {/* User Info + Settings */}
       <div className="p-3 border-t border-gray-800">
-        <div className="flex items-center gap-3 px-2">
+        <button
+          onClick={() => navigate("/settings")}
+          className="w-full flex items-center gap-3 px-2 py-1.5 rounded-xl hover:bg-gray-800 transition-colors text-start"
+        >
           <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${isAdmin ? "bg-yellow-600/50" : "bg-blue-600/50"}`}>
             {user?.full_name?.[0]?.toUpperCase()}
           </div>
-          <div className="hidden md:block">
+          <div className="hidden md:block flex-1 min-w-0">
             <p className="text-xs font-medium truncate">{user?.full_name}</p>
-            <p className="text-xs text-gray-500">{isAdmin ? (isHe ? "מנהל" : "Admin") : user?.risk_profile}</p>
+            <p className="text-xs text-gray-500">{isAdmin ? (isHe ? "מנהל" : "Admin") : (isHe ? "הגדרות" : "Settings")}</p>
           </div>
-        </div>
+          <span className="hidden md:block text-gray-600 text-xs ml-auto">⚙️</span>
+        </button>
       </div>
     </aside>
   );

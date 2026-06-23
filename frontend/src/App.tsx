@@ -21,6 +21,8 @@ import TechnicalAnalysisPage from "./pages/TechnicalAnalysisPage";
 import Orders from "./pages/Orders";
 import Watchlist from "./pages/Watchlist";
 import MasterList from "./pages/MasterList";
+import Settings from "./pages/Settings";
+import NotFound from "./pages/NotFound";
 
 // Layout
 import Navbar from "./components/Layout/Navbar";
@@ -226,6 +228,17 @@ const App: React.FC = () => {
           }
         />
 
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Settings />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+
         {/* Catch-all: admin → fund dashboard, client → master list */}
         <Route
           path="/"
@@ -237,7 +250,16 @@ const App: React.FC = () => {
               : <Navigate to="/master-list" replace />
           }
         />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route
+          path="*"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <NotFound />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </Router>
   );

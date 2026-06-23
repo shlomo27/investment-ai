@@ -224,6 +224,7 @@ async def run_technical_analysis(
         exchange=exchange,
         watchlist_item_id=watchlist_id,
         user_id=current_user.id,
+        language=getattr(current_user, "preferred_language", "en") or "en",
     )
 
     tech_analysis = technical_result.get("technical_analysis")

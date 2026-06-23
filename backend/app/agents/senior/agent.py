@@ -60,12 +60,25 @@ class SeniorCommitteeAgent:
             )
         return self._llm
 
+    @staticmethod
+    def _language_instruction(language: str) -> str:
+        if language == "he":
+            return (
+                "\n\nLANGUAGE: Write ALL free-text fields in Hebrew (עברית). "
+                "This includes: approval_reasoning, rejection_reasoning, senior_notes, "
+                "contrarian_check_result, risk_assessment_notes. "
+                "Keep stock symbols, numeric values, percentages, and enum values "
+                "(BUY, STRONG_BUY, HOLD, SELL, STRONG_SELL, APPROVE, REJECT) in English."
+            )
+        return ""
+
     async def review(
         self,
         raw_data: MarketDataState,
         fundamental_analysis: Dict[str, Any],
         user_risk_context: Optional[Dict[str, Any]] = None,
         direction_bias: Optional[str] = None,
+        language: str = "en",
     ) -> Dict[str, Any]:
         logger.info(
             "SeniorCommitteeAgent reviewing",
@@ -82,11 +95,13 @@ class SeniorCommitteeAgent:
             logger.warning("Claude LLM unavailable (missing API key), returning safe reject", symbol=raw_data["symbol"])
             return self._safe_reject(raw_data, "ANTHROPIC_API_KEY not configured")
 
+        system_content = SENIOR_SYSTEM_PROMPT + self._language_instruction(language)
+
         try:
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: llm.invoke([
-                    SystemMessage(content=SENIOR_SYSTEM_PROMPT),
+                    SystemMessage(content=system_content),
                     HumanMessage(content=prompt)
                 ])
             )

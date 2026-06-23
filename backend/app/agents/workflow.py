@@ -106,6 +106,7 @@ async def node_fundamental_analysis(state: AgentWorkflowState) -> AgentWorkflowS
             news_analysis=state.get("news_analysis"),
             macro_analysis=state.get("macro_analysis"),
             direction_bias=state.get("direction_bias"),
+            language=state.get("language", "en"),
         )
         return {
             **state,
@@ -154,6 +155,7 @@ async def node_senior_review(state: AgentWorkflowState) -> AgentWorkflowState:
             fundamental_analysis=state["fundamental_analysis"],
             user_risk_context=state.get("user_risk_context"),
             direction_bias=state.get("direction_bias"),
+            language=state.get("language", "en"),
         )
         new_status = "approved" if decision.get("approved") else "rejected"
         return {
@@ -586,6 +588,7 @@ async def run_investment_workflow(
     trigger_type: Optional[str] = "SCHEDULED",
     trigger_details: Optional[str] = None,
     direction_bias: Optional[str] = None,
+    language: str = "he",
 ) -> AgentWorkflowState:
     """
     Entry point for the main investment analysis workflow.
@@ -618,6 +621,7 @@ async def run_investment_workflow(
         "trigger_type": trigger_type,
         "trigger_details": trigger_details,
         "direction_bias": direction_bias,
+        "language": language,
     }
 
     final_state = await workflow.ainvoke(initial_state)
@@ -630,6 +634,7 @@ async def run_technical_workflow(
     watchlist_item_id: Optional[int] = None,
     user_id: Optional[int] = None,
     fallback_price: Optional[float] = None,
+    language: str = "en",
 ) -> TechnicalWorkflowState:
     """
     Entry point for on-demand technical analysis.
@@ -647,6 +652,7 @@ async def run_technical_workflow(
         "watchlist_item_id": watchlist_item_id,
         "user_id": user_id,
         "fallback_price": fallback_price,
+        "language": language,
     }
 
     final_state = await workflow.ainvoke(initial_state)
