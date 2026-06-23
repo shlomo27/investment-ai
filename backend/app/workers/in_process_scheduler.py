@@ -6,14 +6,17 @@ across the 4 uvicorn workers only ONE worker actually executes each job
 (SQLAlchemy job store uses DB-level locking for coordination).
 
 Schedule (Asia/Jerusalem timezone):
-  Sunday 07:00  — load_universe       (refresh S&P500+S&P400 from Wikipedia)
-  Daily  07:30  — earnings_watcher    (check for fresh earnings → trigger Claude scan when ≥20 stocks)
-  Daily  08:30  — daily_ta_scan       (technical analysis for all master list stocks — no Claude)
-  Every 30 min  — news_watcher        (scan news/Twitter for master list stocks → alerts)
+  Sunday 07:00  — load_universe            (refresh S&P500+S&P400 from Wikipedia)
+  Daily  07:30  — earnings_watcher         (only during earnings seasons; ≥20 fresh stocks → trigger quarterly scan)
+  Daily  08:30  — daily_ta_scan            (TA for all 50 master-list stocks — no Claude)
+  Every 30 min  — news_watcher             (news+social for master-list stocks → alerts to holders)
+  Daily  12:00  — quarterly_scan_batch     (processes 50 universe stocks/day when quarterly scan is active)
 
-The quarterly Claude scan fires automatically via earnings_watcher when enough
-stocks in the universe have published new earnings reports (MIN_EARNINGS_TRIGGER=20).
-Admin can also trigger it manually from the Fund Dashboard at any time.
+Quarterly flow:
+  1. earnings_watcher detects ≥20 stocks with verified fresh earnings
+  2. Triggers quarterly_scanner.trigger_quarterly_scan() → loads all ~900 stocks into Redis queue
+  3. quarterly_scan_batch runs daily at 12:00, processes 50 stocks/day (~18 days for full universe)
+  4. When queue empty → admin is notified → admin reviews and publishes Master List via Fund Dashboard
 """
 import asyncio
 import logging
@@ -224,7 +227,15 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
-    # NOTE: Manual quarterly scan still available in Fund Dashboard
-    # (for cases where admin wants to scan outside earnings cycle)
+    # Quarterly scan batch — 12:00 IL, every day
+    # When a quarterly scan is active (triggered by earnings_watcher), processes
+    # the next 50 universe stocks per day. Exits immediately when no scan is active.
+    from app.workers.quarterly_scanner import job_quarterly_scan_batch
+    scheduler.add_job(
+        job_quarterly_scan_batch,
+        CronTrigger(hour=12, minute=0, timezone="Asia/Jerusalem"),
+        id="scheduled_quarterly_scan_batch",
+        replace_existing=True,
+    )
 
     return scheduler

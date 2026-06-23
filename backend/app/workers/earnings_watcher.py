@@ -232,16 +232,27 @@ async def job_earnings_queue_check():
         )
 
         if queue_size >= min_trigger:
-            queued = [
+            # The fresh-earnings stocks are the TRIGGER only.
+            # The actual scan covers the FULL universe (~900 stocks), not just these.
+            trigger_symbols = [
                 s.decode() if isinstance(s, bytes) else s
                 for s in await redis_client.smembers(REDIS_QUEUE_KEY)
             ]
+            await redis_client.delete(REDIS_QUEUE_KEY)  # clear trigger queue
+
+            fe = _expected_fiscal_quarter_end()
+            q_num = (fe.month - 1) // 3 + 1
+            quarter = f"Q{q_num}-{fe.year}"
+
             logger.info(
-                f"[earnings_watcher] Threshold reached — "
-                f"triggering Claude scan for {len(queued)} stocks"
+                f"[earnings_watcher] {len(trigger_symbols)} fresh-earnings stocks "
+                f"triggered full universe scan — {quarter}"
             )
-            await redis_client.delete(REDIS_QUEUE_KEY)
-            await _run_earnings_scan(queued)
+
+            from app.workers.quarterly_scanner import trigger_quarterly_scan
+            started = await trigger_quarterly_scan(quarter=quarter)
+            if not started:
+                logger.info("[earnings_watcher] Quarterly scan already running — trigger ignored")
         else:
             logger.info(
                 f"[earnings_watcher] Accumulating — "
@@ -252,53 +263,5 @@ async def job_earnings_queue_check():
         await redis_client.aclose()
 
 
-async def _run_earnings_scan(symbols: List[str]):
-    """Run full Claude fundamental scan for symbols with verified fresh earnings."""
-    from app.core.database import AsyncSessionLocal
-    from app.db.models.asset import Asset
-    from app.agents.workflow import run_investment_workflow
-    from sqlalchemy import select
-
-    logger.info(f"[earnings_watcher] Starting earnings scan: {len(symbols)} stocks")
-
-    async with AsyncSessionLocal() as db:
-        rows = await db.execute(
-            select(Asset.symbol, Asset.exchange, Asset.direction_bias)
-            .where(Asset.symbol.in_(symbols))
-        )
-        asset_map = {r[0]: (r[1], r[2]) for r in rows.all()}
-
-    BATCH = 3
-    approved = rejected = errors = 0
-
-    for i in range(0, len(symbols), BATCH):
-        batch = symbols[i: i + BATCH]
-        results = await asyncio.gather(
-            *[
-                run_investment_workflow(
-                    symbol=sym,
-                    exchange=asset_map[sym][0].value if sym in asset_map else "NASDAQ",
-                    direction_bias=asset_map[sym][1] if sym in asset_map else "NEUTRAL",
-                    trigger_type="EARNINGS",
-                    trigger_details="Earnings-triggered quarterly scan",
-                    language="he",
-                )
-                for sym in batch
-            ],
-            return_exceptions=True,
-        )
-        for r in results:
-            if isinstance(r, Exception):
-                errors += 1
-                logger.warning(f"[earnings_watcher] Scan error: {r}")
-            elif isinstance(r, dict):
-                if r.get("workflow_status") in ("completed", "saved"):
-                    approved += 1
-                else:
-                    rejected += 1
-        await asyncio.sleep(2)
-
-    logger.info(
-        f"[earnings_watcher] Scan complete: "
-        f"total={len(symbols)}, approved={approved}, rejected={rejected}, errors={errors}"
-    )
+# Note: _run_earnings_scan removed — earnings_watcher now only accumulates the trigger.
+# The actual full-universe scan is handled by quarterly_scanner.trigger_quarterly_scan().

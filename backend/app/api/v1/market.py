@@ -542,6 +542,27 @@ async def universe_stats(
 
 # ─── Master List ──────────────────────────────────────────────────────────────
 
+@router.get("/quarterly-scan/status")
+async def get_quarterly_scan_status():
+    """Return current quarterly scan progress (for Fund Dashboard polling)."""
+    from app.workers.quarterly_scanner import get_quarterly_scan_status
+    return await get_quarterly_scan_status()
+
+
+@router.post("/quarterly-scan/trigger")
+async def trigger_quarterly_scan_manual(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Admin: manually trigger a quarterly scan outside the normal earnings season."""
+    from app.workers.quarterly_scanner import trigger_quarterly_scan
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    q_num = (now.month - 1) // 3 + 1
+    quarter = f"Q{q_num}-{now.year}"
+    started = await trigger_quarterly_scan(quarter=quarter)
+    return {"started": started, "quarter": quarter}
+
+
 @router.get("/master-list")
 async def get_master_list(db: AsyncSession = Depends(get_db)):
     """Return the active quarterly master list of curated stock picks."""
@@ -598,6 +619,12 @@ async def publish_master_list(
     month = now.month
     quarter_num = (month - 1) // 3 + 1
     quarter = f"Q{quarter_num}-{now.year}"
+
+    # Snapshot old active symbols BEFORE deactivating (for diff notification later)
+    old_symbols_result = await db.execute(
+        select(MasterListEntry.symbol).where(MasterListEntry.is_active == True)
+    )
+    old_symbols: set = {r[0] for r in old_symbols_result.all()}
 
     # Deactivate all existing master list entries
     await db.execute(sa_update(MasterListEntry).values(is_active=False))
@@ -656,9 +683,13 @@ async def publish_master_list(
     db.add_all(entries)
     await db.flush()
 
-    # Notify all active users that a new master list is published
+    # Compute Master List diff — stocks that were in old list but NOT in new one
+    new_symbols: set = {e.symbol for e in entries}
+    dropped_symbols: set = old_symbols - new_symbols
+
     try:
         from app.db.models.user import User as UserModel
+        from app.db.models.portfolio import Portfolio
         from app.db.models.notification import NotificationType
         from app.services.notifications.service import NotificationService
 
@@ -668,6 +699,8 @@ async def publish_master_list(
         all_users = users_result.scalars().all()
 
         notification_service = NotificationService()
+
+        # 1. General "new master list published" notification to everyone
         for u in all_users:
             title = (
                 f"רשימת המאסטר {quarter} פורסמה"
@@ -677,11 +710,55 @@ async def publish_master_list(
             await notification_service.send_notification(
                 user_id=u.id,
                 recommendation_id=None,
-                internal_detail={"quarter": quarter, "total": len(entries), "buys": len(buy_rows), "sells": len(sell_rows)},
+                internal_detail={
+                    "quarter": quarter,
+                    "total": len(entries),
+                    "buys": len(buy_rows),
+                    "sells": len(sell_rows),
+                    "dropped": list(dropped_symbols),
+                },
                 db=db,
                 notification_type=NotificationType.SYSTEM,
                 title=title,
             )
+
+        # 2. Personal alert to users who hold stocks that were REMOVED from the list
+        if dropped_symbols:
+            holdings_result = await db.execute(
+                select(Portfolio.user_id, Portfolio.symbol)
+                .where(
+                    Portfolio.symbol.in_(dropped_symbols),
+                    Portfolio.quantity > 0,
+                )
+            )
+            # Build map: user_id → list of dropped symbols they still hold
+            user_dropped: dict = {}
+            for user_id, sym in holdings_result.all():
+                user_dropped.setdefault(user_id, []).append(sym)
+
+            for user_id, held in user_dropped.items():
+                symbols_str = ", ".join(held)
+                await notification_service.send_notification(
+                    user_id=user_id,
+                    recommendation_id=None,
+                    internal_detail={
+                        "quarter": quarter,
+                        "dropped_symbols": held,
+                        "action_required": True,
+                    },
+                    db=db,
+                    notification_type=NotificationType.SYSTEM,
+                    title=(
+                        f"⚠️ {symbols_str} — הוסרו מהמאסטר ליסט {quarter}. "
+                        f"בדוק את הפוזיציה שלך ושקול האם למכור."
+                    ),
+                )
+
+            logger.info(
+                f"Master list publish: {len(dropped_symbols)} dropped symbols, "
+                f"alerted {len(user_dropped)} users with active holdings"
+            )
+
     except Exception as _notify_exc:
         logger.warning(f"Master list publish notifications failed: {_notify_exc}")
 
@@ -690,4 +767,5 @@ async def publish_master_list(
         "quarter": quarter,
         "buys": len(buy_rows),
         "sells": len(sell_rows),
+        "dropped_from_previous": list(dropped_symbols),
     }
