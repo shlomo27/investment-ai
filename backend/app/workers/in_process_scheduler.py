@@ -52,7 +52,8 @@ async def job_run_prescreener():
 
 
 async def job_run_full_scan():
-    """Daily 09:00 IL — full AI pipeline on all 100 active pool stocks (3 concurrent)."""
+    """Daily 09:00 IL — full AI pipeline on active pool stocks (capped by MAX_SCAN_STOCKS)."""
+    from app.core.config import settings
     from app.core.database import AsyncSessionLocal
     from app.db.models.asset import Asset
     from app.agents.workflow import run_investment_workflow
@@ -67,6 +68,12 @@ async def job_run_full_scan():
         if not assets:
             logger.warning("[scheduler] full_scan: no active pool stocks — run prescreener first")
             return
+
+        # Cap to MAX_SCAN_STOCKS to protect API token budget
+        cap = settings.MAX_SCAN_STOCKS
+        if len(assets) > cap:
+            logger.info(f"[scheduler] full_scan: capping {len(assets)} → {cap} stocks (MAX_SCAN_STOCKS)")
+            assets = assets[:cap]
 
         logger.info(f"[scheduler] full_scan: scanning {len(assets)} stocks")
         BATCH = 3
@@ -118,9 +125,9 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(
         jobstores={"default": jobstore},
         job_defaults={
-            "coalesce": True,       # collapse missed fire into one run
-            "max_instances": 1,     # never run same job twice in parallel
-            "misfire_grace_time": 3600,  # if server was down, still run within 1h
+            "coalesce": True,    # collapse missed fires into one run
+            "max_instances": 1,  # never run same job twice in parallel
+            "misfire_grace_time": None,  # skip missed fires — prevents scan on every deploy
         },
         timezone="Asia/Jerusalem",
     )
