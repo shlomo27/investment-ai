@@ -46,17 +46,41 @@ async def job_load_universe():
 
 async def job_daily_ta_scan():
     """
-    Daily 08:30 IL — run technical analysis (pandas-ta, no Claude) for all
-    active master list stocks. Stores results so the frontend always shows
-    fresh signals without requiring a quarterly scan.
+    Every 30 min — run technical analysis (pandas-ta + yfinance, no Claude/cost)
+    for all active Master List stocks.
+
+    For each stock:
+      - Runs TA and reads timing_signal from result
+      - WAIT  → no action
+      - BUY_NOW / STRONG_BUY / SELL_NOW / STRONG_SELL →
+          checks Redis cooldown (4h per symbol to avoid spam)
+          if signal is new or changed → sends alert to every user
+          who holds that stock in their portfolio
     """
+    from app.core.config import settings
     from app.core.database import AsyncSessionLocal
     from app.db.models.master_list import MasterListEntry
     from app.db.models.asset import Asset
+    from app.db.models.portfolio import Portfolio
+    from app.db.models.notification import NotificationType
+    from app.services.notifications.service import NotificationService
     from app.agents.workflow import run_technical_workflow
     from sqlalchemy import select
+    import redis.asyncio as aioredis
 
-    logger.info("[scheduler] daily_ta_scan started")
+    ACTIONABLE = {"BUY_NOW", "STRONG_BUY", "SELL_NOW", "STRONG_SELL"}
+    SIGNAL_COOLDOWN_SEC = 4 * 3600  # 4 hours: same signal won't re-alert in this window
+
+    SIGNAL_LABELS = {
+        "BUY_NOW":    "📈 קנה",
+        "STRONG_BUY": "🚀 קנה חזק",
+        "SELL_NOW":   "📉 מכור",
+        "STRONG_SELL": "⚠️ מכור חזק",
+    }
+
+    redis_client = aioredis.from_url(settings.REDIS_URL)
+    logger.info("[ta_scan] started")
+
     try:
         async with AsyncSessionLocal() as db:
             rows = await db.execute(
@@ -65,11 +89,11 @@ async def job_daily_ta_scan():
             symbols = [r[0] for r in rows.all()]
 
         if not symbols:
-            logger.info("[scheduler] daily_ta_scan: no active master list symbols — skipping")
+            logger.info("[ta_scan] no active master list symbols — skipping")
             return
 
-        logger.info(f"[scheduler] daily_ta_scan: scanning TA for {len(symbols)} symbols")
-        success = errors = 0
+        logger.info(f"[ta_scan] scanning {len(symbols)} master list stocks")
+        alerted = success = errors = 0
 
         for symbol in symbols:
             try:
@@ -79,17 +103,82 @@ async def job_daily_ta_scan():
                     ).scalar_one_or_none()
                 exchange = asset.exchange.value if asset else "NASDAQ"
 
-                await run_technical_workflow(symbol=symbol, exchange=exchange)
+                result = await run_technical_workflow(symbol=symbol, exchange=exchange)
+                ta = result.get("technical_analysis") or {}
+                signal = ta.get("timing_signal", "WAIT")
                 success += 1
+
+                # Only act on actionable signals
+                if signal not in ACTIONABLE:
+                    continue
+
+                # Cooldown check — skip if same signal already sent within 4h
+                cooldown_key = f"investment_ai:ta_alert:{symbol}"
+                last = await redis_client.get(cooldown_key)
+                last_signal = last.decode() if last else None
+                if last_signal == signal:
+                    continue  # same signal still within cooldown window
+
+                # Find users who hold this stock with a positive position
+                async with AsyncSessionLocal() as db:
+                    holders_result = await db.execute(
+                        select(Portfolio.user_id)
+                        .where(Portfolio.symbol == symbol, Portfolio.quantity > 0)
+                        .distinct()
+                    )
+                    user_ids = [r[0] for r in holders_result.all()]
+
+                # Update cooldown (even if no holders, to avoid redundant DB queries)
+                await redis_client.set(cooldown_key, signal, ex=SIGNAL_COOLDOWN_SEC)
+
+                if not user_ids:
+                    continue
+
+                # Build notification text
+                score = ta.get("technical_score", 0)
+                price = ta.get("current_price")
+                reasoning = ta.get("signal_reasoning", "")
+                price_str = f" | מחיר: ${price:.2f}" if price else ""
+                label = SIGNAL_LABELS.get(signal, signal)
+                title = f"{label} — {symbol}{price_str} (ניתוח טכני, ציון {score:.0f}/100)"
+
+                svc = NotificationService()
+                async with AsyncSessionLocal() as db:
+                    for uid in user_ids:
+                        await svc.send_notification(
+                            user_id=uid,
+                            recommendation_id=None,
+                            internal_detail={
+                                "symbol": symbol,
+                                "signal": signal,
+                                "technical_score": score,
+                                "current_price": price,
+                                "reasoning": reasoning,
+                                "trigger": "TA_SCAN",
+                            },
+                            db=db,
+                            notification_type=NotificationType.ALERT,
+                            title=title,
+                        )
+
+                alerted += 1
+                logger.info(
+                    f"[ta_scan] {symbol}: {signal} (score={score}) "
+                    f"→ alerted {len(user_ids)} users"
+                )
+
             except Exception as e:
                 errors += 1
-                logger.warning(f"[scheduler] daily_ta_scan failed for {symbol}: {e}")
+                logger.warning(f"[ta_scan] {symbol} failed: {e}")
 
-            await asyncio.sleep(0.5)  # gentle rate limit
+            await asyncio.sleep(0.5)
 
-        logger.info(f"[scheduler] daily_ta_scan done: success={success}, errors={errors}")
+        logger.info(f"[ta_scan] done: success={success}, alerted={alerted} stocks, errors={errors}")
+
     except Exception as exc:
-        logger.error(f"[scheduler] daily_ta_scan failed: {exc}")
+        logger.error(f"[ta_scan] failed: {exc}")
+    finally:
+        await redis_client.aclose()
 
 
 # ─── Functions kept for manual / quarterly use (called from API endpoints) ───
