@@ -9,6 +9,7 @@ Schedule (Asia/Jerusalem timezone):
   Sunday 07:00  — load_universe   (refresh S&P500+S&P400 from Wikipedia)
   Daily  08:00  — run_prescreener (score ~900 stocks, activate top 100)
   Daily  09:00  — run_full_scan   (AI pipeline on 100 active stocks, 3 concurrent)
+  Every 30 min  — news_watcher    (scan news/Twitter for master list stocks → alerts)
 """
 import asyncio
 import logging
@@ -145,6 +146,16 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         job_run_full_scan,
         CronTrigger(hour=9, minute=0, timezone="Asia/Jerusalem"),
         id="scheduled_full_scan",
+        replace_existing=True,
+    )
+
+    # News & social watcher — every 30 minutes around the clock
+    from app.workers.news_watcher import job_watch_news
+    scheduler.add_job(
+        job_watch_news,
+        "interval",
+        minutes=30,
+        id="scheduled_news_watcher",
         replace_existing=True,
     )
 
