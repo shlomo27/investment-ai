@@ -330,26 +330,37 @@ const FundDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* AI Full Scan Trigger */}
-      <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+      {/* Quarterly AI Scan Trigger */}
+      <div className="bg-gray-900 rounded-2xl p-6 border border-amber-900/40">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
-            <h2 className="font-bold mb-1">{isHe ? "סריקת AI מלאה" : "Run Full AI Scan"}</h2>
+            <div className="flex items-center gap-2 mb-1">
+              <h2 className="font-bold">{isHe ? "סריקת AI רבעונית" : "Quarterly AI Scan"}</h2>
+              <span className="text-xs bg-amber-900/40 text-amber-400 border border-amber-700/40 px-2 py-0.5 rounded-full">
+                {isHe ? "פעם ברבעון" : "Once per quarter"}
+              </span>
+            </div>
             <p className="text-xs text-gray-400 mb-2">
               {isHe
-                ? "מריץ AI מלא על כל 100 המניות הפעילות היומיות (80 LONG + 20 SHORT) — 3 במקביל עד סיום. מחזור של 9 ימים לכיסוי כל ה-S&P500+S&P400."
-                : "Runs full AI on all 100 active stocks (80 LONG + 20 SHORT) — 3 concurrent until done. 9-day cycle covers all S&P500+S&P400."}
+                ? "מריץ ניתוח כלכלי מלא (Claude AI) על 100 מניות — 3 במקביל. חוזר 9 פעמים לכיסוי כל ~900 המניות. מריץ ידנית פעם ברבעון בלבד."
+                : "Runs full fundamental analysis (Claude AI) on 100 stocks — 3 concurrent. Repeat 9× to cover all ~900 stocks. Run manually once per quarter only."}
             </p>
-            <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-800/50 rounded-lg px-3 py-2 w-fit flex-wrap">
+            <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-800/50 rounded-lg px-3 py-2 w-fit flex-wrap mb-2">
               <span className="text-blue-400">1.</span>
               <span>{isHe ? "רענן יקום" : "Refresh Universe"}</span>
               <span className="text-gray-700">→</span>
               <span className="text-blue-400">2.</span>
               <span>{isHe ? "הרץ סקרינר" : "Run Screener"}</span>
               <span className="text-gray-700">→</span>
-              <span className="text-green-400">3.</span>
-              <span className="text-green-400 font-medium">{isHe ? "סרוק עכשיו" : "Scan Now"}</span>
+              <span className="text-amber-400">3.</span>
+              <span className="text-amber-400 font-medium">{isHe ? "סרוק (100 מניות)" : "Scan (100 stocks)"}</span>
+              <span className="text-gray-700">→</span>
+              <span className="text-green-400">4.</span>
+              <span className="text-green-400">{isHe ? "פרסם רשימת מאסטר" : "Publish Master List"}</span>
             </div>
+            <p className="text-xs text-amber-600">
+              ⚠️ {isHe ? "צורך טוקנים — הרץ רק בתחילת כל רבעון" : "Consumes API tokens — run only at quarter start"}
+            </p>
 
             {/* Live progress during scan */}
             {scanRunning && scanStatus && scanStatus.scanned > 0 && (
@@ -377,6 +388,7 @@ const FundDashboard: React.FC = () => {
                   <span className="text-green-400">{isHe ? "אושרו" : "Approved"}: {scanStatus.approved}</span> |{" "}
                   <span className="text-red-400">{isHe ? "נדחו" : "Rejected"}: {scanStatus.rejected}</span>
                 </p>
+                <p className="text-gray-400">{isHe ? "← עכשיו לחץ 'פרסם רשימת מאסטר' למעלה" : "← Now click 'Publish Master List' above"}</p>
               </div>
             )}
 
@@ -386,17 +398,11 @@ const FundDashboard: React.FC = () => {
               </div>
             )}
 
-            {!scanRunning && !scanResult && (
-              <p className="text-xs text-gray-600 mt-3">
-                {isHe ? "הסריקה רצה אוטומטית כל יום ב-09:00 שעון ישראל" : "Scan runs automatically every day at 09:00 Israel time"}
-              </p>
-            )}
-
           </div>
           <button
             onClick={handleScanNow}
             disabled={scanRunning}
-            className="shrink-0 flex items-center gap-2 bg-green-700 hover:bg-green-600 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-3 rounded-xl transition-colors"
+            className="shrink-0 flex items-center gap-2 bg-amber-700 hover:bg-amber-600 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-3 rounded-xl transition-colors"
           >
             {scanRunning ? (
               <>
@@ -405,8 +411,8 @@ const FundDashboard: React.FC = () => {
               </>
             ) : (
               <>
-                <span>⚡</span>
-                {isHe ? "סרוק עכשיו" : "Scan Now"}
+                <span>🔍</span>
+                {isHe ? "סרוק רבעון" : "Quarterly Scan"}
               </>
             )}
           </button>

@@ -6,10 +6,12 @@ across the 4 uvicorn workers only ONE worker actually executes each job
 (SQLAlchemy job store uses DB-level locking for coordination).
 
 Schedule (Asia/Jerusalem timezone):
-  Sunday 07:00  — load_universe   (refresh S&P500+S&P400 from Wikipedia)
-  Daily  08:00  — run_prescreener (score ~900 stocks, activate top 100)
-  Daily  09:00  — run_full_scan   (AI pipeline on 100 active stocks, 3 concurrent)
-  Every 30 min  — news_watcher    (scan news/Twitter for master list stocks → alerts)
+  Sunday 07:00  — load_universe      (refresh S&P500+S&P400 from Wikipedia)
+  Daily  08:30  — daily_ta_scan      (technical analysis for all 50 master list stocks — no Claude)
+  Every 30 min  — news_watcher       (scan news/Twitter for master list stocks → alerts)
+
+The quarterly fundamental scan (Claude) is triggered MANUALLY by the admin
+via the Fund Dashboard button — NOT run automatically.
 """
 import asyncio
 import logging
@@ -37,8 +39,61 @@ async def job_load_universe():
         logger.error(f"[scheduler] load_universe failed: {exc}")
 
 
+async def job_daily_ta_scan():
+    """
+    Daily 08:30 IL — run technical analysis (pandas-ta, no Claude) for all
+    active master list stocks. Stores results so the frontend always shows
+    fresh signals without requiring a quarterly scan.
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.master_list import MasterListEntry
+    from app.db.models.asset import Asset
+    from app.agents.workflow import run_technical_workflow
+    from sqlalchemy import select
+
+    logger.info("[scheduler] daily_ta_scan started")
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = await db.execute(
+                select(MasterListEntry.symbol).where(MasterListEntry.is_active == True).distinct()
+            )
+            symbols = [r[0] for r in rows.all()]
+
+        if not symbols:
+            logger.info("[scheduler] daily_ta_scan: no active master list symbols — skipping")
+            return
+
+        logger.info(f"[scheduler] daily_ta_scan: scanning TA for {len(symbols)} symbols")
+        success = errors = 0
+
+        for symbol in symbols:
+            try:
+                async with AsyncSessionLocal() as db:
+                    asset = (
+                        await db.execute(select(Asset).where(Asset.symbol == symbol))
+                    ).scalar_one_or_none()
+                exchange = asset.exchange.value if asset else "NASDAQ"
+
+                await run_technical_workflow(symbol=symbol, exchange=exchange)
+                success += 1
+            except Exception as e:
+                errors += 1
+                logger.warning(f"[scheduler] daily_ta_scan failed for {symbol}: {e}")
+
+            await asyncio.sleep(0.5)  # gentle rate limit
+
+        logger.info(f"[scheduler] daily_ta_scan done: success={success}, errors={errors}")
+    except Exception as exc:
+        logger.error(f"[scheduler] daily_ta_scan failed: {exc}")
+
+
+# ─── Functions kept for manual / quarterly use (called from API endpoints) ───
+
 async def job_run_prescreener():
-    """Daily 08:00 IL — score universe, activate top 80 LONG + 20 SHORT."""
+    """
+    Score ~900 universe stocks and activate the top 100 (80 LONG + 20 SHORT).
+    Called manually by admin at the start of each quarterly scan cycle.
+    """
     from app.core.database import AsyncSessionLocal
     from app.workers.pre_screener import run_pre_screener
     logger.info("[scheduler] pre_screener started")
@@ -51,15 +106,18 @@ async def job_run_prescreener():
         logger.error(f"[scheduler] pre_screener failed: {exc}")
 
 
-async def job_run_full_scan():
-    """Daily 09:00 IL — full AI pipeline on active pool stocks (capped by MAX_SCAN_STOCKS)."""
-    from app.core.config import settings
+async def job_run_full_scan(batch_size: int = 100):
+    """
+    Full Claude AI pipeline on active pool stocks.
+    Called manually by admin during quarterly scan (100 stocks × 9 days).
+    NOT scheduled automatically — triggered via Fund Dashboard.
+    """
     from app.core.database import AsyncSessionLocal
     from app.db.models.asset import Asset
     from app.agents.workflow import run_investment_workflow
     from sqlalchemy import select
 
-    logger.info("[scheduler] full_scan started")
+    logger.info(f"[scheduler] full_scan started (batch_size={batch_size})")
     try:
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(Asset).where(Asset.is_active_in_pool == True))
@@ -67,14 +125,9 @@ async def job_run_full_scan():
 
         if not assets:
             logger.warning("[scheduler] full_scan: no active pool stocks — run prescreener first")
-            return
+            return {"scanned": 0, "approved": 0, "rejected": 0, "errors": 0}
 
-        # Cap to MAX_SCAN_STOCKS to protect API token budget
-        cap = settings.MAX_SCAN_STOCKS
-        if len(assets) > cap:
-            logger.info(f"[scheduler] full_scan: capping {len(assets)} → {cap} stocks (MAX_SCAN_STOCKS)")
-            assets = assets[:cap]
-
+        assets = assets[:batch_size]
         logger.info(f"[scheduler] full_scan: scanning {len(assets)} stocks")
         BATCH = 3
         approved = rejected = errors = 0
@@ -102,14 +155,14 @@ async def job_run_full_scan():
                         approved += 1
                     else:
                         rejected += 1
-            await asyncio.sleep(2)  # brief pause between batches
+            await asyncio.sleep(2)
 
-        logger.info(
-            f"[scheduler] full_scan done: scanned={len(assets)}, "
-            f"approved={approved}, rejected={rejected}, errors={errors}"
-        )
+        result = {"scanned": len(assets), "approved": approved, "rejected": rejected, "errors": errors}
+        logger.info(f"[scheduler] full_scan done: {result}")
+        return result
     except Exception as exc:
         logger.error(f"[scheduler] full_scan failed: {exc}")
+        return {"error": str(exc)}
 
 
 # ─── Scheduler factory ────────────────────────────────────────────────────────
@@ -125,14 +178,14 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(
         jobstores={"default": jobstore},
         job_defaults={
-            "coalesce": True,    # collapse missed fires into one run
-            "max_instances": 1,  # never run same job twice in parallel
-            "misfire_grace_time": None,  # skip missed fires — prevents scan on every deploy
+            "coalesce": True,
+            "max_instances": 1,
+            "misfire_grace_time": None,  # skip missed fires — no catch-up on restart
         },
         timezone="Asia/Jerusalem",
     )
 
-    # Weekly universe refresh — Sunday 07:00 IL
+    # Weekly universe refresh — Sunday 07:00 IL (free, scrapes Wikipedia)
     scheduler.add_job(
         job_load_universe,
         CronTrigger(day_of_week="sun", hour=7, minute=0, timezone="Asia/Jerusalem"),
@@ -140,23 +193,15 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
-    # Daily pre-screener — 08:00 IL
+    # Daily technical analysis — 08:30 IL (cheap, pandas-ta, no Claude)
     scheduler.add_job(
-        job_run_prescreener,
-        CronTrigger(hour=8, minute=0, timezone="Asia/Jerusalem"),
-        id="scheduled_prescreener",
+        job_daily_ta_scan,
+        CronTrigger(hour=8, minute=30, timezone="Asia/Jerusalem"),
+        id="scheduled_daily_ta_scan",
         replace_existing=True,
     )
 
-    # Daily full AI scan — 09:00 IL (1 hour after pre-screener)
-    scheduler.add_job(
-        job_run_full_scan,
-        CronTrigger(hour=9, minute=0, timezone="Asia/Jerusalem"),
-        id="scheduled_full_scan",
-        replace_existing=True,
-    )
-
-    # News & social watcher — every 30 minutes around the clock
+    # News & social watcher — every 30 minutes (cheap, triggers TA on news)
     from app.workers.news_watcher import job_watch_news
     scheduler.add_job(
         job_watch_news,
@@ -165,5 +210,8 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         id="scheduled_news_watcher",
         replace_existing=True,
     )
+
+    # NOTE: The quarterly Claude scan (prescreener + full_scan) is NOT scheduled
+    # automatically. It is triggered manually by the admin from the Fund Dashboard.
 
     return scheduler
