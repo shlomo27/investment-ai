@@ -91,6 +91,7 @@ class Settings(BaseSettings):
     FUNDAMENTAL_CONFIDENCE_THRESHOLD: float = 0.25
     SENIOR_APPROVAL_THRESHOLD: float = 0.30
     MAX_CONCURRENT_SCANS: int = 10
+    MIN_EARNINGS_TRIGGER: int = 20  # stocks with fresh earnings needed to trigger quarterly scan
 
     # Market Hours (Israel Time UTC+3)
     TASE_OPEN_HOUR: int = 9

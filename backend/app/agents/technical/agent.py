@@ -561,17 +561,17 @@ class TechnicalAnalystAgent:
         # Clamp score
         score = max(0.0, min(100.0, score))
 
-        # Determine signal
-        if score >= 75:
+        # Determine signal (WAIT zone narrowed to 42-58 for more actionable signals)
+        if score >= 70:
             signal = "STRONG_BUY"
             strength = "STRONG"
-        elif score >= 62:
+        elif score >= 58:
             signal = "BUY_NOW"
             strength = "MODERATE"
-        elif score <= 25:
+        elif score <= 30:
             signal = "STRONG_SELL"
             strength = "STRONG"
-        elif score <= 38:
+        elif score <= 42:
             signal = "SELL_NOW"
             strength = "MODERATE"
         else:
