@@ -36,8 +36,8 @@ MIN_MARKET_CAP      = 500_000_000
 MIN_AVG_VOLUME      = 100_000
 MAX_DEBT_EQUITY     = 5.0
 MAX_PE_RATIO        = 200.0
-FETCH_BATCH_SIZE    = 20
-SLEEP_BETWEEN_BATCHES = 0.5
+FETCH_BATCH_SIZE    = 5
+SLEEP_BETWEEN_BATCHES = 2.0
 W_EPS_GROWTH    = 0.30
 W_REV_GROWTH    = 0.25
 W_VALUATION     = 0.20
@@ -73,47 +73,56 @@ async def _fetch_metrics(symbol: str) -> StockMetrics:
 
 
 def _fetch_metrics_sync(symbol: str) -> StockMetrics:
+    import time
     m = StockMetrics(symbol=symbol)
-    try:
-        tk = yf.Ticker(symbol)
-        info = tk.info or {}
-        m.sector      = info.get("sector")
-        m.price       = info.get("currentPrice") or info.get("regularMarketPrice")
-        m.market_cap  = info.get("marketCap")
-        m.avg_volume  = info.get("averageDailyVolume10Day") or info.get("averageVolume")
-        m.pe_ratio    = info.get("trailingPE") or info.get("forwardPE")
-        m.debt_equity = info.get("debtToEquity")
-        if m.debt_equity and m.debt_equity > 20:
-            m.debt_equity = m.debt_equity / 100
+    for attempt in range(3):
         try:
-            cf = tk.cashflow
-            if cf is not None and not cf.empty and "Free Cash Flow" in cf.index:
-                m.fcf = float(cf.loc["Free Cash Flow"].iloc[0])
-        except Exception:
-            pass
-        try:
-            qe = tk.quarterly_earnings
-            if qe is not None and len(qe) >= 5:
-                eps_recent   = float(qe["Earnings"].iloc[0])
-                eps_year_ago = float(qe["Earnings"].iloc[4])
-                if eps_year_ago and eps_year_ago != 0:
-                    m.eps_growth = (eps_recent - eps_year_ago) / abs(eps_year_ago) * 100
-        except Exception:
-            pass
-        rev = info.get("revenueGrowth")
-        if rev is not None:
-            m.rev_growth = rev * 100
-        try:
-            hist = tk.history(period="3mo", interval="1d")
-            if hist is not None and len(hist) >= 20:
-                sp = float(hist["Close"].iloc[0])
-                ep = float(hist["Close"].iloc[-1])
-                if sp and sp > 0:
-                    m.momentum_3m = (ep - sp) / sp * 100
-        except Exception:
-            pass
-    except Exception as e:
-        logger.debug(f"[pre_screener] {symbol}: {e}")
+            tk = yf.Ticker(symbol)
+            info = tk.info or {}
+            m.sector      = info.get("sector")
+            m.price       = info.get("currentPrice") or info.get("regularMarketPrice")
+            m.market_cap  = info.get("marketCap")
+            m.avg_volume  = info.get("averageDailyVolume10Day") or info.get("averageVolume")
+            m.pe_ratio    = info.get("trailingPE") or info.get("forwardPE")
+            m.debt_equity = info.get("debtToEquity")
+            if m.debt_equity and m.debt_equity > 20:
+                m.debt_equity = m.debt_equity / 100
+            try:
+                cf = tk.cashflow
+                if cf is not None and not cf.empty and "Free Cash Flow" in cf.index:
+                    m.fcf = float(cf.loc["Free Cash Flow"].iloc[0])
+            except Exception:
+                pass
+            try:
+                qe = tk.quarterly_earnings
+                if qe is not None and len(qe) >= 5:
+                    eps_recent   = float(qe["Earnings"].iloc[0])
+                    eps_year_ago = float(qe["Earnings"].iloc[4])
+                    if eps_year_ago and eps_year_ago != 0:
+                        m.eps_growth = (eps_recent - eps_year_ago) / abs(eps_year_ago) * 100
+            except Exception:
+                pass
+            rev = info.get("revenueGrowth")
+            if rev is not None:
+                m.rev_growth = rev * 100
+            try:
+                hist = tk.history(period="3mo", interval="1d")
+                if hist is not None and len(hist) >= 20:
+                    sp = float(hist["Close"].iloc[0])
+                    ep = float(hist["Close"].iloc[-1])
+                    if sp and sp > 0:
+                        m.momentum_3m = (ep - sp) / sp * 100
+            except Exception:
+                pass
+            return m
+        except Exception as e:
+            if "429" in str(e) and attempt < 2:
+                wait = 15 * (attempt + 1)
+                logger.debug(f"[pre_screener] {symbol}: rate limited, retry in {wait}s")
+                time.sleep(wait)
+            else:
+                logger.debug(f"[pre_screener] {symbol}: {e}")
+                return m
     return m
 
 
