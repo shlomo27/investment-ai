@@ -36,8 +36,7 @@ MIN_MARKET_CAP      = 500_000_000
 MIN_AVG_VOLUME      = 100_000
 MAX_DEBT_EQUITY     = 5.0
 MAX_PE_RATIO        = 200.0
-FETCH_BATCH_SIZE    = 5
-SLEEP_BETWEEN_BATCHES = 2.0
+SLEEP_BETWEEN_STOCKS = 1.5   # seconds between each stock's info fetch
 W_EPS_GROWTH    = 0.30
 W_REV_GROWTH    = 0.25
 W_VALUATION     = 0.20
@@ -105,15 +104,6 @@ def _fetch_metrics_sync(symbol: str) -> StockMetrics:
             rev = info.get("revenueGrowth")
             if rev is not None:
                 m.rev_growth = rev * 100
-            try:
-                hist = tk.history(period="3mo", interval="1d")
-                if hist is not None and len(hist) >= 20:
-                    sp = float(hist["Close"].iloc[0])
-                    ep = float(hist["Close"].iloc[-1])
-                    if sp and sp > 0:
-                        m.momentum_3m = (ep - sp) / sp * 100
-            except Exception:
-                pass
             return m
         except Exception as e:
             if "429" in str(e) and attempt < 2:
@@ -190,6 +180,33 @@ async def _update_db(db, ranked, all_symbols):
         await db.execute(update(Asset).where(Asset.symbol==s.symbol).values(fundamental_score=s.composite_score))
 
 
+def _batch_download_momentum(symbols: list) -> dict:
+    """Single yf.download() call for all symbols — avoids per-symbol 429."""
+    import time
+    result = {}
+    chunk_size = 200
+    for i in range(0, len(symbols), chunk_size):
+        chunk = symbols[i:i+chunk_size]
+        try:
+            hist = yf.download(chunk, period="3mo", interval="1d",
+                               group_by="ticker", auto_adjust=True, progress=False)
+            for sym in chunk:
+                try:
+                    if len(chunk) == 1:
+                        closes = hist["Close"]
+                    else:
+                        closes = hist["Close"][sym]
+                    closes = closes.dropna()
+                    if len(closes) >= 20:
+                        result[sym] = (float(closes.iloc[-1]) - float(closes.iloc[0])) / float(closes.iloc[0]) * 100
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"[pre_screener] batch download chunk {i}: {e}")
+        time.sleep(3)
+    return result
+
+
 async def run_pre_screener(db) -> dict:
     """Rank universe stocks by financial score and activate top 100. db is an open AsyncSession."""
     from app.db.models.asset import Asset
@@ -199,19 +216,27 @@ async def run_pre_screener(db) -> dict:
     all_symbols = [r[0] for r in rows.all()]
     if not all_symbols:
         return {"universe_size": 0, "passed_filter": 0, "selected": 0, "long": 0, "short": 0, "rejected": 0, "errors": 0}
-    logger.info(f"[pre_screener] {len(all_symbols)} stocks — fetching data…")
+
+    # Phase 1: batch-download 3-month momentum for all symbols (1-2 requests total)
+    logger.info(f"[pre_screener] {len(all_symbols)} stocks — phase 1: momentum download")
+    loop = asyncio.get_event_loop()
+    momentum_map = await loop.run_in_executor(None, _batch_download_momentum, all_symbols)
+    logger.info(f"[pre_screener] momentum: {len(momentum_map)} symbols fetched")
+
+    # Phase 2: fetch fundamentals one-by-one with delay to avoid 429
+    logger.info("[pre_screener] phase 2: fundamentals (sequential, 1.5s/stock)")
     metrics = []
     errors = 0
-    for i in range(0, len(all_symbols), FETCH_BATCH_SIZE):
-        batch = all_symbols[i:i+FETCH_BATCH_SIZE]
-        results = await asyncio.gather(*[_fetch_metrics(sym) for sym in batch], return_exceptions=True)
-        for sym, res in zip(batch, results):
-            if isinstance(res, Exception):
-                errors += 1
-                metrics.append(StockMetrics(symbol=sym))
-            else:
-                metrics.append(res)
-        await asyncio.sleep(SLEEP_BETWEEN_BATCHES)
+    for sym in all_symbols:
+        try:
+            m = await loop.run_in_executor(None, _fetch_metrics_sync, sym)
+            if sym in momentum_map:
+                m.momentum_3m = momentum_map[sym]
+            metrics.append(m)
+        except Exception:
+            errors += 1
+            metrics.append(StockMetrics(symbol=sym))
+        await asyncio.sleep(SLEEP_BETWEEN_STOCKS)
     for m in metrics:
         m.passes_hard_filter = _apply_hard_filter(m)
     passed = [m for m in metrics if m.passes_hard_filter]
