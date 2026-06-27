@@ -80,6 +80,7 @@ class Settings(BaseSettings):
 
     # Firebase (Push Notifications)
     FIREBASE_CREDENTIALS_PATH: str = "/app/secrets/firebase-credentials.json"
+    FIREBASE_CREDENTIALS_JSON: str = ""  # JSON string env var, takes priority over path
 
     # Risk Management
     MAX_SINGLE_ASSET_EXPOSURE: float = 0.03  # 3% of portfolio per asset

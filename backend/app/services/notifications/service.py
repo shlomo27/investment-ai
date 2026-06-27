@@ -146,15 +146,18 @@ class NotificationService:
     async def _send_push(self, push_token: str, title: str, body: str) -> bool:
         """Send Firebase Cloud Messaging push notification."""
         try:
-            if not settings.FIREBASE_CREDENTIALS_PATH:
-                return False
-
             import firebase_admin
             from firebase_admin import credentials, messaging
 
             if not firebase_admin._apps:
                 try:
-                    cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
+                    if settings.FIREBASE_CREDENTIALS_JSON:
+                        import json
+                        cred = credentials.Certificate(json.loads(settings.FIREBASE_CREDENTIALS_JSON))
+                    elif settings.FIREBASE_CREDENTIALS_PATH:
+                        cred = credentials.Certificate(settings.FIREBASE_CREDENTIALS_PATH)
+                    else:
+                        return False
                     firebase_admin.initialize_app(cred)
                     self._firebase_app = firebase_admin.get_app()
                 except Exception as e:
