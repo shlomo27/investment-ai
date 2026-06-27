@@ -241,21 +241,9 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
-    # Daily pre-screener — 08:00 IL
-    scheduler.add_job(
-        job_run_prescreener,
-        CronTrigger(hour=8, minute=0, timezone="Asia/Jerusalem"),
-        id="scheduled_prescreener",
-        replace_existing=True,
-    )
-
-    # Daily full AI scan — 09:00 IL (1 hour after pre-screener)
-    scheduler.add_job(
-        job_run_full_scan,
-        CronTrigger(hour=9, minute=0, timezone="Asia/Jerusalem"),
-        id="scheduled_full_scan",
-        replace_existing=True,
-    )
+    # NOTE: pre_screener and full_scan are NOT scheduled daily.
+    # They run quarterly via admin trigger or quarterly_scan_batch.
+    # job_run_prescreener() and job_run_full_scan() remain available for manual/admin use.
 
     # Daily earnings check — 07:30 IL (only fires during 4 earnings seasons)
     from app.workers.earnings_watcher import job_earnings_queue_check
