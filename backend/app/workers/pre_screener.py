@@ -127,7 +127,7 @@ def _score_all(stocks: List[StockMetrics]) -> None:
 
 
 async def _update_db(db, ranked: List[StockMetrics], all_symbols: List[str]) -> None:
-    from app.db.models.asset import Asset
+    from app.db.models.asset import Asset, DirectionBias
     from sqlalchemy import update
     long_syms  = {s.symbol for s in ranked[:LONG_COUNT]}
     short_syms = {s.symbol for s in ranked[LONG_COUNT:TOP_N]}
@@ -137,12 +137,12 @@ async def _update_db(db, ranked: List[StockMetrics], all_symbols: List[str]) -> 
     if long_syms:
         await db.execute(
             update(Asset).where(Asset.symbol.in_(long_syms))
-            .values(is_active_in_pool=True, direction_bias="LONG")
+            .values(is_active_in_pool=True, direction_bias=DirectionBias.LONG)
         )
     if short_syms:
         await db.execute(
             update(Asset).where(Asset.symbol.in_(short_syms))
-            .values(is_active_in_pool=True, direction_bias="SHORT")
+            .values(is_active_in_pool=True, direction_bias=DirectionBias.SHORT)
         )
     for s in ranked[:TOP_N]:
         await db.execute(
