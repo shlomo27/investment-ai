@@ -109,7 +109,10 @@ async def job_earnings_queue_check() -> dict:
             await redis_client.set(REDIS_KEY_LAST_CHECK, today.isoformat(), ex=REDIS_TTL)
             return {"error": str(e), "last_check": today.isoformat()}
 
-        # Cross-reference: company in universe AND reported in last 10 days
+        # Cross-reference: company in universe AND report date within [-10 days, +3 days]
+        # Alpha Vantage returns upcoming earnings — include dates slightly in the future
+        # so we catch companies that reported just before this run, and ones about to report.
+        lookahead = today + timedelta(days=3)
         fresh_count = 0
         for item in earnings_data:
             sym = item.get("symbol", "").upper()
@@ -122,8 +125,8 @@ async def job_earnings_queue_check() -> dict:
                 report_date = datetime.strptime(report_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
             except ValueError:
                 continue
-            # Only count if reported in the last 10 days (past, not future)
-            if not (cutoff_past <= report_date <= today):
+            # Include report dates in last 10 days OR next 3 days
+            if not (cutoff_past <= report_date <= lookahead):
                 continue
 
             await redis_client.sadd(REDIS_KEY_QUEUE, sym)
