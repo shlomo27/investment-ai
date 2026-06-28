@@ -563,31 +563,48 @@ async def earnings_status(
 
     r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
-        queue_count  = await r.scard("investment_ai:earnings_queue")
-        details_raw  = await r.hgetall("investment_ai:earnings_details")
-        last_check   = await r.get("investment_ai:earnings_last_check")
+        queue_count    = await r.scard("investment_ai:earnings_queue")
+        details_raw    = await r.hgetall("investment_ai:earnings_details")
+        pending_raw    = await r.hgetall("investment_ai:earnings_pending")
+        last_check     = await r.get("investment_ai:earnings_last_check")
         scan_triggered = await r.get("investment_ai:earnings_scan_triggered")
 
-        companies = []
+        confirmed = []
         for sym, val in details_raw.items():
             try:
                 d = _json.loads(val)
-                companies.append({
+                confirmed.append({
                     "symbol": sym,
                     "earnings_date": d.get("earnings_date"),
                     "added_at": d.get("added_at"),
+                    "status": "confirmed",
                 })
             except Exception:
                 pass
-        companies.sort(key=lambda x: x.get("earnings_date", ""), reverse=True)
+        confirmed.sort(key=lambda x: x.get("earnings_date", ""), reverse=True)
+
+        pending = []
+        for sym, val in pending_raw.items():
+            try:
+                d = _json.loads(val)
+                pending.append({
+                    "symbol": sym,
+                    "earnings_date": d.get("report_date"),
+                    "added_at": d.get("added_at"),
+                    "status": "pending",
+                })
+            except Exception:
+                pass
+        pending.sort(key=lambda x: x.get("earnings_date", ""))
 
         return {
             "queue_count":     int(queue_count),
             "trigger_at":      settings.MIN_EARNINGS_TRIGGER,
-            "companies":       companies,
+            "companies":       confirmed,
+            "pending":         pending,
             "last_check":      last_check,
             "scan_triggered":  scan_triggered,
-            "fmp_configured":  bool(settings.FMP_API_KEY),
+            "fmp_configured":  bool(settings.FMP_API_KEY or settings.ALPHA_VANTAGE_KEY),
         }
     finally:
         await r.aclose()

@@ -457,20 +457,34 @@ const FundDashboard: React.FC = () => {
               )}
             </div>
 
-            {/* Companies list */}
+            {/* Confirmed — already reported */}
             {earningsStatus.companies?.length > 0 && (
+              <div className="mb-3">
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+                  {isHe ? "פרסמו דוחות (נספרים לסף)" : "Already reported (counted toward threshold)"}
+                </p>
+                <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1">
+                  {earningsStatus.companies.map((c: any) => (
+                    <div key={c.symbol} className="flex items-center justify-between bg-green-900/20 border border-green-900/30 rounded-lg px-2.5 py-1.5">
+                      <span className="font-mono font-bold text-xs text-white">{c.symbol}</span>
+                      <span className="text-xs text-green-400">{c.earnings_date}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Pending — upcoming (not yet reported) */}
+            {earningsStatus.pending?.length > 0 && (
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
-                  {isHe ? "חברות שפרסמו דוחות" : "Companies that reported"}
+                  {isHe ? "עתידיים — ממתינים לפרסום" : "Upcoming — not yet reported"}
                 </p>
-                <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
-                  {earningsStatus.companies.map((c: any) => (
-                    <div
-                      key={c.symbol}
-                      className="flex items-center justify-between bg-gray-800/60 rounded-lg px-2.5 py-1.5"
-                    >
-                      <span className="font-mono font-bold text-xs text-white">{c.symbol}</span>
-                      <span className="text-xs text-gray-400">{c.earnings_date}</span>
+                <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1">
+                  {earningsStatus.pending.map((c: any) => (
+                    <div key={c.symbol} className="flex items-center justify-between bg-gray-800/40 border border-gray-700/40 rounded-lg px-2.5 py-1.5">
+                      <span className="font-mono font-bold text-xs text-gray-300">{c.symbol}</span>
+                      <span className="text-xs text-gray-500">{c.earnings_date}</span>
                     </div>
                   ))}
                 </div>
