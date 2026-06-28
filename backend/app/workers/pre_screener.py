@@ -190,6 +190,20 @@ async def run_pre_screener(db) -> dict:
     passed = [m for m in metrics if m.passes_filter]
     logger.info(f"[pre_screener] {len(passed)}/{len(metrics)} passed filters")
 
+    # Fallback: if Yahoo Finance is blocked (0 data), pick first TOP_N symbols
+    # so the system can still operate. Claude does the real analysis in full_scan.
+    if len(passed) < TOP_N:
+        logger.warning(
+            f"[pre_screener] only {len(passed)} passed filter (Yahoo Finance may be blocked). "
+            f"Filling to {TOP_N} with remaining symbols."
+        )
+        existing = {m.symbol for m in passed}
+        fallback = [StockMetrics(symbol=s, passes_filter=True, score=0.0)
+                    for s in all_symbols if s not in existing]
+        import random
+        random.shuffle(fallback)
+        passed = passed + fallback
+
     _score_all(metrics)
     ranked = sorted(passed, key=lambda m: m.score, reverse=True)
     top = ranked[:TOP_N]
