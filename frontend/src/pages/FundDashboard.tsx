@@ -21,18 +21,27 @@ const FundDashboard: React.FC = () => {
   const [scanRunning, setScanRunning] = useState(false);
   const [scanResult, setScanResult] = useState<any>(null);
   const [scanStatus, setScanStatus] = useState<any>(null);
+  const [earningsStatus, setEarningsStatus] = useState<any>(null);
 
   useEffect(() => {
     dispatch(fetchPortfolioSummary());
     dispatch(fetchPortfolioRisk());
     dispatch(fetchRecommendations({}));
     loadUniverseStats();
+    loadEarningsStatus();
   }, [dispatch]);
 
   const loadUniverseStats = async () => {
     try {
       const stats = await marketApi.getUniverseStats();
       setUniverseStats(stats);
+    } catch {}
+  };
+
+  const loadEarningsStatus = async () => {
+    try {
+      const status = await marketApi.getEarningsStatus();
+      setEarningsStatus(status);
     } catch {}
   };
 
@@ -328,6 +337,122 @@ const FundDashboard: React.FC = () => {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Earnings Monitoring */}
+      <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="font-bold">{isHe ? "מעקב דוחות כספיים" : "Earnings Monitoring"}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {isHe
+                ? "בודק כל יום ב-07:30 — כשמגיעים ≥20 דוחות חדשים מתחילה סריקה רבעונית אוטומטית"
+                : "Checks daily at 07:30 — when ≥20 fresh earnings arrive, quarterly scan triggers automatically"}
+            </p>
+          </div>
+          <button
+            onClick={loadEarningsStatus}
+            className="text-xs text-blue-400 hover:text-blue-300"
+          >
+            {isHe ? "רענן" : "Refresh"}
+          </button>
+        </div>
+
+        {earningsStatus ? (
+          <>
+            {/* FMP not configured warning */}
+            {!earningsStatus.fmp_configured && (
+              <div className="mb-4 p-3 rounded-xl bg-yellow-900/20 border border-yellow-800/40 text-xs text-yellow-300">
+                {isHe
+                  ? "FMP_API_KEY לא מוגדר — הוסף ב-Railway כדי להפעיל מעקב דוחות"
+                  : "FMP_API_KEY not set — add it in Railway to enable earnings tracking"}
+              </div>
+            )}
+
+            {/* Progress bar */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-sm font-medium">
+                  {isHe ? "דוחות שנאספו" : "Earnings collected"}
+                </span>
+                <span className="text-sm font-bold">
+                  {earningsStatus.queue_count}
+                  <span className="text-gray-500 font-normal"> / {earningsStatus.trigger_at}</span>
+                </span>
+              </div>
+              <div className="w-full bg-gray-800 rounded-full h-2.5">
+                <div
+                  className={`h-2.5 rounded-full transition-all ${
+                    earningsStatus.scan_triggered
+                      ? "bg-green-500"
+                      : earningsStatus.queue_count >= earningsStatus.trigger_at
+                      ? "bg-orange-500"
+                      : "bg-blue-500"
+                  }`}
+                  style={{
+                    width: `${Math.min(100, (earningsStatus.queue_count / earningsStatus.trigger_at) * 100)}%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Status badge */}
+            <div className="mb-4">
+              {earningsStatus.scan_triggered ? (
+                <div className="inline-flex items-center gap-2 bg-green-900/30 border border-green-800/50 rounded-lg px-3 py-1.5 text-xs text-green-300">
+                  <span className="w-2 h-2 bg-green-400 rounded-full" />
+                  {isHe
+                    ? `סריקה רבעונית הושקה — ${earningsStatus.scan_triggered}`
+                    : `Quarterly scan triggered — ${earningsStatus.scan_triggered}`}
+                </div>
+              ) : earningsStatus.queue_count >= earningsStatus.trigger_at ? (
+                <div className="inline-flex items-center gap-2 bg-orange-900/30 border border-orange-800/50 rounded-lg px-3 py-1.5 text-xs text-orange-300">
+                  <span className="w-2 h-2 bg-orange-400 rounded-full animate-pulse" />
+                  {isHe ? "מוכן — מעל לסף, ממתין להשקה" : "Ready — above threshold, pending trigger"}
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1.5 text-xs text-gray-400">
+                  <span className="w-2 h-2 bg-gray-500 rounded-full" />
+                  {isHe
+                    ? `אוסף דוחות... (${earningsStatus.trigger_at - earningsStatus.queue_count} נדרשים עוד)`
+                    : `Collecting... (${earningsStatus.trigger_at - earningsStatus.queue_count} more needed)`}
+                </div>
+              )}
+            </div>
+
+            {/* Companies list */}
+            {earningsStatus.companies?.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+                  {isHe ? "חברות שפרסמו דוחות" : "Companies that reported"}
+                </p>
+                <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                  {earningsStatus.companies.map((c: any) => (
+                    <div
+                      key={c.symbol}
+                      className="flex items-center justify-between bg-gray-800/60 rounded-lg px-2.5 py-1.5"
+                    >
+                      <span className="font-mono font-bold text-xs text-white">{c.symbol}</span>
+                      <span className="text-xs text-gray-400">{c.earnings_date}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Last check */}
+            {earningsStatus.last_check && (
+              <p className="text-xs text-gray-600 mt-3">
+                {isHe ? "בדיקה אחרונה:" : "Last check:"}{" "}
+                {new Date(earningsStatus.last_check).toLocaleString(isHe ? "he-IL" : "en-US")}
+              </p>
+            )}
+          </>
+        ) : (
+          <div className="text-center py-6 text-gray-500 text-sm">
+            {isHe ? "טוען נתוני דוחות..." : "Loading earnings data..."}
+          </div>
+        )}
       </div>
 
       {/* AI Full Scan Trigger */}

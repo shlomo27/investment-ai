@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     NEWSAPI_KEY: str = ""
     ALPHA_VANTAGE_KEY: str = ""
 
+    # Financial Modeling Prep — earnings calendar (free tier: 250 req/day)
+    FMP_API_KEY: str = ""
+
     # Twilio (SMS)
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""

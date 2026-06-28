@@ -540,6 +540,49 @@ async def universe_stats(
     }
 
 
+# ─── Earnings Status ─────────────────────────────────────────────────────────
+
+@router.get("/earnings/status")
+async def earnings_status(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Return current earnings queue status (for admin dashboard)."""
+    import json as _json
+    import redis.asyncio as aioredis
+    from app.core.config import settings
+
+    r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    try:
+        queue_count  = await r.scard("investment_ai:earnings_queue")
+        details_raw  = await r.hgetall("investment_ai:earnings_details")
+        last_check   = await r.get("investment_ai:earnings_last_check")
+        scan_triggered = await r.get("investment_ai:earnings_scan_triggered")
+
+        companies = []
+        for sym, val in details_raw.items():
+            try:
+                d = _json.loads(val)
+                companies.append({
+                    "symbol": sym,
+                    "earnings_date": d.get("earnings_date"),
+                    "added_at": d.get("added_at"),
+                })
+            except Exception:
+                pass
+        companies.sort(key=lambda x: x.get("earnings_date", ""), reverse=True)
+
+        return {
+            "queue_count":     int(queue_count),
+            "trigger_at":      settings.MIN_EARNINGS_TRIGGER,
+            "companies":       companies,
+            "last_check":      last_check,
+            "scan_triggered":  scan_triggered,
+            "fmp_configured":  bool(settings.FMP_API_KEY),
+        }
+    finally:
+        await r.aclose()
+
+
 # ─── Master List ──────────────────────────────────────────────────────────────
 
 @router.get("/master-list")
