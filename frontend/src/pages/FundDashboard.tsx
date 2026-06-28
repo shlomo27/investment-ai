@@ -406,8 +406,8 @@ const FundDashboard: React.FC = () => {
               earningsCheckResult.skipped
                 ? (isHe ? `דולג: ${earningsCheckResult.reason}` : `Skipped: ${earningsCheckResult.reason}`)
                 : (isHe
-                    ? `נמצאו ${earningsCheckResult.fresh_this_run} דוחות חדשים | סה"כ בתור: ${earningsCheckResult.queued_total}/${earningsCheckResult.trigger_at}`
-                    : `Found ${earningsCheckResult.fresh_this_run} fresh | Queue: ${earningsCheckResult.queued_total}/${earningsCheckResult.trigger_at}`)
+                    ? `נמצאו ${earningsCheckResult.past_confirmed ?? earningsCheckResult.fresh_this_run ?? 0} דוחות חדשים | סה"כ בתור: ${earningsCheckResult.queued_total}/${earningsCheckResult.trigger_at}`
+                    : `Found ${earningsCheckResult.past_confirmed ?? earningsCheckResult.fresh_this_run ?? 0} new | Queue: ${earningsCheckResult.queued_total}/${earningsCheckResult.trigger_at}`)
             )}
           </div>
         )}
