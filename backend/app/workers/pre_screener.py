@@ -1,245 +1,209 @@
 """
 Pre-Screener — ranks ~900 universe stocks and selects TOP_N for full Claude analysis.
 
-Scoring model (0–100, percentile-based so we always get exactly TOP_N):
+Uses only yf.download() (bulk price/volume download) — avoids per-symbol
+Yahoo Finance API calls that get rate-limited from Railway IPs.
 
-  Weight  Metric
-  ──────  ──────────────────────────────────────────────
-  30 %    EPS growth (QoQ — most recent quarter vs year-ago quarter)
-  25 %    Revenue growth (YoY — trailing 12 months)
-  20 %    Relative valuation (P/E vs sector median — lower = better)
-  15 %    Price momentum (3-month total return)
-  10 %    Financial health (low Debt/Equity + positive FCF)
+Scoring model (percentile-based):
+  50%  3-month price momentum
+  30%  6-month price momentum
+  20%  volume trend (recent 20-day avg vs 60-day avg)
 
-Steps:
-  1. Load all in_universe assets from DB (~900 stocks)
-  2. Fetch lightweight financial data via yfinance (no Claude = zero cost)
-  3. Hard-filter: remove penny stocks, illiquid, missing data
-  4. Score each metric as a percentile rank within the surviving universe
-  5. Compute weighted composite score
-  6. Mark top TOP_N as is_active_in_pool = True, rest = False
-  7. Assign direction_bias: LONG for top 80, SHORT for ranks 81-100
+Top 80 → LONG, ranks 81-100 → SHORT (highest negative momentum)
+Claude then does full fundamental analysis in the daily full_scan.
 """
 import asyncio
 import logging
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 import yfinance as yf
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-TOP_N               = 100
-LONG_COUNT          = 80
-MIN_PRICE           = 1.0
-MIN_MARKET_CAP      = 500_000_000
-MIN_AVG_VOLUME      = 100_000
-MAX_DEBT_EQUITY     = 5.0
-MAX_PE_RATIO        = 200.0
-SLEEP_BETWEEN_STOCKS = 3.0   # seconds between each stock's info fetch
-W_EPS_GROWTH    = 0.30
-W_REV_GROWTH    = 0.25
-W_VALUATION     = 0.20
-W_MOMENTUM      = 0.15
-W_HEALTH        = 0.10
+TOP_N      = 100
+LONG_COUNT = 80
+MIN_PRICE  = 1.0
+MIN_AVG_VOLUME = 100_000
+DOWNLOAD_CHUNK = 200   # symbols per yf.download() call
 
 
 @dataclass
 class StockMetrics:
-    symbol:       str
-    sector:       Optional[str]   = None
-    price:        Optional[float] = None
-    market_cap:   Optional[float] = None
-    avg_volume:   Optional[float] = None
-    pe_ratio:     Optional[float] = None
-    eps_growth:   Optional[float] = None
-    rev_growth:   Optional[float] = None
-    momentum_3m:  Optional[float] = None
-    debt_equity:  Optional[float] = None
-    fcf:          Optional[float] = None
-    score_eps:        float = 0.0
-    score_rev:        float = 0.0
-    score_valuation:  float = 0.0
-    score_momentum:   float = 0.0
-    score_health:     float = 0.0
-    composite_score:  float = 0.0
-    passes_hard_filter: bool = False
+    symbol:      str
+    price:       Optional[float] = None
+    avg_volume:  Optional[float] = None
+    momentum_3m: Optional[float] = None
+    momentum_6m: Optional[float] = None
+    vol_trend:   Optional[float] = None   # recent_vol / older_vol ratio
+    score:       float = 0.0
+    passes_filter: bool = False
 
 
-async def _fetch_metrics(symbol: str) -> StockMetrics:
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _fetch_metrics_sync, symbol)
-
-
-def _fetch_metrics_sync(symbol: str) -> StockMetrics:
+def _download_chunk(symbols: List[str], period: str = "6mo") -> Dict[str, pd.DataFrame]:
+    """Download OHLCV for a chunk of symbols. Returns {symbol: df}."""
     import time
+    for attempt in range(3):
+        try:
+            data = yf.download(
+                symbols, period=period, interval="1d",
+                group_by="ticker", auto_adjust=True,
+                progress=False, threads=False,
+            )
+            result = {}
+            for sym in symbols:
+                try:
+                    if len(symbols) == 1:
+                        df = data
+                    else:
+                        df = data[sym]
+                    df = df.dropna(subset=["Close"])
+                    if len(df) >= 20:
+                        result[sym] = df
+                except Exception:
+                    pass
+            return result
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(10 * (attempt + 1))
+            else:
+                logger.warning(f"[pre_screener] download chunk failed: {e}")
+    return {}
+
+
+def _compute_metrics(symbol: str, df: pd.DataFrame) -> StockMetrics:
     m = StockMetrics(symbol=symbol)
-    try:
-        tk = yf.Ticker(symbol)
-        info = tk.info or {}
-        m.sector      = info.get("sector")
-        m.price       = info.get("currentPrice") or info.get("regularMarketPrice")
-        m.market_cap  = info.get("marketCap")
-        m.avg_volume  = info.get("averageDailyVolume10Day") or info.get("averageVolume")
-        m.pe_ratio    = info.get("trailingPE") or info.get("forwardPE")
-        m.debt_equity = info.get("debtToEquity")
-        if m.debt_equity and m.debt_equity > 20:
-            m.debt_equity = m.debt_equity / 100
-        # FCF and EPS growth from info directly (no extra requests)
-        fcf = info.get("freeCashflow")
-        if fcf is not None:
-            m.fcf = float(fcf)
-        eg = info.get("earningsGrowth") or info.get("earningsQuarterlyGrowth")
-        if eg is not None:
-            m.eps_growth = eg * 100
-        rev = info.get("revenueGrowth")
-        if rev is not None:
-            m.rev_growth = rev * 100
-    except Exception as e:
-        if "429" in str(e):
-            logger.debug(f"[pre_screener] {symbol}: 429 rate limited — skipping")
-        else:
-            logger.debug(f"[pre_screener] {symbol}: {e}")
+    closes = df["Close"]
+    volumes = df["Volume"] if "Volume" in df.columns else None
+
+    m.price = float(closes.iloc[-1])
+
+    # 3-month momentum (~63 trading days)
+    idx_3m = max(0, len(closes) - 63)
+    if len(closes) > idx_3m:
+        start = float(closes.iloc[idx_3m])
+        if start > 0:
+            m.momentum_3m = (m.price - start) / start * 100
+
+    # 6-month momentum (full period)
+    if len(closes) >= 20:
+        start6 = float(closes.iloc[0])
+        if start6 > 0:
+            m.momentum_6m = (m.price - start6) / start6 * 100
+
+    # Volume trend: last 20 days vs previous 40 days
+    if volumes is not None and len(volumes) >= 60:
+        recent = float(volumes.iloc[-20:].mean())
+        older  = float(volumes.iloc[-60:-20].mean())
+        m.avg_volume = recent
+        if older > 0:
+            m.vol_trend = recent / older
+    elif volumes is not None and len(volumes) >= 20:
+        m.avg_volume = float(volumes.iloc[-20:].mean())
+
     return m
 
 
-def _apply_hard_filter(m: StockMetrics) -> bool:
-    if not m.price      or m.price      < MIN_PRICE:       return False
-    if not m.market_cap or m.market_cap < MIN_MARKET_CAP:  return False
-    if not m.avg_volume or m.avg_volume < MIN_AVG_VOLUME:  return False
-    if m.pe_ratio    and m.pe_ratio    > MAX_PE_RATIO:     return False
-    if m.debt_equity and m.debt_equity > MAX_DEBT_EQUITY:  return False
-    return sum([m.eps_growth is not None, m.rev_growth is not None, m.momentum_3m is not None]) >= 1
-
-
 def _pct(values, val):
-    if val is None: return 0.0
+    if val is None:
+        return 0.0
     clean = [v for v in values if v is not None]
-    if not clean: return 50.0
+    if not clean:
+        return 50.0
     return round(sum(1 for v in clean if v < val) / len(clean) * 100, 1)
 
 
-def _pct_inv(values, val):
-    if val is None: return 50.0
-    clean = [v for v in values if v is not None]
-    if not clean: return 50.0
-    return round(sum(1 for v in clean if v > val) / len(clean) * 100, 1)
-
-
-def _score_all(stocks):
-    universe = [s for s in stocks if s.passes_hard_filter]
-    eps_vals = [s.eps_growth  for s in universe]
-    rev_vals = [s.rev_growth  for s in universe]
-    mom_vals = [s.momentum_3m for s in universe]
-    sector_pe = {}
+def _score_all(stocks: List[StockMetrics]) -> None:
+    universe = [s for s in stocks if s.passes_filter]
+    mom3  = [s.momentum_3m for s in universe]
+    mom6  = [s.momentum_6m for s in universe]
+    vtrnd = [s.vol_trend   for s in universe]
     for s in universe:
-        if s.sector and s.pe_ratio and s.pe_ratio > 0:
-            sector_pe.setdefault(s.sector, []).append(s.pe_ratio)
-    sector_med = {sec: sorted(v)[len(v)//2] for sec, v in sector_pe.items()}
-    rel_pe = [(s.pe_ratio/sector_med[s.sector]) if (s.pe_ratio and s.sector and s.sector in sector_med) else None for s in universe]
-    def health(s):
-        if s.debt_equity is None and s.fcf is None: return None
-        return (1/(1+(s.debt_equity or 0)))*50 + (50.0 if (s.fcf or 0)>0 else 0.0)
-    health_vals = [health(s) for s in universe]
-    for i, s in enumerate(universe):
-        s.score_eps       = _pct(eps_vals, s.eps_growth)
-        s.score_rev       = _pct(rev_vals, s.rev_growth)
-        s.score_momentum  = _pct(mom_vals, s.momentum_3m)
-        s.score_valuation = _pct_inv(rel_pe, rel_pe[i])
-        s.score_health    = _pct(health_vals, health_vals[i])
-        s.composite_score = round(
-            s.score_eps*W_EPS_GROWTH + s.score_rev*W_REV_GROWTH +
-            s.score_valuation*W_VALUATION + s.score_momentum*W_MOMENTUM +
-            s.score_health*W_HEALTH, 2)
+        p3 = _pct(mom3,  s.momentum_3m)
+        p6 = _pct(mom6,  s.momentum_6m)
+        pv = _pct(vtrnd, s.vol_trend)
+        s.score = round(p3 * 0.50 + p6 * 0.30 + pv * 0.20, 2)
 
 
-async def _update_db(db, ranked, all_symbols):
+async def _update_db(db, ranked: List[StockMetrics], all_symbols: List[str]) -> None:
     from app.db.models.asset import Asset
     from sqlalchemy import update
     long_syms  = {s.symbol for s in ranked[:LONG_COUNT]}
     short_syms = {s.symbol for s in ranked[LONG_COUNT:TOP_N]}
-    await db.execute(update(Asset).where(Asset.symbol.in_(all_symbols)).values(is_active_in_pool=False))
+    await db.execute(
+        update(Asset).where(Asset.symbol.in_(all_symbols)).values(is_active_in_pool=False)
+    )
     if long_syms:
-        await db.execute(update(Asset).where(Asset.symbol.in_(long_syms)).values(is_active_in_pool=True, direction_bias="LONG"))
+        await db.execute(
+            update(Asset).where(Asset.symbol.in_(long_syms))
+            .values(is_active_in_pool=True, direction_bias="LONG")
+        )
     if short_syms:
-        await db.execute(update(Asset).where(Asset.symbol.in_(short_syms)).values(is_active_in_pool=True, direction_bias="SHORT"))
+        await db.execute(
+            update(Asset).where(Asset.symbol.in_(short_syms))
+            .values(is_active_in_pool=True, direction_bias="SHORT")
+        )
     for s in ranked[:TOP_N]:
-        await db.execute(update(Asset).where(Asset.symbol==s.symbol).values(fundamental_score=s.composite_score))
-
-
-def _batch_download_momentum(symbols: list) -> dict:
-    """Single yf.download() call for all symbols — avoids per-symbol 429."""
-    import time
-    result = {}
-    chunk_size = 200
-    for i in range(0, len(symbols), chunk_size):
-        chunk = symbols[i:i+chunk_size]
-        try:
-            hist = yf.download(chunk, period="3mo", interval="1d",
-                               group_by="ticker", auto_adjust=True, progress=False)
-            for sym in chunk:
-                try:
-                    if len(chunk) == 1:
-                        closes = hist["Close"]
-                    else:
-                        closes = hist["Close"][sym]
-                    closes = closes.dropna()
-                    if len(closes) >= 20:
-                        result[sym] = (float(closes.iloc[-1]) - float(closes.iloc[0])) / float(closes.iloc[0]) * 100
-                except Exception:
-                    pass
-        except Exception as e:
-            logger.warning(f"[pre_screener] batch download chunk {i}: {e}")
-        time.sleep(3)
-    return result
+        await db.execute(
+            update(Asset).where(Asset.symbol == s.symbol)
+            .values(fundamental_score=s.score)
+        )
 
 
 async def run_pre_screener(db) -> dict:
-    """Rank universe stocks by financial score and activate top 100. db is an open AsyncSession."""
+    """Rank universe stocks by momentum score and activate top 100."""
     from app.db.models.asset import Asset
     from sqlalchemy import select
+
     logger.info("[pre_screener] starting")
     rows = await db.execute(select(Asset.symbol).where(Asset.in_universe == True))
     all_symbols = [r[0] for r in rows.all()]
     if not all_symbols:
-        return {"universe_size": 0, "passed_filter": 0, "selected": 0, "long": 0, "short": 0, "rejected": 0, "errors": 0}
+        return {"universe_size": 0, "passed_filter": 0, "selected": 0, "long": 0, "short": 0}
 
-    # Phase 1: batch-download 3-month momentum for all symbols (1-2 requests total)
-    logger.info(f"[pre_screener] {len(all_symbols)} stocks — phase 1: momentum download")
+    logger.info(f"[pre_screener] {len(all_symbols)} symbols — downloading price data")
     loop = asyncio.get_event_loop()
-    momentum_map = await loop.run_in_executor(None, _batch_download_momentum, all_symbols)
-    logger.info(f"[pre_screener] momentum: {len(momentum_map)} symbols fetched")
+    all_data: Dict[str, pd.DataFrame] = {}
 
-    # Phase 2: fetch fundamentals one-by-one with delay to avoid 429
-    logger.info("[pre_screener] phase 2: fundamentals (sequential, 1.5s/stock)")
+    for i in range(0, len(all_symbols), DOWNLOAD_CHUNK):
+        chunk = all_symbols[i: i + DOWNLOAD_CHUNK]
+        chunk_data = await loop.run_in_executor(None, _download_chunk, chunk)
+        all_data.update(chunk_data)
+        logger.info(f"[pre_screener] downloaded {min(i+DOWNLOAD_CHUNK, len(all_symbols))}/{len(all_symbols)}")
+        await asyncio.sleep(3)
+
+    logger.info(f"[pre_screener] {len(all_data)}/{len(all_symbols)} symbols have data — computing metrics")
     metrics = []
-    errors = 0
     for sym in all_symbols:
-        try:
-            m = await loop.run_in_executor(None, _fetch_metrics_sync, sym)
-            if sym in momentum_map:
-                m.momentum_3m = momentum_map[sym]
-            metrics.append(m)
-        except Exception:
-            errors += 1
-            metrics.append(StockMetrics(symbol=sym))
-        await asyncio.sleep(SLEEP_BETWEEN_STOCKS)
-    for m in metrics:
-        m.passes_hard_filter = _apply_hard_filter(m)
-    passed = [m for m in metrics if m.passes_hard_filter]
+        if sym in all_data:
+            m = _compute_metrics(sym, all_data[sym])
+            m.passes_filter = (
+                m.price is not None and m.price >= MIN_PRICE and
+                m.avg_volume is not None and m.avg_volume >= MIN_AVG_VOLUME and
+                m.momentum_3m is not None
+            )
+        else:
+            m = StockMetrics(symbol=sym)
+        metrics.append(m)
+
+    passed = [m for m in metrics if m.passes_filter]
     logger.info(f"[pre_screener] {len(passed)}/{len(metrics)} passed filters")
+
     _score_all(metrics)
-    ranked = sorted(passed, key=lambda m: m.composite_score, reverse=True)
+    ranked = sorted(passed, key=lambda m: m.score, reverse=True)
     top = ranked[:TOP_N]
+
     if top:
-        logger.info(f"[pre_screener] top {len(top)} | score {top[-1].composite_score:.1f}–{top[0].composite_score:.1f}")
+        logger.info(f"[pre_screener] top {len(top)} | score range {top[-1].score:.1f}–{top[0].score:.1f}")
+
     await _update_db(db, ranked, all_symbols)
+
     return {
-        "universe_size": len(all_symbols),
-        "passed_filter": len(passed),
-        "selected":      len(top),
-        "long":          min(len(top), LONG_COUNT),
-        "short":         max(0, len(top)-LONG_COUNT),
-        "rejected":      len(all_symbols)-len(top),
-        "errors":        errors,
+        "universe_size":  len(all_symbols),
+        "data_fetched":   len(all_data),
+        "passed_filter":  len(passed),
+        "selected":       len(top),
+        "long":           min(len(top), LONG_COUNT),
+        "short":          max(0, len(top) - LONG_COUNT),
     }
