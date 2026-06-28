@@ -408,6 +408,11 @@ export const marketApi = {
     return response.data;
   },
 
+  resetEarnings: async (): Promise<any> => {
+    const response = await api.post("/market/earnings/reset");
+    return response.data;
+  },
+
   getMasterList: async (): Promise<any> => {
     const response = await api.get("/market/master-list");
     return response.data;

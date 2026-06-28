@@ -552,6 +552,31 @@ async def earnings_check_now(
     return result
 
 
+@router.post("/earnings/reset")
+async def earnings_reset(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Clear all earnings Redis keys and start fresh (admin action)."""
+    import redis.asyncio as aioredis
+    from app.core.config import settings
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        keys = [
+            "investment_ai:earnings_queue",
+            "investment_ai:earnings_details",
+            "investment_ai:earnings_pending",
+            "investment_ai:earnings_last_check",
+            "investment_ai:earnings_scan_triggered",
+        ]
+        deleted = 0
+        for k in keys:
+            deleted += await r.delete(k)
+        return {"reset": True, "keys_deleted": deleted}
+    finally:
+        await r.aclose()
+
+
 @router.get("/earnings/status")
 async def earnings_status(
     current_user: User = Depends(get_current_active_user),

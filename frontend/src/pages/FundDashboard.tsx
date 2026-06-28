@@ -60,6 +60,16 @@ const FundDashboard: React.FC = () => {
     setEarningsChecking(false);
   };
 
+  const handleResetEarnings = async () => {
+    try {
+      await marketApi.resetEarnings();
+      setEarningsCheckResult({ reset: true });
+      await loadEarningsStatus();
+    } catch (e: any) {
+      setEarningsCheckResult({ error: e?.response?.data?.detail || "Reset failed" });
+    }
+  };
+
   const handleRunScreener = async () => {
     setScreenerRunning(true);
     setScreenerResult(null);
@@ -372,6 +382,13 @@ const FundDashboard: React.FC = () => {
               className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
             >
               {earningsChecking ? (isHe ? "בודק..." : "Checking...") : (isHe ? "בדוק עכשיו" : "Check Now")}
+            </button>
+            <button
+              onClick={handleResetEarnings}
+              className="text-xs text-red-400 hover:text-red-300 border border-red-900/40 px-2 py-1.5 rounded-lg"
+              title={isHe ? "מחק את כל נתוני הדוחות מ-Redis" : "Clear all earnings data from Redis"}
+            >
+              {isHe ? "איפוס" : "Reset"}
             </button>
             <button
               onClick={loadEarningsStatus}
