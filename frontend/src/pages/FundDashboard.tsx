@@ -698,6 +698,7 @@ const FundDashboard: React.FC = () => {
               title: isHe ? `צור פוזיציית בדיקה (${simSymbol})` : `Create Test Position (${simSymbol})`,
               desc: isHe ? `מוסיף ${simSymbol} לתיק שלך (10 יחידות) כדי שה-TA scan ישלח לך התראות` : `Adds ${simSymbol} to your portfolio (10 units) so TA scan alerts fire to you`,
               action: async () => marketApi.simulateCreatePosition(simSymbol),
+              removeAction: async () => marketApi.simulateRemovePosition(simSymbol),
             },
             {
               step: 4,
@@ -713,7 +714,7 @@ const FundDashboard: React.FC = () => {
               desc: isHe ? "שולח התראה ישירה לכל הערוצים (Push + SMS + Email + תיבת דואר)" : "Sends alert to all channels (Push + SMS + Email + Inbox)",
               action: async () => marketApi.simulateTestNotification(),
             },
-          ].map(({ step, icon, title, desc, action }) => (
+          ].map(({ step, icon, title, desc, action, removeAction }: any) => (
             <div key={step} className="flex items-start gap-4 bg-gray-800/40 rounded-xl p-4 border border-gray-700/40">
               <div className="flex flex-col items-center gap-1 shrink-0">
                 <span className="w-7 h-7 rounded-full bg-purple-900/60 border border-purple-700/50 flex items-center justify-center text-xs font-bold text-purple-300">
@@ -725,39 +726,90 @@ const FundDashboard: React.FC = () => {
                 <p className="text-sm font-medium text-white">{title}</p>
                 <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
                 {simStep[step] && (
-                  <div className={`mt-2 p-2 rounded-lg text-xs ${simStep[step].error ? "bg-red-900/20 text-red-400" : "bg-green-900/20 text-green-300"}`}>
-                    {simStep[step].error
-                      ? simStep[step].error
-                      : JSON.stringify(simStep[step]).slice(0, 120)}
-                  </div>
+                  step === 5 && simStep[step].diagnostics ? (
+                    <div className="mt-2 space-y-1.5">
+                      {/* Channel status */}
+                      {["push", "sms", "email"].map((ch) => {
+                        const d = simStep[step].diagnostics[ch];
+                        const sent = simStep[step].channels?.includes(ch);
+                        const icon = sent ? "✅" : d?.will_send === false ? "❌" : "⚠️";
+                        const issues = [];
+                        if (!d?.enabled) issues.push(isHe ? "כבוי בהגדרות" : "disabled in settings");
+                        else if (ch === "push" && !d?.has_token) issues.push(isHe ? "אין push token" : "no push token");
+                        else if (ch === "sms" && !d?.has_phone) issues.push(isHe ? "אין טלפון" : "no phone");
+                        else if (ch === "sms" && !d?.twilio_configured) issues.push(isHe ? "Twilio לא מוגדר" : "Twilio not configured");
+                        else if (ch === "email" && !d?.sendgrid_configured) issues.push(isHe ? "SendGrid לא מוגדר" : "SendGrid not configured");
+                        return (
+                          <div key={ch} className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${sent ? "bg-green-900/20 text-green-300" : "bg-gray-800/60 text-gray-400"}`}>
+                            <span>{icon}</span>
+                            <span className="uppercase font-mono w-10">{ch}</span>
+                            <span>{sent ? (isHe ? "נשלח!" : "Sent!") : issues.join(", ") || (isHe ? "נכשל" : "failed")}</span>
+                          </div>
+                        );
+                      })}
+                      {simStep[step].channels?.length === 0 && (
+                        <p className="text-xs text-yellow-500 mt-1">
+                          {isHe ? "אף ערוץ לא נשלח — ראה הסבר למטה" : "No channels sent — see explanation below"}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className={`mt-2 p-2 rounded-lg text-xs ${simStep[step].error ? "bg-red-900/20 text-red-400" : "bg-green-900/20 text-green-300"}`}>
+                      {simStep[step].error
+                        ? simStep[step].error
+                        : JSON.stringify(simStep[step]).slice(0, 120)}
+                    </div>
+                  )
                 )}
               </div>
-              <button
-                disabled={simLoading[step]}
-                onClick={async () => {
-                  setSimLoading(l => ({ ...l, [step]: true }));
-                  setSimStep(s => ({ ...s, [step]: null }));
-                  try {
-                    const r = await action();
-                    setSimStep(s => ({ ...s, [step]: r }));
-                  } catch (e: any) {
-                    setSimStep(s => ({ ...s, [step]: { error: e?.response?.data?.detail || String(e) } }));
-                  }
-                  setSimLoading(l => ({ ...l, [step]: false }));
-                }}
-                className="shrink-0 text-xs bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
-              >
-                {simLoading[step] ? "..." : (isHe ? "הרץ" : "Run")}
-              </button>
+              <div className="flex flex-col gap-1 shrink-0">
+                <button
+                  disabled={simLoading[step]}
+                  onClick={async () => {
+                    setSimLoading(l => ({ ...l, [step]: true }));
+                    setSimStep(s => ({ ...s, [step]: null }));
+                    try {
+                      const r = await action();
+                      setSimStep(s => ({ ...s, [step]: r }));
+                    } catch (e: any) {
+                      setSimStep(s => ({ ...s, [step]: { error: e?.response?.data?.detail || String(e) } }));
+                    }
+                    setSimLoading(l => ({ ...l, [step]: false }));
+                  }}
+                  className="text-xs bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
+                >
+                  {simLoading[step] ? "..." : (isHe ? "הרץ" : "Run")}
+                </button>
+                {removeAction && (
+                  <button
+                    disabled={simLoading[`${step}_rm`]}
+                    onClick={async () => {
+                      setSimLoading(l => ({ ...l, [`${step}_rm`]: true }));
+                      try {
+                        const r = await removeAction();
+                        setSimStep(s => ({ ...s, [step]: r }));
+                      } catch (e: any) {
+                        setSimStep(s => ({ ...s, [step]: { error: e?.response?.data?.detail || String(e) } }));
+                      }
+                      setSimLoading(l => ({ ...l, [`${step}_rm`]: false }));
+                    }}
+                    className="text-xs bg-red-900/60 hover:bg-red-800/60 disabled:bg-gray-700 text-red-300 px-3 py-1.5 rounded-lg"
+                  >
+                    {simLoading[`${step}_rm`] ? "..." : (isHe ? "מחק" : "Remove")}
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
 
-        <p className="text-xs text-gray-600 mt-4">
-          {isHe
-            ? "אחרי הסימולציה — לחץ 'הרץ' בשלב 3 שוב עם כמות 0 כדי למחוק את הפוזיציה, או השתמש ב-API ישיר"
-            : "After simulation — remove test position via the API or re-run step 3 with quantity 0"}
-        </p>
+        <div className="mt-4 text-xs text-gray-500 space-y-1 border-t border-gray-800 pt-4">
+          <p className="font-medium text-gray-400">{isHe ? "מה נדרש לכל ערוץ?" : "What each channel needs:"}</p>
+          <p>📧 <strong>Email</strong> — {isHe ? "הגדר SENDGRID_API_KEY אמיתי ב-Railway (לא SG.xxxxx). חינם עד 100 מיילים/יום. אימות שולח ב-sendgrid.com" : "Set real SENDGRID_API_KEY in Railway (not SG.xxxxx). Free up to 100 emails/day. Verify sender at sendgrid.com"}</p>
+          <p>📱 <strong>SMS</strong> — {isHe ? "הגדר TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER אמיתיים ב-Railway. טלפון משתמש חייב להיות בפורמט +972XXXXXXXXX" : "Set real TWILIO_ACCOUNT_SID, AUTH_TOKEN, FROM_NUMBER in Railway. User phone must be +972XXXXXXXXX format"}</p>
+          <p>🔔 <strong>Push</strong> — {isHe ? "דורש Firebase FCM + הרשאת דפדפן. הדפדפן חייב לאשר התראות ולשמור push_token" : "Requires Firebase FCM + browser permission. Browser must grant notifications and register push_token"}</p>
+          <p className="mt-2 text-gray-600">{isHe ? "אחרי הסימולציה — לחץ 'מחק' בשלב 3 להסרת הפוזיציה" : "After simulation — click 'Remove' in Step 3 to delete the test position"}</p>
+        </div>
       </div>
 
       {/* Quick Actions */}

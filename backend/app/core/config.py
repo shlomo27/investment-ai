@@ -107,6 +107,9 @@ class Settings(BaseSettings):
     TASE_API_BASE_URL: str = "https://api.tase.co.il/api"
     MAYA_BASE_URL: str = "https://mayaapi.tase.co.il/api"
 
+    # Frontend URL (for email links)
+    FRONTEND_URL: str = "http://localhost:3000"
+
     # Websocket
     WS_HEARTBEAT_INTERVAL: int = 30
 

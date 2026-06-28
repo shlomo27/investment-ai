@@ -561,6 +561,38 @@ async def simulate_test_notification(
     """Admin: send a test notification to yourself via all configured channels."""
     from app.services.notifications.service import NotificationService
     from app.db.models.notification import NotificationType
+    from app.core.config import settings
+
+    # Diagnostic check
+    sg_key = settings.SENDGRID_API_KEY or ""
+    twilio_sid = settings.TWILIO_ACCOUNT_SID or ""
+    twilio_token = settings.TWILIO_AUTH_TOKEN or ""
+    firebase_ok = bool(settings.FIREBASE_CREDENTIALS_JSON or settings.FIREBASE_CREDENTIALS_PATH)
+
+    diagnostics = {
+        "push": {
+            "enabled": current_user.notification_push,
+            "has_token": bool(current_user.push_token),
+            "firebase_configured": firebase_ok,
+            "will_send": current_user.notification_push and bool(current_user.push_token) and firebase_ok,
+        },
+        "sms": {
+            "enabled": current_user.notification_sms,
+            "has_phone": bool(current_user.phone),
+            "twilio_configured": bool(twilio_sid) and not twilio_sid.startswith("your_")
+                                  and bool(twilio_token) and not twilio_token.startswith("your_"),
+            "will_send": (current_user.notification_sms and bool(current_user.phone)
+                          and bool(twilio_sid) and not twilio_sid.startswith("your_")
+                          and bool(twilio_token) and not twilio_token.startswith("your_")),
+        },
+        "email": {
+            "enabled": current_user.notification_email,
+            "has_email": bool(current_user.email),
+            "sendgrid_configured": bool(sg_key) and not sg_key.startswith("SG.xxx") and len(sg_key) >= 20,
+            "will_send": (current_user.notification_email and bool(current_user.email)
+                          and bool(sg_key) and not sg_key.startswith("SG.xxx") and len(sg_key) >= 20),
+        },
+    }
 
     svc = NotificationService()
     notif = await svc.send_notification(
@@ -578,6 +610,7 @@ async def simulate_test_notification(
         "sent": notif is not None,
         "channels": notif.channels_sent if notif else [],
         "notification_id": notif.id if notif else None,
+        "diagnostics": diagnostics,
     }
 
 

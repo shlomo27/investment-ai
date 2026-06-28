@@ -74,34 +74,43 @@ class NotificationService:
             channels_sent: List[str] = []
 
             # Send push notification
-            if user.notification_push and user.push_token:
-                success = await self._send_push(
-                    push_token=user.push_token,
-                    title=notification.title,
-                    body=external_msg,
-                )
-                if success:
-                    channels_sent.append("push")
+            if user.notification_push:
+                if user.push_token:
+                    success = await self._send_push(
+                        push_token=user.push_token,
+                        title=notification.title,
+                        body=external_msg,
+                    )
+                    if success:
+                        channels_sent.append("push")
+                else:
+                    logger.info("Push skipped — user has no push_token registered", user_id=user_id)
 
             # Send SMS
-            if user.notification_sms and user.phone:
-                success = await self._send_sms(
-                    phone=user.phone,
-                    message=external_msg,
-                )
-                if success:
-                    channels_sent.append("sms")
+            if user.notification_sms:
+                if user.phone:
+                    success = await self._send_sms(
+                        phone=user.phone,
+                        message=external_msg,
+                    )
+                    if success:
+                        channels_sent.append("sms")
+                else:
+                    logger.info("SMS skipped — user has no phone number", user_id=user_id)
 
             # Send email
-            if user.notification_email and user.email:
-                success = await self._send_email(
-                    email=user.email,
-                    name=user.full_name,
-                    subject="Investment Update" if user.preferred_language != "he" else "עדכון השקעות",
-                    body=external_msg,
-                )
-                if success:
-                    channels_sent.append("email")
+            if user.notification_email:
+                if user.email:
+                    success = await self._send_email(
+                        email=user.email,
+                        name=user.full_name,
+                        subject="Investment Update" if user.preferred_language != "he" else "עדכון השקעות",
+                        body=external_msg,
+                    )
+                    if success:
+                        channels_sent.append("email")
+                else:
+                    logger.info("Email skipped — user has no email", user_id=user_id)
 
             notification.channels_sent = channels_sent
             await db.flush()
@@ -190,7 +199,10 @@ class NotificationService:
     async def _send_sms(self, phone: str, message: str) -> bool:
         """Send SMS via Twilio."""
         try:
-            if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN:
+            sid = settings.TWILIO_ACCOUNT_SID
+            token = settings.TWILIO_AUTH_TOKEN
+            if not sid or not token or sid.startswith("your_") or token.startswith("your_"):
+                logger.debug("SMS skipped — Twilio credentials not configured")
                 return False
 
             from twilio.rest import Client
@@ -221,13 +233,16 @@ class NotificationService:
     ) -> bool:
         """Send email via SendGrid."""
         try:
-            if not settings.SENDGRID_API_KEY:
+            api_key = settings.SENDGRID_API_KEY
+            if not api_key or api_key.startswith("SG.xxx") or len(api_key) < 20:
+                logger.debug("Email skipped — SendGrid API key not configured")
                 return False
 
             from sendgrid import SendGridAPIClient
             from sendgrid.helpers.mail import Mail
             import asyncio
 
+            frontend_url = settings.FRONTEND_URL or "https://investment-ai.up.railway.app"
             message = Mail(
                 from_email=(settings.SENDGRID_FROM_EMAIL, settings.SENDGRID_FROM_NAME),
                 to_emails=email,
@@ -238,7 +253,7 @@ class NotificationService:
                 <p>שלום {name},</p>
                 <p>{body}</p>
                 <p>
-                    <a href="http://localhost:3000" style="
+                    <a href="{frontend_url}" style="
                         background-color: #1a73e8;
                         color: white;
                         padding: 12px 24px;
