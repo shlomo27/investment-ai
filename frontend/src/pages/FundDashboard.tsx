@@ -22,6 +22,8 @@ const FundDashboard: React.FC = () => {
   const [scanResult, setScanResult] = useState<any>(null);
   const [scanStatus, setScanStatus] = useState<any>(null);
   const [earningsStatus, setEarningsStatus] = useState<any>(null);
+  const [earningsChecking, setEarningsChecking] = useState(false);
+  const [earningsCheckResult, setEarningsCheckResult] = useState<any>(null);
 
   useEffect(() => {
     dispatch(fetchPortfolioSummary());
@@ -43,6 +45,19 @@ const FundDashboard: React.FC = () => {
       const status = await marketApi.getEarningsStatus();
       setEarningsStatus(status);
     } catch {}
+  };
+
+  const handleCheckEarningsNow = async () => {
+    setEarningsChecking(true);
+    setEarningsCheckResult(null);
+    try {
+      const result = await marketApi.checkEarningsNow();
+      setEarningsCheckResult(result);
+      await loadEarningsStatus();
+    } catch (e: any) {
+      setEarningsCheckResult({ error: e?.response?.data?.detail || "Failed" });
+    }
+    setEarningsChecking(false);
   };
 
   const handleRunScreener = async () => {
@@ -350,13 +365,35 @@ const FundDashboard: React.FC = () => {
                 : "Checks daily at 07:30 — when ≥20 fresh earnings arrive, quarterly scan triggers automatically"}
             </p>
           </div>
-          <button
-            onClick={loadEarningsStatus}
-            className="text-xs text-blue-400 hover:text-blue-300"
-          >
-            {isHe ? "רענן" : "Refresh"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCheckEarningsNow}
+              disabled={earningsChecking}
+              className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
+            >
+              {earningsChecking ? (isHe ? "בודק..." : "Checking...") : (isHe ? "בדוק עכשיו" : "Check Now")}
+            </button>
+            <button
+              onClick={loadEarningsStatus}
+              className="text-xs text-gray-400 hover:text-gray-200"
+            >
+              {isHe ? "רענן" : "Refresh"}
+            </button>
+          </div>
         </div>
+
+        {/* Check result */}
+        {earningsCheckResult && (
+          <div className={`mb-4 p-3 rounded-xl text-xs ${earningsCheckResult.error ? "bg-red-900/20 text-red-400" : "bg-blue-900/20 text-blue-300"}`}>
+            {earningsCheckResult.error ? earningsCheckResult.error : (
+              earningsCheckResult.skipped
+                ? (isHe ? `דולג: ${earningsCheckResult.reason}` : `Skipped: ${earningsCheckResult.reason}`)
+                : (isHe
+                    ? `נמצאו ${earningsCheckResult.fresh_this_run} דוחות חדשים | סה"כ בתור: ${earningsCheckResult.queued_total}/${earningsCheckResult.trigger_at}`
+                    : `Found ${earningsCheckResult.fresh_this_run} fresh | Queue: ${earningsCheckResult.queued_total}/${earningsCheckResult.trigger_at}`)
+            )}
+          </div>
+        )}
 
         {earningsStatus ? (
           <>

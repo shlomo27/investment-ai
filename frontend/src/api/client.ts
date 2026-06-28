@@ -403,6 +403,11 @@ export const marketApi = {
     return response.data;
   },
 
+  checkEarningsNow: async (): Promise<any> => {
+    const response = await api.post("/market/earnings/check-now");
+    return response.data;
+  },
+
   getMasterList: async (): Promise<any> => {
     const response = await api.get("/market/master-list");
     return response.data;

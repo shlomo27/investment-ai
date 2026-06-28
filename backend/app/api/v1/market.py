@@ -542,6 +542,16 @@ async def universe_stats(
 
 # ─── Earnings Status ─────────────────────────────────────────────────────────
 
+@router.post("/earnings/check-now")
+async def earnings_check_now(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Manually trigger an earnings queue check (admin action)."""
+    from app.workers.earnings_watcher import job_earnings_queue_check
+    result = await job_earnings_queue_check()
+    return result
+
+
 @router.get("/earnings/status")
 async def earnings_status(
     current_user: User = Depends(get_current_active_user),
