@@ -42,8 +42,9 @@ async def _fetch_fmp_earnings(from_date: str, to_date: str, api_key: str) -> lis
     """
     Single FMP call → list of {symbol, date, ...} for all companies
     that reported earnings between from_date and to_date.
+    Uses the /stable/ base URL (free tier compatible).
     """
-    url = "https://financialmodelingprep.com/api/v3/earning_calendar"
+    url = "https://financialmodelingprep.com/stable/earning-calendar"
     params = {"from": from_date, "to": to_date, "apikey": api_key}
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(url, params=params)
