@@ -413,6 +413,30 @@ export const marketApi = {
     return response.data;
   },
 
+  simulateTaScan: async (): Promise<any> => {
+    const response = await api.post("/market/simulate/ta-scan-now");
+    return response.data;
+  },
+
+  simulateTestNotification: async (): Promise<any> => {
+    const response = await api.post("/market/simulate/test-notification");
+    return response.data;
+  },
+
+  simulateCreatePosition: async (symbol: string, quantity = 10, price = 100): Promise<any> => {
+    const response = await api.post("/market/simulate/create-test-position", null, {
+      params: { symbol, quantity, price },
+    });
+    return response.data;
+  },
+
+  simulateRemovePosition: async (symbol: string): Promise<any> => {
+    const response = await api.delete("/market/simulate/remove-test-position", {
+      params: { symbol },
+    });
+    return response.data;
+  },
+
   getMasterList: async (): Promise<any> => {
     const response = await api.get("/market/master-list");
     return response.data;

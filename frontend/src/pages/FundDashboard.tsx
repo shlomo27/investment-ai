@@ -25,6 +25,11 @@ const FundDashboard: React.FC = () => {
   const [earningsChecking, setEarningsChecking] = useState(false);
   const [earningsCheckResult, setEarningsCheckResult] = useState<any>(null);
 
+  // Simulation state
+  const [simSymbol, setSimSymbol] = useState("MU");
+  const [simStep, setSimStep] = useState<Record<number, any>>({});
+  const [simLoading, setSimLoading] = useState<Record<number, boolean>>({});
+
   useEffect(() => {
     dispatch(fetchPortfolioSummary());
     dispatch(fetchPortfolioRisk());
@@ -644,6 +649,115 @@ const FundDashboard: React.FC = () => {
             </table>
           </div>
         )}
+      </div>
+
+      {/* Simulation Panel */}
+      <div className="bg-gray-900 rounded-2xl p-6 border border-purple-900/40">
+        <h2 className="font-bold mb-1 text-purple-300">
+          {isHe ? "🧪 לוח סימולציה — בדיקת זרימה מלאה" : "🧪 Simulation Panel — Full Flow Test"}
+        </h2>
+        <p className="text-xs text-gray-400 mb-5">
+          {isHe
+            ? "בדוק את כל המערכת מקצה לקצה: סריקת מניה → רשימת מאסטר → פוזיציה → TA Alert → התראה"
+            : "Test the full system: stock scan → master list → position → TA alert → notification"}
+        </p>
+
+        {/* Symbol input */}
+        <div className="mb-5 flex items-center gap-3">
+          <label className="text-xs text-gray-400 w-24">{isHe ? "מניה לבדיקה:" : "Test symbol:"}</label>
+          <input
+            value={simSymbol}
+            onChange={e => setSimSymbol(e.target.value.toUpperCase())}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm font-mono w-28 text-white"
+            placeholder="e.g. MU"
+          />
+        </div>
+
+        <div className="space-y-3">
+          {[
+            {
+              step: 1,
+              icon: "⚡",
+              title: isHe ? "הרץ סריקת AI מלאה" : "Run Full AI Scan",
+              desc: isHe ? `Claude מנתח את ${simSymbol} ומחליט BUY/SELL/HOLD` : `Claude analyzes ${simSymbol} and decides BUY/SELL/HOLD`,
+              action: async () => {
+                const r = await marketApi.scanPoolNow();
+                return r;
+              },
+            },
+            {
+              step: 2,
+              icon: "📋",
+              title: isHe ? "פרסם רשימת מאסטר" : "Publish Master List",
+              desc: isHe ? "מפרסם את ה-50 המניות הטובות ביותר לכל המשתמשים" : "Publishes top 50 stocks to all users",
+              action: async () => marketApi.publishMasterList(),
+            },
+            {
+              step: 3,
+              icon: "💼",
+              title: isHe ? `צור פוזיציית בדיקה (${simSymbol})` : `Create Test Position (${simSymbol})`,
+              desc: isHe ? `מוסיף ${simSymbol} לתיק שלך (10 יחידות) כדי שה-TA scan ישלח לך התראות` : `Adds ${simSymbol} to your portfolio (10 units) so TA scan alerts fire to you`,
+              action: async () => marketApi.simulateCreatePosition(simSymbol),
+            },
+            {
+              step: 4,
+              icon: "📊",
+              title: isHe ? "הפעל TA Scan עכשיו" : "Run TA Scan Now",
+              desc: isHe ? "ניתוח טכני מיידי — אם יש סיגנל BUY/SELL תקבל התראה" : "Immediate technical analysis — if BUY/SELL signal, you get an alert",
+              action: async () => marketApi.simulateTaScan(),
+            },
+            {
+              step: 5,
+              icon: "🔔",
+              title: isHe ? "שלח התראת בדיקה" : "Send Test Notification",
+              desc: isHe ? "שולח התראה ישירה לכל הערוצים (Push + SMS + Email + תיבת דואר)" : "Sends alert to all channels (Push + SMS + Email + Inbox)",
+              action: async () => marketApi.simulateTestNotification(),
+            },
+          ].map(({ step, icon, title, desc, action }) => (
+            <div key={step} className="flex items-start gap-4 bg-gray-800/40 rounded-xl p-4 border border-gray-700/40">
+              <div className="flex flex-col items-center gap-1 shrink-0">
+                <span className="w-7 h-7 rounded-full bg-purple-900/60 border border-purple-700/50 flex items-center justify-center text-xs font-bold text-purple-300">
+                  {step}
+                </span>
+                <span className="text-lg">{icon}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white">{title}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+                {simStep[step] && (
+                  <div className={`mt-2 p-2 rounded-lg text-xs ${simStep[step].error ? "bg-red-900/20 text-red-400" : "bg-green-900/20 text-green-300"}`}>
+                    {simStep[step].error
+                      ? simStep[step].error
+                      : JSON.stringify(simStep[step]).slice(0, 120)}
+                  </div>
+                )}
+              </div>
+              <button
+                disabled={simLoading[step]}
+                onClick={async () => {
+                  setSimLoading(l => ({ ...l, [step]: true }));
+                  setSimStep(s => ({ ...s, [step]: null }));
+                  try {
+                    const r = await action();
+                    setSimStep(s => ({ ...s, [step]: r }));
+                  } catch (e: any) {
+                    setSimStep(s => ({ ...s, [step]: { error: e?.response?.data?.detail || String(e) } }));
+                  }
+                  setSimLoading(l => ({ ...l, [step]: false }));
+                }}
+                className="shrink-0 text-xs bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
+              >
+                {simLoading[step] ? "..." : (isHe ? "הרץ" : "Run")}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-xs text-gray-600 mt-4">
+          {isHe
+            ? "אחרי הסימולציה — לחץ 'הרץ' בשלב 3 שוב עם כמות 0 כדי למחוק את הפוזיציה, או השתמש ב-API ישיר"
+            : "After simulation — remove test position via the API or re-run step 3 with quantity 0"}
+        </p>
       </div>
 
       {/* Quick Actions */}

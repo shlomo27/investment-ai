@@ -540,6 +540,111 @@ async def universe_stats(
     }
 
 
+# ─── Simulation / Testing ────────────────────────────────────────────────────
+
+@router.post("/simulate/ta-scan-now")
+async def simulate_ta_scan(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Admin: run TA scan immediately (normally runs every 30 min)."""
+    import asyncio
+    from app.workers.in_process_scheduler import job_daily_ta_scan
+    asyncio.create_task(job_daily_ta_scan())
+    return {"started": True, "message": "TA scan running in background — check notifications inbox in ~1 min"}
+
+
+@router.post("/simulate/test-notification")
+async def simulate_test_notification(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin: send a test notification to yourself via all configured channels."""
+    from app.services.notifications.service import NotificationService
+    from app.db.models.notification import NotificationType
+
+    svc = NotificationService()
+    notif = await svc.send_notification(
+        user_id=current_user.id,
+        recommendation_id=None,
+        internal_detail={
+            "type": "TEST",
+            "message": "This is a test notification to verify push/SMS/email channels.",
+        },
+        db=db,
+        notification_type=NotificationType.SYSTEM,
+        title="🧪 Test Notification | בדיקת מערכת התראות",
+    )
+    return {
+        "sent": notif is not None,
+        "channels": notif.channels_sent if notif else [],
+        "notification_id": notif.id if notif else None,
+    }
+
+
+@router.post("/simulate/create-test-position")
+async def simulate_create_test_position(
+    symbol: str,
+    quantity: float = 10.0,
+    price: float = 100.0,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin: create a test portfolio position so TA alerts will fire for this symbol."""
+    from app.db.models.portfolio import Portfolio
+    from sqlalchemy import select as sa_select
+
+    symbol = symbol.upper()
+
+    # Check if position already exists
+    existing = await db.execute(
+        sa_select(Portfolio).where(
+            Portfolio.user_id == current_user.id,
+            Portfolio.symbol == symbol,
+        )
+    )
+    pos = existing.scalar_one_or_none()
+    if pos:
+        pos.quantity = quantity
+        pos.avg_buy_price = price
+    else:
+        pos = Portfolio(
+            user_id=current_user.id,
+            symbol=symbol,
+            quantity=quantity,
+            avg_buy_price=price,
+        )
+        db.add(pos)
+
+    await db.flush()
+    return {
+        "created": True,
+        "symbol": symbol,
+        "quantity": quantity,
+        "avg_buy_price": price,
+        "note": f"TA alerts for {symbol} will now fire to user {current_user.email}",
+    }
+
+
+@router.delete("/simulate/remove-test-position")
+async def simulate_remove_test_position(
+    symbol: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin: remove a test position after simulation."""
+    from app.db.models.portfolio import Portfolio
+    from sqlalchemy import select as sa_select, delete as sa_delete
+
+    symbol = symbol.upper()
+    await db.execute(
+        sa_delete(Portfolio).where(
+            Portfolio.user_id == current_user.id,
+            Portfolio.symbol == symbol,
+        )
+    )
+    return {"removed": True, "symbol": symbol}
+
+
 # ─── Earnings Status ─────────────────────────────────────────────────────────
 
 @router.post("/earnings/check-now")
