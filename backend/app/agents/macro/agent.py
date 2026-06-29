@@ -1,6 +1,6 @@
 """
 Macro Context Agent — Gemini
-Broad macro and sector context using Google Gemini.
+Broad macro and sector context using Google Gemini + real-time FRED data.
 """
 import asyncio
 import json
@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 import structlog
 
+import httpx
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -15,6 +16,73 @@ from app.core.config import settings
 from app.agents.state import MarketDataState
 
 logger = structlog.get_logger(__name__)
+
+
+async def _fetch_fred_series(client: httpx.AsyncClient, series_id: str) -> Optional[float]:
+    """Fetch latest value from FRED public CSV endpoint."""
+    try:
+        resp = await client.get(
+            f"https://fred.stlouisfed.org/graph/fredgraph.csv",
+            params={"id": series_id},
+            timeout=8,
+        )
+        if resp.status_code != 200:
+            return None
+        lines = [l for l in resp.text.strip().split("\n") if l and not l.startswith("DATE")]
+        for line in reversed(lines):
+            parts = line.split(",")
+            if len(parts) == 2 and parts[1].strip() not in (".", ""):
+                return float(parts[1].strip())
+    except Exception:
+        pass
+    return None
+
+
+async def fetch_realtime_macro() -> Dict[str, Any]:
+    """
+    Fetch current macro indicators from FRED (free, no key required).
+    Returns a dict with latest values.
+    """
+    result: Dict[str, Any] = {}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            fed_rate, ten_yr, cpi_val, cpi_year_ago, unemployment = await asyncio.gather(
+                _fetch_fred_series(client, "FEDFUNDS"),      # Fed Funds Rate
+                _fetch_fred_series(client, "DGS10"),          # 10Y Treasury
+                _fetch_fred_series(client, "CPIAUCSL"),       # CPI (latest)
+                _fetch_fred_series(client, "CPIAUCSL"),       # Same series, we'll compute YoY below
+                _fetch_fred_series(client, "UNRATE"),         # Unemployment rate
+                return_exceptions=True,
+            )
+            if isinstance(fed_rate, float):
+                result["fed_funds_rate_pct"] = round(fed_rate, 2)
+            if isinstance(ten_yr, float):
+                result["ten_year_treasury_pct"] = round(ten_yr, 2)
+            if isinstance(unemployment, float):
+                result["unemployment_rate_pct"] = round(unemployment, 2)
+
+            # CPI YoY: fetch last 14 months and compute
+            try:
+                resp = await client.get(
+                    "https://fred.stlouisfed.org/graph/fredgraph.csv",
+                    params={"id": "CPIAUCSL"},
+                    timeout=8,
+                )
+                if resp.status_code == 200:
+                    lines = [l for l in resp.text.strip().split("\n")
+                             if l and not l.startswith("DATE")]
+                    valid = [(l.split(",")[0], float(l.split(",")[1]))
+                             for l in lines if len(l.split(",")) == 2 and l.split(",")[1].strip() not in (".", "")]
+                    if len(valid) >= 13:
+                        cpi_yoy = (valid[-1][1] - valid[-13][1]) / valid[-13][1] * 100
+                        result["cpi_yoy_pct"] = round(cpi_yoy, 2)
+            except Exception:
+                pass
+
+    except Exception as e:
+        logger.debug("Real-time macro fetch failed", error=str(e))
+
+    return result
 
 SYSTEM_PROMPT = """You are a macro and sector research analyst with deep expertise in global markets.
 You provide broad market context that complements detailed fundamental analysis.
@@ -59,7 +127,11 @@ class MacroContextAgent:
             logger.warning("Gemini unavailable, skipping macro analysis", symbol=symbol)
             return self._empty_analysis(symbol, "GEMINI_API_KEY not configured")
 
-        prompt = self._build_prompt(market_data)
+        # Fetch real-time macro data in parallel with prompt building
+        realtime_macro = await fetch_realtime_macro()
+        logger.debug("Real-time macro fetched", data=realtime_macro)
+
+        prompt = self._build_prompt(market_data, realtime_macro)
 
         try:
             response = await asyncio.get_event_loop().run_in_executor(
@@ -78,6 +150,18 @@ class MacroContextAgent:
             result = json.loads(content)
             result["symbol"] = symbol
             result["analyzed_at"] = datetime.now(timezone.utc).isoformat()
+            result["realtime_macro"] = realtime_macro
+            if realtime_macro:
+                parts = []
+                if "fed_funds_rate_pct" in realtime_macro:
+                    parts.append(f"Fed Rate: {realtime_macro['fed_funds_rate_pct']}%")
+                if "ten_year_treasury_pct" in realtime_macro:
+                    parts.append(f"10Y Treasury: {realtime_macro['ten_year_treasury_pct']}%")
+                if "cpi_yoy_pct" in realtime_macro:
+                    parts.append(f"CPI YoY: {realtime_macro['cpi_yoy_pct']}%")
+                if "unemployment_rate_pct" in realtime_macro:
+                    parts.append(f"Unemployment: {realtime_macro['unemployment_rate_pct']}%")
+                result["real_time_macro_summary"] = " | ".join(parts)
 
             logger.info(
                 "MacroContextAgent completed",
@@ -98,9 +182,20 @@ class MacroContextAgent:
     def _v(value: Any, default: Any = "N/A") -> Any:
         return value if value is not None else default
 
-    def _build_prompt(self, data: MarketDataState) -> str:
+    def _build_prompt(self, data: MarketDataState, realtime_macro: Optional[Dict[str, Any]] = None) -> str:
         v = self._v
         description = data.get("company_description") or ""
+        rt = realtime_macro or {}
+        macro_data_section = ""
+        if rt:
+            macro_data_section = f"""
+=== LIVE MACRO DATA (Current, from FRED) ===
+Fed Funds Rate: {rt.get('fed_funds_rate_pct', 'N/A')}%
+10-Year Treasury Yield: {rt.get('ten_year_treasury_pct', 'N/A')}%
+CPI Inflation (YoY): {rt.get('cpi_yoy_pct', 'N/A')}%
+Unemployment Rate: {rt.get('unemployment_rate_pct', 'N/A')}%
+Use this LIVE data — do NOT rely on training knowledge for these indicators.
+"""
         return f"""Provide macro and sector context for {data['symbol']} ({data.get('exchange', 'US')}).
 
 Company overview: {description[:300] if description else 'N/A'}
@@ -110,6 +205,7 @@ Country: {v(data.get('country'), 'US')}
 Market Cap: ${v(data.get('market_cap'), 0):,.0f}
 Beta: {v(data.get('beta'), 'N/A')}
 Revenue Growth YoY: {v(data.get('revenue_growth'), 'N/A')}
+{macro_data_section}
 
 Respond ONLY with valid JSON:
 {{

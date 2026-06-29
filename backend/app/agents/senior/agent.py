@@ -76,6 +76,8 @@ class SeniorCommitteeAgent:
         self,
         raw_data: MarketDataState,
         fundamental_analysis: Dict[str, Any],
+        news_analysis: Optional[Dict[str, Any]] = None,
+        macro_analysis: Optional[Dict[str, Any]] = None,
         user_risk_context: Optional[Dict[str, Any]] = None,
         direction_bias: Optional[str] = None,
         language: str = "en",
@@ -88,7 +90,7 @@ class SeniorCommitteeAgent:
             direction_bias=direction_bias,
         )
 
-        prompt = self._build_review_prompt(raw_data, fundamental_analysis, user_risk_context, direction_bias)
+        prompt = self._build_review_prompt(raw_data, fundamental_analysis, user_risk_context, direction_bias, news_analysis, macro_analysis)
 
         llm = self._get_llm()
         if llm is None:
@@ -143,6 +145,8 @@ class SeniorCommitteeAgent:
         analysis: Dict[str, Any],
         risk_ctx: Optional[Dict[str, Any]],
         direction_bias: Optional[str] = None,
+        news_analysis: Optional[Dict[str, Any]] = None,
+        macro_analysis: Optional[Dict[str, Any]] = None,
     ) -> str:
         sentiment = raw.get("social_sentiment") or {}
         earnings = raw.get("earnings_data") or {}
@@ -210,6 +214,36 @@ Current Exposure to {raw['symbol']}: {risk_ctx.get('current_exposure_pct', 0):.1
 Max Allowed Single Position: {risk_ctx.get('max_single_asset_pct', 3):.1f}%
 """
 
+        # Format GPT news analysis for senior
+        news_section = ""
+        if news_analysis and not news_analysis.get("skipped_reason"):
+            news_section = f"""
+=== GPT NEWS INTELLIGENCE (Direct from News Analyst) ===
+Dominant Narrative: {news_analysis.get('dominant_narrative', 'N/A')}
+Overall Impact: {news_analysis.get('overall_market_impact', 'N/A')} / Direction: {news_analysis.get('overall_direction', 'N/A')}
+Sentiment-News Alignment: {news_analysis.get('sentiment_news_alignment', 'N/A')}
+Hidden Signals: {', '.join(news_analysis.get('hidden_signals') or []) or 'None'}
+Red Flags: {', '.join(news_analysis.get('red_flags') or []) or 'None'}
+Opportunities: {', '.join(news_analysis.get('opportunities') or []) or 'None'}
+News Quality Score: {news_analysis.get('news_quality_score', 0)}/100
+"""
+
+        # Format Gemini macro analysis for senior
+        macro_section = ""
+        if macro_analysis and not macro_analysis.get("skipped_reason"):
+            macro_section = f"""
+=== GEMINI MACRO INTELLIGENCE (Direct from Macro Analyst) ===
+Sector Outlook: {macro_analysis.get('sector_outlook', 'N/A')} — {macro_analysis.get('sector_trend', 'N/A')}
+Macro Environment: {macro_analysis.get('macro_environment', 'N/A')}
+Macro Impact on Stock: {macro_analysis.get('macro_impact_on_stock', 'N/A')}
+Competitive Position: {macro_analysis.get('competitive_position', 'N/A')} — {macro_analysis.get('competitive_notes', 'N/A')}
+Regulatory Risk: {macro_analysis.get('regulatory_risk', 'N/A')} — {macro_analysis.get('regulatory_notes', 'N/A')}
+Analyst Consensus Trend: {macro_analysis.get('analyst_consensus_trend', 'N/A')}
+Key Macro Risks: {', '.join(macro_analysis.get('key_macro_risks') or []) or 'None'}
+Key Macro Catalysts: {', '.join(macro_analysis.get('key_macro_catalysts') or []) or 'None'}
+Real-Time Macro: {macro_analysis.get('real_time_macro_summary', 'Not available')}
+"""
+
         v = self._v
         prompt = f"""Review this investment recommendation for {raw['symbol']} ({raw['exchange']}).
 Screener Direction Bias: {direction_bias or 'NEUTRAL'}
@@ -247,10 +281,10 @@ Reddit Score: {v(sentiment.get('reddit_score'), 0):.3f} ({v(sentiment.get('reddi
 Total Mentions: {v(sentiment.get('mentions'), 0):,}
 {sentiment_divergence}
 
-=== HIGH-IMPACT NEWS ===
+=== HIGH-IMPACT NEWS (Raw) ===
 {news_flags if news_flags else 'No strongly-biased news found'}
 Total News Analyzed: {len(news_items)}
-{risk_section}
+{news_section}{macro_section}{risk_section}
 
 Respond ONLY with valid JSON:
 {{

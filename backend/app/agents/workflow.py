@@ -60,6 +60,16 @@ async def node_enrich_data(state: AgentWorkflowState) -> AgentWorkflowState:
     if state.get("data_fetcher_error") or not state.get("data_fetcher_output"):
         return {**state, "enrichment_error": "Skipped - no data from fetcher"}
 
+    # Warn if price data is missing — analysis will proceed but with lower confidence
+    price = (state["data_fetcher_output"] or {}).get("price", 0)
+    if not price or price == 0.0:
+        logger.warning(
+            "Price is 0 — Yahoo Finance likely blocked on Railway. "
+            "Quantitative models (DCF/Monte Carlo) will be skipped. "
+            "Analysis continues using training knowledge.",
+            symbol=state["asset_symbol"],
+        )
+
     market_data = state["data_fetcher_output"]
     try:
         news_result, macro_result = await asyncio.gather(
@@ -153,6 +163,8 @@ async def node_senior_review(state: AgentWorkflowState) -> AgentWorkflowState:
         decision = await agent.review(
             raw_data=state["data_fetcher_output"],
             fundamental_analysis=state["fundamental_analysis"],
+            news_analysis=state.get("news_analysis"),
+            macro_analysis=state.get("macro_analysis"),
             user_risk_context=state.get("user_risk_context"),
             direction_bias=state.get("direction_bias"),
             language=state.get("language", "en"),
@@ -222,6 +234,8 @@ async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowSt
                     "sentiment": raw.get("social_sentiment"),
                     "fetch_timestamp": raw.get("fetch_timestamp"),
                     "fetch_errors": raw.get("fetch_errors"),
+                    "news_analysis": state.get("news_analysis"),
+                    "macro_analysis": state.get("macro_analysis"),
                 },
                 fundamental_analysis={
                     "recommendation_type": fundamental.get("recommendation_type"),
