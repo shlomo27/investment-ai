@@ -38,28 +38,53 @@ async def _fetch_fred_series(client: httpx.AsyncClient, series_id: str) -> Optio
     return None
 
 
+async def _fetch_fear_greed(client: httpx.AsyncClient) -> Optional[Dict[str, Any]]:
+    """Fetch CNN Fear & Greed Index (0=extreme fear, 100=extreme greed)."""
+    try:
+        resp = await client.get(
+            "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+            timeout=8,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            fg = data.get("fear_and_greed", {})
+            score = fg.get("score")
+            rating = fg.get("rating", "")
+            if score is not None:
+                return {"score": round(float(score), 1), "rating": rating}
+    except Exception:
+        pass
+    return None
+
+
 async def fetch_realtime_macro() -> Dict[str, Any]:
     """
-    Fetch current macro indicators from FRED (free, no key required).
+    Fetch current macro indicators from FRED + CNN Fear & Greed (all free, no key).
     Returns a dict with latest values.
     """
     result: Dict[str, Any] = {}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            fed_rate, ten_yr, cpi_val, cpi_year_ago, unemployment = await asyncio.gather(
-                _fetch_fred_series(client, "FEDFUNDS"),      # Fed Funds Rate
-                _fetch_fred_series(client, "DGS10"),          # 10Y Treasury
-                _fetch_fred_series(client, "CPIAUCSL"),       # CPI (latest)
-                _fetch_fred_series(client, "CPIAUCSL"),       # Same series, we'll compute YoY below
-                _fetch_fred_series(client, "UNRATE"),         # Unemployment rate
-                return_exceptions=True,
+            fred_tasks = [
+                _fetch_fred_series(client, "FEDFUNDS"),   # Fed Funds Rate
+                _fetch_fred_series(client, "DGS10"),       # 10Y Treasury
+                _fetch_fred_series(client, "UNRATE"),      # Unemployment rate
+                _fetch_fear_greed(client),                 # CNN Fear & Greed
+            ]
+            fed_rate, ten_yr, unemployment, fear_greed = await asyncio.gather(
+                *fred_tasks, return_exceptions=True
             )
+
             if isinstance(fed_rate, float):
                 result["fed_funds_rate_pct"] = round(fed_rate, 2)
             if isinstance(ten_yr, float):
                 result["ten_year_treasury_pct"] = round(ten_yr, 2)
             if isinstance(unemployment, float):
                 result["unemployment_rate_pct"] = round(unemployment, 2)
+            if isinstance(fear_greed, dict) and fear_greed:
+                result["fear_greed_score"] = fear_greed["score"]
+                result["fear_greed_rating"] = fear_greed["rating"]
 
             # CPI YoY: fetch last 14 months and compute
             try:
@@ -72,7 +97,8 @@ async def fetch_realtime_macro() -> Dict[str, Any]:
                     lines = [l for l in resp.text.strip().split("\n")
                              if l and not l.startswith("DATE")]
                     valid = [(l.split(",")[0], float(l.split(",")[1]))
-                             for l in lines if len(l.split(",")) == 2 and l.split(",")[1].strip() not in (".", "")]
+                             for l in lines if len(l.split(",")) == 2
+                             and l.split(",")[1].strip() not in (".", "")]
                     if len(valid) >= 13:
                         cpi_yoy = (valid[-1][1] - valid[-13][1]) / valid[-13][1] * 100
                         result["cpi_yoy_pct"] = round(cpi_yoy, 2)
@@ -161,6 +187,8 @@ class MacroContextAgent:
                     parts.append(f"CPI YoY: {realtime_macro['cpi_yoy_pct']}%")
                 if "unemployment_rate_pct" in realtime_macro:
                     parts.append(f"Unemployment: {realtime_macro['unemployment_rate_pct']}%")
+                if "fear_greed_score" in realtime_macro:
+                    parts.append(f"Fear&Greed: {realtime_macro['fear_greed_score']}/100 ({realtime_macro.get('fear_greed_rating', '')})")
                 result["real_time_macro_summary"] = " | ".join(parts)
 
             logger.info(
@@ -188,13 +216,18 @@ class MacroContextAgent:
         rt = realtime_macro or {}
         macro_data_section = ""
         if rt:
+            fg = rt.get('fear_greed_score')
+            fg_label = rt.get('fear_greed_rating', '')
+            fg_str = f"{fg}/100 ({fg_label})" if fg is not None else "N/A"
             macro_data_section = f"""
-=== LIVE MACRO DATA (Current, from FRED) ===
+=== LIVE MACRO DATA (Current, from FRED + CNN) ===
 Fed Funds Rate: {rt.get('fed_funds_rate_pct', 'N/A')}%
 10-Year Treasury Yield: {rt.get('ten_year_treasury_pct', 'N/A')}%
 CPI Inflation (YoY): {rt.get('cpi_yoy_pct', 'N/A')}%
 Unemployment Rate: {rt.get('unemployment_rate_pct', 'N/A')}%
+CNN Fear & Greed Index: {fg_str}  (0=Extreme Fear, 50=Neutral, 100=Extreme Greed)
 Use this LIVE data — do NOT rely on training knowledge for these indicators.
+Consider Fear&Greed when assessing contrarian vs momentum opportunities.
 """
         return f"""Provide macro and sector context for {data['symbol']} ({data.get('exchange', 'US')}).
 

@@ -2,6 +2,7 @@
 Market Data API routes
 GET /market/search, GET /market/asset/{symbol}, GET /market/tase/search, GET /market/pool
 """
+import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import structlog
@@ -771,6 +772,43 @@ async def earnings_status(
         }
     finally:
         await r.aclose()
+
+
+# ─── Paper Trading ────────────────────────────────────────────────────────────
+
+@router.get("/paper-trading/status")
+async def paper_trading_status(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get Alpaca paper trading account status, positions, and recent orders."""
+    from app.services.market_data.alpaca_service import get_alpaca_service
+    from app.core.config import settings
+
+    alpaca = get_alpaca_service()
+    configured = bool(settings.ALPACA_API_KEY and not settings.ALPACA_API_KEY.startswith("your_"))
+
+    if not configured:
+        return {
+            "configured": False,
+            "paper": True,
+            "message": "Set ALPACA_API_KEY and ALPACA_API_SECRET in Railway to enable paper trading",
+        }
+
+    account, positions, orders = await asyncio.gather(
+        alpaca.get_account(),
+        alpaca.get_positions(),
+        alpaca.get_closed_orders(limit=20),
+        return_exceptions=True,
+    )
+
+    return {
+        "configured": True,
+        "paper": settings.ALPACA_PAPER,
+        "account": account if not isinstance(account, Exception) else None,
+        "positions": positions if not isinstance(positions, Exception) else [],
+        "recent_orders": orders if not isinstance(orders, Exception) else [],
+        "virtual_portfolio_value": settings.ALPACA_PAPER_PORTFOLIO_VALUE,
+    }
 
 
 # ─── Master List ──────────────────────────────────────────────────────────────

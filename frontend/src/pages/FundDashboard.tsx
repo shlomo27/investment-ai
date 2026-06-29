@@ -25,6 +25,10 @@ const FundDashboard: React.FC = () => {
   const [earningsChecking, setEarningsChecking] = useState(false);
   const [earningsCheckResult, setEarningsCheckResult] = useState<any>(null);
 
+  // Paper trading state
+  const [paperStatus, setPaperStatus] = useState<any>(null);
+  const [paperLoading, setPaperLoading] = useState(false);
+
   // Simulation state
   const [simSymbol, setSimSymbol] = useState("MU");
   const [simStep, setSimStep] = useState<Record<number, any>>({});
@@ -36,6 +40,7 @@ const FundDashboard: React.FC = () => {
     dispatch(fetchRecommendations({}));
     loadUniverseStats();
     loadEarningsStatus();
+    loadPaperStatus();
   }, [dispatch]);
 
   const loadUniverseStats = async () => {
@@ -50,6 +55,15 @@ const FundDashboard: React.FC = () => {
       const status = await marketApi.getEarningsStatus();
       setEarningsStatus(status);
     } catch {}
+  };
+
+  const loadPaperStatus = async () => {
+    setPaperLoading(true);
+    try {
+      const status = await marketApi.getPaperTradingStatus();
+      setPaperStatus(status);
+    } catch {}
+    setPaperLoading(false);
   };
 
   const handleCheckEarningsNow = async () => {
@@ -647,6 +661,158 @@ const FundDashboard: React.FC = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+
+      {/* Alpaca Paper Trading Panel */}
+      <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="font-bold">{isHe ? "מסחר נייר (Alpaca)" : "Paper Trading (Alpaca)"}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {isHe
+                ? "AI מבצע עסקאות נייר אוטומטיות לפי ההמלצות — לבדיקת ביצועי האסטרטגיה"
+                : "AI executes paper trades automatically based on recommendations — strategy performance tracking"}
+            </p>
+          </div>
+          <button
+            onClick={loadPaperStatus}
+            disabled={paperLoading}
+            className="text-xs text-gray-400 hover:text-gray-200 disabled:text-gray-600"
+          >
+            {paperLoading ? (isHe ? "טוען..." : "Loading...") : (isHe ? "רענן" : "Refresh")}
+          </button>
+        </div>
+
+        {paperStatus === null ? (
+          <div className="text-center py-6 text-gray-500 text-sm">
+            {paperLoading ? (isHe ? "טוען..." : "Loading...") : (isHe ? "לא ניתן לטעון נתוני Alpaca" : "Could not load Alpaca data")}
+          </div>
+        ) : !paperStatus.configured ? (
+          <div className="p-4 bg-yellow-900/20 border border-yellow-800/40 rounded-xl text-sm text-yellow-300 space-y-2">
+            <p className="font-medium">{isHe ? "Alpaca לא מוגדר" : "Alpaca not configured"}</p>
+            <p className="text-xs text-yellow-400/70">
+              {isHe
+                ? "כדי להפעיל מסחר נייר, הוסף את המשתנים הבאים ב-Railway:"
+                : "To enable paper trading, add these variables in Railway:"}
+            </p>
+            <ul className="text-xs font-mono space-y-0.5 text-yellow-400/90">
+              <li>ALPACA_API_KEY=<span className="text-gray-400">your_key</span></li>
+              <li>ALPACA_API_SECRET=<span className="text-gray-400">your_secret</span></li>
+            </ul>
+            <p className="text-xs text-gray-500">
+              {isHe ? "הרשם בחינם בכתובת" : "Register free at"}{" "}
+              <span className="text-blue-400 font-mono">alpaca.markets</span>{" "}
+              {isHe ? "→ Paper Trading" : "→ Paper Trading"}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Account Summary */}
+            {paperStatus.account && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-gray-800 rounded-xl p-3">
+                  <p className="text-xs text-gray-400 mb-1">{isHe ? "שווי תיק" : "Portfolio Value"}</p>
+                  <p className="text-lg font-bold text-white">
+                    ${Number(paperStatus.account.portfolio_value || 0).toLocaleString("en", { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+                <div className="bg-gray-800 rounded-xl p-3">
+                  <p className="text-xs text-gray-400 mb-1">{isHe ? "מזומן" : "Cash"}</p>
+                  <p className="text-lg font-bold text-blue-400">
+                    ${Number(paperStatus.account.cash || 0).toLocaleString("en", { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+                <div className="bg-gray-800 rounded-xl p-3">
+                  <p className="text-xs text-gray-400 mb-1">{isHe ? "הון עצמי" : "Equity"}</p>
+                  <p className="text-lg font-bold text-white">
+                    ${Number(paperStatus.account.equity || 0).toLocaleString("en", { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+                <div className="bg-gray-800 rounded-xl p-3">
+                  <p className="text-xs text-gray-400 mb-1">{isHe ? "כוח קנייה" : "Buying Power"}</p>
+                  <p className="text-lg font-bold text-green-400">
+                    ${Number(paperStatus.account.buying_power || 0).toLocaleString("en", { maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Open Positions */}
+            {paperStatus.positions && paperStatus.positions.length > 0 ? (
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+                  {isHe ? "פוזיציות פתוחות" : "Open Positions"} ({paperStatus.positions.length})
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-gray-500 border-b border-gray-800">
+                        <th className="text-left py-1.5">{isHe ? "מניה" : "Symbol"}</th>
+                        <th className="text-right py-1.5">{isHe ? "כמות" : "Qty"}</th>
+                        <th className="text-right py-1.5">{isHe ? "מחיר ממוצע" : "Avg Price"}</th>
+                        <th className="text-right py-1.5">{isHe ? "שווי שוק" : "Market Value"}</th>
+                        <th className="text-right py-1.5">{isHe ? "רווח/הפסד" : "Unrealized P&L"}</th>
+                        <th className="text-right py-1.5">%</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800/50">
+                      {paperStatus.positions.map((pos: any) => {
+                        const pnl = Number(pos.unrealized_pl || 0);
+                        const pnlPct = Number(pos.unrealized_plpc || 0) * 100;
+                        return (
+                          <tr key={pos.symbol} className="hover:bg-gray-800/30">
+                            <td className="py-1.5 font-mono font-bold text-white">{pos.symbol}</td>
+                            <td className="py-1.5 text-right text-gray-300">{Number(pos.qty).toFixed(2)}</td>
+                            <td className="py-1.5 text-right text-gray-300">${Number(pos.avg_entry_price).toFixed(2)}</td>
+                            <td className="py-1.5 text-right text-gray-300">${Number(pos.market_value).toLocaleString("en", { maximumFractionDigits: 0 })}</td>
+                            <td className={`py-1.5 text-right font-medium ${pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                              {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}
+                            </td>
+                            <td className={`py-1.5 text-right ${pnlPct >= 0 ? "text-green-400" : "text-red-400"}`}>
+                              {pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500 text-center py-3">
+                {isHe ? "אין פוזיציות פתוחות" : "No open positions yet — AI will trade as recommendations are approved"}
+              </p>
+            )}
+
+            {/* Recent Orders */}
+            {paperStatus.recent_orders && paperStatus.recent_orders.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+                  {isHe ? "עסקאות אחרונות" : "Recent Orders"}
+                </p>
+                <div className="space-y-1">
+                  {paperStatus.recent_orders.slice(0, 5).map((order: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between bg-gray-800/40 rounded-lg px-3 py-1.5 text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className={`font-mono font-bold w-6 text-center ${order.side === "buy" ? "text-green-400" : "text-red-400"}`}>
+                          {order.side === "buy" ? "B" : "S"}
+                        </span>
+                        <span className="font-mono font-bold text-white">{order.symbol}</span>
+                        <span className="text-gray-400">{Number(order.qty || order.notional || 0).toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-1.5 py-0.5 rounded text-xs ${order.status === "filled" ? "bg-green-900/40 text-green-400" : "bg-gray-700 text-gray-400"}`}>
+                          {order.status}
+                        </span>
+                        <span className="text-gray-500">{order.filled_avg_price ? `$${Number(order.filled_avg_price).toFixed(2)}` : ""}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

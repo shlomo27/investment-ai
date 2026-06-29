@@ -267,9 +267,40 @@ async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowSt
             await session.commit()
 
         logger.info("Recommendation saved", symbol=state["asset_symbol"], rec_id=rec_id)
+
+        # ── Paper trade execution (non-blocking, best-effort) ─────────────
+        paper_trade_result = None
+        try:
+            from app.services.market_data.alpaca_service import get_alpaca_service
+            alpaca = get_alpaca_service()
+            final_rec = senior.get("final_recommendation", "HOLD")
+            position_pct = float(senior.get("recommended_position_size_pct") or 0)
+
+            if final_rec in ("BUY", "STRONG_BUY", "SELL", "STRONG_SELL") and position_pct > 0:
+                side = "buy" if "BUY" in final_rec else "sell"
+                notional = (settings.ALPACA_PAPER_PORTFOLIO_VALUE * position_pct / 100)
+                paper_trade_result = await alpaca.place_paper_trade(
+                    symbol=state["asset_symbol"],
+                    side=side,
+                    notional=notional,
+                    recommendation_id=rec_id,
+                    confidence=float(senior.get("decision_confidence", 50)),
+                )
+                if paper_trade_result:
+                    logger.info(
+                        "Paper trade executed",
+                        symbol=state["asset_symbol"],
+                        side=side,
+                        notional=notional,
+                        order_id=paper_trade_result.get("order_id"),
+                    )
+        except Exception as pt_err:
+            logger.debug("Paper trade skipped", error=str(pt_err))
+
         return {
             **state,
             "recommendation_id": rec_id,
+            "paper_trade": paper_trade_result,
             "workflow_status": "saved",
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }

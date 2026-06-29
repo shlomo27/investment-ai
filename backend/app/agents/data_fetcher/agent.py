@@ -19,6 +19,8 @@ from app.services.market_data.yahoo_service import YahooFinanceService
 from app.services.market_data.tase_service import TASEService
 from app.services.market_data.sentiment_service import SentimentService
 from app.services.market_data.news_service import NewsService
+from app.services.market_data.fmp_service import get_fmp_service
+from app.services.market_data.alpaca_service import get_alpaca_service
 
 logger = structlog.get_logger(__name__)
 
@@ -153,11 +155,48 @@ class DataFetcherAgent:
         return state
 
     async def _fetch_price_and_fundamentals(self, symbol: str, is_tase: bool) -> Dict[str, Any]:
-        """Fetch price data and fundamentals from appropriate source."""
+        """
+        Fetch price data and fundamentals.
+        Priority for US stocks: Yahoo Finance → Alpaca (price only) → FMP
+        """
         if is_tase:
             return await self.tase_service.get_tase_stock_info(symbol)
-        else:
-            return await self.yahoo_service.get_stock_info(symbol)
+
+        # Primary: Yahoo Finance
+        result = await self.yahoo_service.get_stock_info(symbol)
+        if result and result.get("price", 0) > 0:
+            return result
+
+        logger.warning("Yahoo Finance returned no price — trying Alpaca snapshot", symbol=symbol)
+
+        # Fallback 1: Alpaca (price/volume only, fast)
+        alpaca = get_alpaca_service()
+        snap = await alpaca.get_snapshot(symbol)
+        if snap and snap.get("price", 0) > 0:
+            logger.info("Alpaca snapshot succeeded", symbol=symbol, price=snap["price"])
+            # Merge Alpaca price into Yahoo result (which has fundamentals even if price=0)
+            base = result or self._empty_price_data(symbol, "US")
+            base.update({
+                "price":          snap["price"],
+                "previous_close": snap.get("previous_close", 0),
+                "volume":         snap.get("volume", 0),
+            })
+            return base
+
+        logger.warning("Alpaca unavailable — trying FMP", symbol=symbol)
+
+        # Fallback 2: FMP (full fundamentals)
+        fmp_result = await get_fmp_service().get_stock_info(symbol)
+        if fmp_result and fmp_result.get("price", 0) > 0:
+            logger.info("FMP fallback succeeded", symbol=symbol, price=fmp_result["price"])
+            return fmp_result
+
+        logger.error(
+            "All market data sources failed — returning empty data. "
+            "Analysis will use Claude training knowledge only.",
+            symbol=symbol,
+        )
+        return result or self._empty_price_data(symbol, "US")
 
     async def _summarize_with_claude(
         self,

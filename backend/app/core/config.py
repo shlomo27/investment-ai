@@ -68,8 +68,14 @@ class Settings(BaseSettings):
     NEWSAPI_KEY: str = ""
     ALPHA_VANTAGE_KEY: str = ""
 
-    # Financial Modeling Prep — earnings calendar (free tier: 250 req/day)
+    # Financial Modeling Prep — fundamentals + earnings (free tier: 250 req/day)
     FMP_API_KEY: str = ""
+
+    # Alpaca Markets — reliable US market data + paper trading
+    ALPACA_API_KEY: str = ""
+    ALPACA_API_SECRET: str = ""
+    ALPACA_PAPER: bool = True          # True = paper trading (safe default)
+    ALPACA_PAPER_PORTFOLIO_VALUE: float = 100000.0  # virtual $100k portfolio
 
     # Twilio (SMS)
     TWILIO_ACCOUNT_SID: str = ""
