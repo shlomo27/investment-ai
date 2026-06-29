@@ -77,6 +77,16 @@ class Settings(BaseSettings):
     ALPACA_PAPER: bool = True          # True = paper trading (safe default)
     ALPACA_PAPER_PORTFOLIO_VALUE: float = 100000.0  # virtual $100k portfolio
 
+    # Polygon.io — previous-day OHLCV + ticker details (free tier, 15-min delay)
+    POLYGON_API_KEY: str = ""
+
+    # Finnhub — real-time quotes + company news + basic financials (free: 60 req/min)
+    FINNHUB_API_KEY: str = ""
+
+    # Telegram Bot — instant push notifications to a chat/channel
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_CHAT_ID: str = ""
+
     # Twilio (SMS)
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""

@@ -570,6 +570,10 @@ async def simulate_test_notification(
     twilio_token = settings.TWILIO_AUTH_TOKEN or ""
     firebase_ok = bool(settings.FIREBASE_CREDENTIALS_JSON or settings.FIREBASE_CREDENTIALS_PATH)
 
+    tg_token = settings.TELEGRAM_BOT_TOKEN or ""
+    tg_chat = settings.TELEGRAM_CHAT_ID or ""
+    tg_ok = bool(tg_token) and not tg_token.startswith("your_") and bool(tg_chat)
+
     diagnostics = {
         "push": {
             "enabled": current_user.notification_push,
@@ -593,15 +597,28 @@ async def simulate_test_notification(
             "will_send": (current_user.notification_email and bool(current_user.email)
                           and bool(sg_key) and not sg_key.startswith("SG.xxx") and len(sg_key) >= 20),
         },
+        "telegram": {
+            "configured": tg_ok,
+            "has_bot_token": bool(tg_token) and not tg_token.startswith("your_"),
+            "has_chat_id": bool(tg_chat),
+            "will_send": tg_ok,
+        },
     }
 
     svc = NotificationService()
+    # For test notification, also send Telegram directly
+    if tg_ok:
+        from app.services.notifications.telegram_service import get_telegram_service
+        tg_sent = await get_telegram_service().send_test_message()
+        if tg_sent:
+            diagnostics["telegram"]["test_sent"] = True
+
     notif = await svc.send_notification(
         user_id=current_user.id,
         recommendation_id=None,
         internal_detail={
             "type": "TEST",
-            "message": "This is a test notification to verify push/SMS/email channels.",
+            "message": "This is a test notification to verify push/SMS/email/telegram channels.",
         },
         db=db,
         notification_type=NotificationType.SYSTEM,

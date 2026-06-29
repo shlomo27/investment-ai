@@ -895,12 +895,15 @@ const FundDashboard: React.FC = () => {
                   step === 5 && simStep[step].diagnostics ? (
                     <div className="mt-2 space-y-1.5">
                       {/* Channel status */}
-                      {["push", "sms", "email"].map((ch) => {
+                      {["push", "sms", "email", "telegram"].map((ch) => {
                         const d = simStep[step].diagnostics[ch];
-                        const sent = simStep[step].channels?.includes(ch);
-                        const icon = sent ? "✅" : d?.will_send === false ? "❌" : "⚠️";
+                        const sent = simStep[step].channels?.includes(ch) || (ch === "telegram" && d?.test_sent);
+                        const icon = sent ? "✅" : d?.will_send === false || d?.configured === false ? "❌" : "⚠️";
                         const issues = [];
-                        if (!d?.enabled) issues.push(isHe ? "כבוי בהגדרות" : "disabled in settings");
+                        if (ch === "telegram") {
+                          if (!d?.has_bot_token) issues.push(isHe ? "אין BOT_TOKEN" : "no BOT_TOKEN");
+                          else if (!d?.has_chat_id) issues.push(isHe ? "אין CHAT_ID" : "no CHAT_ID");
+                        } else if (!d?.enabled) issues.push(isHe ? "כבוי בהגדרות" : "disabled in settings");
                         else if (ch === "push" && !d?.has_token) issues.push(isHe ? "אין push token" : "no push token");
                         else if (ch === "sms" && !d?.has_phone) issues.push(isHe ? "אין טלפון" : "no phone");
                         else if (ch === "sms" && !d?.twilio_configured) issues.push(isHe ? "Twilio לא מוגדר" : "Twilio not configured");
@@ -973,6 +976,7 @@ const FundDashboard: React.FC = () => {
           <p className="font-medium text-gray-400">{isHe ? "מה נדרש לכל ערוץ?" : "What each channel needs:"}</p>
           <p>📧 <strong>Email</strong> — {isHe ? "הגדר SENDGRID_API_KEY אמיתי ב-Railway (לא SG.xxxxx). חינם עד 100 מיילים/יום. אימות שולח ב-sendgrid.com" : "Set real SENDGRID_API_KEY in Railway (not SG.xxxxx). Free up to 100 emails/day. Verify sender at sendgrid.com"}</p>
           <p>📱 <strong>SMS</strong> — {isHe ? "הגדר TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER אמיתיים ב-Railway. טלפון משתמש חייב להיות בפורמט +972XXXXXXXXX" : "Set real TWILIO_ACCOUNT_SID, AUTH_TOKEN, FROM_NUMBER in Railway. User phone must be +972XXXXXXXXX format"}</p>
+          <p>✈️ <strong>Telegram</strong> — {isHe ? "צור Bot ב-@BotFather → הגדר TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID ב-Railway. שלח /start לבוט כדי לקבל את ה-Chat ID" : "Create Bot via @BotFather → set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in Railway. Send /start to bot to get Chat ID"}</p>
           <p>🔔 <strong>Push</strong> — {isHe ? "דורש Firebase FCM + הרשאת דפדפן. הדפדפן חייב לאשר התראות ולשמור push_token" : "Requires Firebase FCM + browser permission. Browser must grant notifications and register push_token"}</p>
           <p className="mt-2 text-gray-600">{isHe ? "אחרי הסימולציה — לחץ 'מחק' בשלב 3 להסרת הפוזיציה" : "After simulation — click 'Remove' in Step 3 to delete the test position"}</p>
         </div>

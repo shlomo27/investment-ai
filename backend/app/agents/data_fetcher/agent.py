@@ -21,6 +21,8 @@ from app.services.market_data.sentiment_service import SentimentService
 from app.services.market_data.news_service import NewsService
 from app.services.market_data.fmp_service import get_fmp_service
 from app.services.market_data.alpaca_service import get_alpaca_service
+from app.services.market_data.finnhub_service import get_finnhub_service
+from app.services.market_data.polygon_service import get_polygon_service
 
 logger = structlog.get_logger(__name__)
 
@@ -191,8 +193,26 @@ class DataFetcherAgent:
             logger.info("FMP fallback succeeded", symbol=symbol, price=fmp_result["price"])
             return fmp_result
 
+        logger.warning("FMP unavailable — trying Finnhub", symbol=symbol)
+
+        # Fallback 3: Finnhub (real-time quote + profile + financials)
+        finnhub_result = await get_finnhub_service().get_stock_info(symbol)
+        if finnhub_result and finnhub_result.get("price", 0) > 0:
+            logger.info("Finnhub fallback succeeded", symbol=symbol, price=finnhub_result["price"])
+            return finnhub_result
+
+        logger.warning("Finnhub unavailable — trying Polygon", symbol=symbol)
+
+        # Fallback 4: Polygon (previous-day close — last resort)
+        polygon_result = await get_polygon_service().get_stock_info(symbol)
+        if polygon_result and polygon_result.get("price", 0) > 0:
+            logger.info("Polygon fallback succeeded", symbol=symbol, price=polygon_result["price"])
+            base = result or self._empty_price_data(symbol, "US")
+            base.update({k: v for k, v in polygon_result.items() if v is not None})
+            return base
+
         logger.error(
-            "All market data sources failed — returning empty data. "
+            "All 5 market data sources failed — returning empty data. "
             "Analysis will use Claude training knowledge only.",
             symbol=symbol,
         )

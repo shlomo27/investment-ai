@@ -30,6 +30,7 @@ class NotificationService:
         self._firebase_app = None
         self._twilio_client = None
         self._sendgrid_client = None
+        self._telegram_sent_rec_ids: set = set()
 
     async def send_notification(
         self,
@@ -111,6 +112,24 @@ class NotificationService:
                         channels_sent.append("email")
                 else:
                     logger.info("Email skipped — user has no email", user_id=user_id)
+
+            # Send Telegram (global channel — once per recommendation, not per user)
+            if recommendation_id not in self._telegram_sent_rec_ids:
+                rec_type = (internal_detail or {}).get("recommendation_type", "")
+                confidence = float((internal_detail or {}).get("confidence_score") or 0)
+                symbol = (internal_detail or {}).get("symbol", "")
+                if rec_type and symbol:
+                    from app.services.notifications.telegram_service import get_telegram_service
+                    tg = get_telegram_service()
+                    tg_success = await tg.send_investment_alert(
+                        symbol=symbol,
+                        rec_type=rec_type,
+                        confidence=confidence,
+                        language=user.preferred_language or "he",
+                    )
+                    if tg_success:
+                        channels_sent.append("telegram")
+                self._telegram_sent_rec_ids.add(recommendation_id)
 
             notification.channels_sent = channels_sent
             await db.flush()

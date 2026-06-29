@@ -70,9 +70,11 @@ class NewsService:
         Fetch recent news articles for the given stock symbol.
         Returns list of NewsItem dicts sorted by recency.
         """
+        from app.services.market_data.finnhub_service import get_finnhub_service
         tasks = [
             self._fetch_newsapi(symbol, days_back),
             self._fetch_israeli_rss(symbol),
+            get_finnhub_service().get_news(symbol, days_back),
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
