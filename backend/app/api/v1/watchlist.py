@@ -269,3 +269,39 @@ async def update_watchlist_settings(
     await db.flush()
 
     return {"message": "Watchlist settings updated", "id": watchlist_id}
+
+
+class PriceAlertRequest(BaseModel):
+    alert_price_above: Optional[float] = None
+    alert_price_below: Optional[float] = None
+
+
+@router.put("/{watchlist_id}/alert")
+async def set_price_alert(
+    watchlist_id: int,
+    request: PriceAlertRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set price alert thresholds for a watchlist item."""
+    result = await db.execute(
+        select(Watchlist).where(
+            Watchlist.id == watchlist_id,
+            Watchlist.user_id == current_user.id,
+        )
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Watchlist item not found")
+
+    item.alert_price_above = request.alert_price_above
+    item.alert_price_below = request.alert_price_below
+    item.alert_triggered_at = None  # Reset any previous trigger
+    await db.flush()
+
+    return {
+        "message": "Price alert set",
+        "symbol": item.symbol,
+        "alert_price_above": item.alert_price_above,
+        "alert_price_below": item.alert_price_below,
+    }

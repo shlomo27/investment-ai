@@ -22,6 +22,12 @@ class Watchlist(Base):
     last_technical_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     last_signal_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Price alert fields
+    alert_price_above: Mapped[float | None] = mapped_column(Float, nullable=True)
+    alert_price_below: Mapped[float | None] = mapped_column(Float, nullable=True)
+    alert_triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships

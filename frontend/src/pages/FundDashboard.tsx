@@ -5,6 +5,11 @@ import { fetchPortfolioSummary, fetchPortfolioRisk } from "../store/slices/portf
 import { fetchRecommendations } from "../store/slices/notificationsSlice";
 import { marketApi } from "../api/client";
 import { UniverseStats, RecommendationType } from "../types";
+import PerformanceDashboard from "../components/Performance/PerformanceDashboard";
+import RiskProfileModal from "../components/RiskProfileModal";
+import EarningsCalendar from "../components/EarningsCalendar";
+import SectorDashboard from "../components/SectorDashboard";
+import StockComparison from "../components/StockComparison";
 
 const FundDashboard: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -24,6 +29,11 @@ const FundDashboard: React.FC = () => {
   const [earningsStatus, setEarningsStatus] = useState<any>(null);
   const [earningsChecking, setEarningsChecking] = useState(false);
   const [earningsCheckResult, setEarningsCheckResult] = useState<any>(null);
+
+  // Dashboard tab state
+  const [activeTab, setActiveTab] = useState<"fund" | "performance" | "sectors" | "earnings" | "compare">("fund");
+  const [showRiskModal, setShowRiskModal] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(user);
 
   // Paper trading state
   const [paperStatus, setPaperStatus] = useState<any>(null);
@@ -178,6 +188,15 @@ const FundDashboard: React.FC = () => {
 
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
+      {showRiskModal && (
+        <RiskProfileModal
+          currentUser={currentUser}
+          isHebrew={isHe}
+          onClose={() => setShowRiskModal(false)}
+          onSaved={(updated) => setCurrentUser(updated)}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -186,10 +205,69 @@ const FundDashboard: React.FC = () => {
             {isHe ? "תצוגה מקצועית של הקרן — Long/Short Equity" : "Professional fund view — Long/Short Equity"}
           </p>
         </div>
-        <Link to="/dashboard" className="text-sm text-gray-400 hover:text-gray-200">
-          {isHe ? "← דשבורד רגיל" : "← Standard Dashboard"}
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowRiskModal(true)}
+            className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg"
+          >
+            {isHe ? "פרופיל סיכון" : "Risk Profile"}
+          </button>
+          <Link to="/dashboard" className="text-sm text-gray-400 hover:text-gray-200">
+            {isHe ? "← דשבורד רגיל" : "← Standard Dashboard"}
+          </Link>
+        </div>
       </div>
+
+      {/* Tab Navigation */}
+      <div className="flex gap-2 border-b border-gray-800 pb-0">
+        {[
+          { key: "fund", he: "ניהול קרן", en: "Fund Ops" },
+          { key: "performance", he: "ביצועים", en: "Performance" },
+          { key: "sectors", he: "סקטורים", en: "Sectors" },
+          { key: "earnings", he: "דוחות קרובים", en: "Earnings" },
+          { key: "compare", he: "השוואת מניות", en: "Compare" },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key as any)}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
+              activeTab === tab.key
+                ? "border-blue-500 text-blue-400 bg-blue-900/10"
+                : "border-transparent text-gray-400 hover:text-gray-200"
+            }`}
+          >
+            {isHe ? tab.he : tab.en}
+          </button>
+        ))}
+      </div>
+
+      {/* Non-Fund Tabs */}
+      {activeTab === "performance" && (
+        <div className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
+          <PerformanceDashboard isHebrew={isHe} />
+        </div>
+      )}
+      {activeTab === "sectors" && (
+        <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6">
+          <h2 className="font-bold mb-4">{isHe ? "ביצועי סקטורים" : "Sector Performance"}</h2>
+          <SectorDashboard isHebrew={isHe} />
+        </div>
+      )}
+      {activeTab === "earnings" && (
+        <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6">
+          <h2 className="font-bold mb-4">{isHe ? "דוחות רווחים קרובים" : "Upcoming Earnings"}</h2>
+          <EarningsCalendar isHebrew={isHe} daysAhead={30} />
+        </div>
+      )}
+      {activeTab === "compare" && (
+        <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6">
+          <h2 className="font-bold mb-4">{isHe ? "השוואת מניות" : "Stock Comparison"}</h2>
+          <StockComparison isHebrew={isHe} />
+        </div>
+      )}
+
+      {/* Fund Operations Tab Content */}
+      {activeTab === "fund" && (<>
 
       {/* P&L + Exposure Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1000,6 +1078,7 @@ const FundDashboard: React.FC = () => {
           </Link>
         ))}
       </div>
+      </>)}
     </div>
   );
 };

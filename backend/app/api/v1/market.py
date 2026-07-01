@@ -979,3 +979,149 @@ async def publish_master_list(
         "buys": len(buy_rows),
         "sells": len(sell_rows),
     }
+
+
+# ─── Earnings Calendar ────────────────────────────────────────────────────────
+
+@router.get("/earnings-calendar")
+async def get_earnings_calendar(
+    symbols: Optional[str] = Query(None, description="Comma-separated symbols, or omit for all watchlist"),
+    days_ahead: int = Query(14, ge=1, le=90),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """Return upcoming earnings dates for given symbols (or user's watchlist)."""
+    from app.services.market_data.earnings_calendar_service import get_earnings_calendar_service
+    from app.db.models.watchlist import Watchlist
+
+    if symbols:
+        symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    else:
+        wl_result = await db.execute(
+            select(Watchlist).where(Watchlist.user_id == current_user.id)
+        )
+        symbol_list = [w.symbol for w in wl_result.scalars().all()]
+
+    if not symbol_list:
+        return []
+
+    return await get_earnings_calendar_service().get_upcoming_earnings(symbol_list, days_ahead)
+
+
+# ─── Sector Performance Dashboard ────────────────────────────────────────────
+
+@router.get("/sectors")
+async def get_sector_performance(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Return weekly sector performance based on recommendation database."""
+    from app.db.models.recommendation import Recommendation, RecommendationStatus
+    from sqlalchemy import func as sqlfunc
+    from app.db.models.asset import Asset as AssetModel
+
+    result = await db.execute(
+        select(
+            AssetModel.sector,
+            sqlfunc.count(Recommendation.id).label("rec_count"),
+            sqlfunc.avg(Recommendation.confidence_score).label("avg_confidence"),
+            sqlfunc.avg(Recommendation.expected_return_pct).label("avg_expected_return"),
+        )
+        .join(AssetModel, AssetModel.id == Recommendation.asset_id)
+        .where(
+            Recommendation.status == RecommendationStatus.APPROVED,
+            AssetModel.sector.isnot(None),
+        )
+        .group_by(AssetModel.sector)
+        .order_by(sqlfunc.avg(Recommendation.confidence_score).desc())
+    )
+    rows = result.all()
+
+    sectors = []
+    for row in rows:
+        if row.sector:
+            sectors.append({
+                "sector": row.sector,
+                "recommendation_count": row.rec_count,
+                "avg_confidence": round(float(row.avg_confidence or 0), 1),
+                "avg_expected_return_pct": round(float(row.avg_expected_return or 0), 1),
+                "signal": "BULLISH" if (row.avg_expected_return or 0) > 0 else "BEARISH",
+            })
+
+    return {
+        "sectors": sectors,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ─── Stock Comparison ────────────────────────────────────────────────────────
+
+class CompareRequest(BaseModel):
+    symbols: List[str]
+    exchange: str = "NASDAQ"
+
+
+@router.post("/compare")
+async def compare_stocks(
+    request: CompareRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Fetch and compare market data for 2 stocks side by side.
+    """
+    if len(request.symbols) < 2 or len(request.symbols) > 4:
+        raise HTTPException(status_code=400, detail="Provide 2-4 symbols to compare")
+
+    yahoo = YahooFinanceService()
+
+    async def _fetch(symbol: str) -> Dict[str, Any]:
+        try:
+            data = await yahoo.get_stock_info(symbol.upper())
+            return data or {"symbol": symbol, "error": "No data"}
+        except Exception as e:
+            return {"symbol": symbol, "error": str(e)}
+
+    results = await asyncio.gather(*[_fetch(s) for s in request.symbols])
+
+    comparison = {}
+    metrics = ["price", "market_cap", "pe_ratio", "forward_pe", "peg_ratio",
+               "revenue_growth", "profit_margin", "roe", "debt_to_equity",
+               "free_cash_flow", "dividend_yield", "beta", "fifty_two_week_high",
+               "fifty_two_week_low", "analyst_recommendation", "sector"]
+
+    for symbol, data in zip(request.symbols, results):
+        comparison[symbol.upper()] = {m: data.get(m) for m in metrics}
+        comparison[symbol.upper()]["name"] = data.get("name", symbol)
+        comparison[symbol.upper()]["error"] = data.get("error")
+
+    return {
+        "symbols": [s.upper() for s in request.symbols],
+        "comparison": comparison,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ─── Insider Trading ─────────────────────────────────────────────────────────
+
+@router.get("/insider/{symbol}")
+async def get_insider_activity(
+    symbol: str,
+    days_back: int = Query(90, ge=7, le=365),
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Fetch recent SEC Form 4 insider transactions for a symbol."""
+    from app.services.market_data.insider_service import get_insider_service
+    return await get_insider_service().get_insider_summary(symbol.upper())
+
+
+# ─── SEC Filings ─────────────────────────────────────────────────────────────
+
+@router.get("/sec-filings/{symbol}")
+async def get_sec_filings(
+    symbol: str,
+    current_user: User = Depends(get_current_active_user),
+) -> Dict[str, Any]:
+    """Fetch recent 10-K and 10-Q filing metadata from SEC EDGAR."""
+    from app.services.market_data.sec_service import get_sec_service
+    return await get_sec_service().get_filings_summary(symbol.upper())

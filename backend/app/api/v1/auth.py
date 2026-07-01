@@ -58,6 +58,10 @@ class ProfileUpdateRequest(BaseModel):
     notification_push: Optional[bool] = None
     max_single_asset_exposure: Optional[float] = Field(None, ge=0.005, le=0.25)
     push_token: Optional[str] = None
+    age_group: Optional[str] = None
+    investment_horizon_months: Optional[int] = None
+    allows_short: Optional[bool] = None
+    allows_volatile: Optional[bool] = None
 
 
 class OnboardingRequest(BaseModel):
@@ -93,6 +97,8 @@ class UserResponse(BaseModel):
     notification_sms: bool
     notification_push: bool
     created_at: datetime
+    age_group: Optional[str] = None
+    investment_horizon_months: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -253,6 +259,14 @@ async def update_profile(
         current_user.max_single_asset_exposure = request.max_single_asset_exposure
     if request.push_token is not None:
         current_user.push_token = request.push_token
+    if request.age_group is not None:
+        current_user.age_group = request.age_group
+    if request.investment_horizon_months is not None:
+        current_user.investment_horizon_months = request.investment_horizon_months
+    if request.allows_short is not None:
+        current_user.allows_short = request.allows_short
+    if request.allows_volatile is not None:
+        current_user.allows_volatile = request.allows_volatile
 
     await db.flush()
     logger.info("Profile updated", user_id=current_user.id)

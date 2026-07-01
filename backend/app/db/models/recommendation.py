@@ -67,6 +67,14 @@ class Recommendation(Base):
     risk_factors: Mapped[list | None] = mapped_column(JSON, nullable=True)
     expected_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
+    # Outcome tracking (filled by PerformanceService)
+    outcome_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    outcome_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    outcome_vs_market_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    outcome_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    outcome_tracked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    outcome_result: Mapped[str | None] = mapped_column(String(20), nullable=True)  # WIN / LOSS / NEUTRAL / PENDING
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     presented_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

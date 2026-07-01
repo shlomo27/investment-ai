@@ -15,6 +15,10 @@ const Watchlist: React.FC = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [technicalLoading, setTechnicalLoading] = useState<number | null>(null);
   const [expandedItem, setExpandedItem] = useState<number | null>(null);
+  const [alertEditing, setAlertEditing] = useState<number | null>(null);
+  const [alertAbove, setAlertAbove] = useState<string>("");
+  const [alertBelow, setAlertBelow] = useState<string>("");
+  const [alertSaving, setAlertSaving] = useState(false);
 
   useEffect(() => {
     fetchWatchlist();
@@ -85,6 +89,22 @@ const Watchlist: React.FC = () => {
       alert(e.response?.data?.detail || "Analysis failed");
     }
     setTechnicalLoading(null);
+  };
+
+  const handleSaveAlert = async (itemId: number) => {
+    setAlertSaving(true);
+    try {
+      await watchlistApi.setPriceAlert(
+        itemId,
+        alertAbove ? parseFloat(alertAbove) : undefined,
+        alertBelow ? parseFloat(alertBelow) : undefined,
+      );
+      setAlertEditing(null);
+      fetchWatchlist();
+    } catch (e: any) {
+      alert(e.response?.data?.detail || "Failed to save alert");
+    }
+    setAlertSaving(false);
   };
 
   const signalColor = (signal?: string) => {
@@ -193,6 +213,17 @@ const Watchlist: React.FC = () => {
                         </span>
                       )}
                       <button
+                        onClick={() => {
+                          setAlertEditing(alertEditing === item.id ? null : item.id);
+                          setAlertAbove(item.alert_price_above ? String(item.alert_price_above) : "");
+                          setAlertBelow(item.alert_price_below ? String(item.alert_price_below) : "");
+                        }}
+                        className="text-xs bg-yellow-600/20 border border-yellow-600/50 text-yellow-400 px-3 py-1.5 rounded-lg hover:bg-yellow-600/30"
+                        title={isHe ? "הגדר התראת מחיר" : "Set price alert"}
+                      >
+                        🔔
+                      </button>
+                      <button
                         onClick={() => handleRunTechnical(item.id)}
                         disabled={technicalLoading === item.id}
                         className="text-xs bg-blue-600/20 border border-blue-600/50 text-blue-400 px-3 py-1.5 rounded-lg hover:bg-blue-600/30 disabled:opacity-50"
@@ -217,6 +248,58 @@ const Watchlist: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Price Alert Panel */}
+                {alertEditing === item.id && (
+                  <div className="border-t border-gray-800 p-4 bg-yellow-900/10">
+                    <p className="text-xs font-medium text-yellow-400 mb-3">
+                      🔔 {isHe ? "התראת מחיר" : "Price Alert"}
+                    </p>
+                    <div className="flex gap-3 items-end flex-wrap">
+                      <div>
+                        <label className="text-xs text-gray-400 block mb-1">{isHe ? "התראה מעל" : "Alert above"}</label>
+                        <input
+                          type="number"
+                          value={alertAbove}
+                          onChange={e => setAlertAbove(e.target.value)}
+                          placeholder="e.g. 200"
+                          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white w-28"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-400 block mb-1">{isHe ? "התראה מתחת" : "Alert below"}</label>
+                        <input
+                          type="number"
+                          value={alertBelow}
+                          onChange={e => setAlertBelow(e.target.value)}
+                          placeholder="e.g. 150"
+                          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white w-28"
+                        />
+                      </div>
+                      <button
+                        onClick={() => handleSaveAlert(item.id)}
+                        disabled={alertSaving}
+                        className="text-xs bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
+                      >
+                        {alertSaving ? (isHe ? "שומר..." : "Saving...") : (isHe ? "שמור" : "Save")}
+                      </button>
+                      <button
+                        onClick={() => setAlertEditing(null)}
+                        className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1.5"
+                      >
+                        {isHe ? "ביטול" : "Cancel"}
+                      </button>
+                    </div>
+                    {(item.alert_price_above || item.alert_price_below) && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        {isHe ? "התראות פעילות: " : "Active alerts: "}
+                        {item.alert_price_above ? `▲$${item.alert_price_above}` : ""}
+                        {item.alert_price_above && item.alert_price_below ? " / " : ""}
+                        {item.alert_price_below ? `▼$${item.alert_price_below}` : ""}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Technical Details */}
                 {isExpanded && tech && (

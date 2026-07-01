@@ -463,6 +463,9 @@ export interface WatchlistItem {
   asset_risk_level?: RiskLevel;
   current_price?: number;
   technical_signal?: TechnicalSignal;
+  alert_price_above?: number | null;
+  alert_price_below?: number | null;
+  alert_triggered_at?: string | null;
 }
 
 export interface RiskMetrics {

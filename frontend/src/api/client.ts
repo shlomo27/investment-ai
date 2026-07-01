@@ -491,6 +491,69 @@ export const watchlistApi = {
       params: { alert_on_technical_signal: alertOnSignal, notes },
     });
   },
+
+  setPriceAlert: async (
+    id: number,
+    alertPriceAbove?: number | null,
+    alertPriceBelow?: number | null
+  ): Promise<void> => {
+    await api.put(`/watchlist/${id}/alert`, {
+      alert_price_above: alertPriceAbove ?? null,
+      alert_price_below: alertPriceBelow ?? null,
+    });
+  },
+};
+
+// ─── Performance API ──────────────────────────────────────────────────────────
+
+export const performanceApi = {
+  getSummary: async (): Promise<any> => {
+    const response = await api.get("/performance/summary");
+    return response.data;
+  },
+
+  getHistory: async (limit = 50, outcomeOnly = false): Promise<any[]> => {
+    const response = await api.get("/performance/history", {
+      params: { limit, outcome_only: outcomeOnly },
+    });
+    return response.data;
+  },
+
+  trackNow: async (): Promise<any> => {
+    const response = await api.post("/performance/track-now");
+    return response.data;
+  },
+};
+
+// ─── Enhanced Market API additions ───────────────────────────────────────────
+
+export const marketExtApi = {
+  getEarningsCalendar: async (symbols?: string, daysAhead = 14): Promise<any[]> => {
+    const response = await api.get("/market/earnings-calendar", {
+      params: { symbols, days_ahead: daysAhead },
+    });
+    return response.data;
+  },
+
+  getSectors: async (): Promise<any> => {
+    const response = await api.get("/market/sectors");
+    return response.data;
+  },
+
+  compareStocks: async (symbols: string[], exchange = "NASDAQ"): Promise<any> => {
+    const response = await api.post("/market/compare", { symbols, exchange });
+    return response.data;
+  },
+
+  getInsiderActivity: async (symbol: string): Promise<any> => {
+    const response = await api.get(`/market/insider/${symbol}`);
+    return response.data;
+  },
+
+  getSecFilings: async (symbol: string): Promise<any> => {
+    const response = await api.get(`/market/sec-filings/${symbol}`);
+    return response.data;
+  },
 };
 
 export default api;

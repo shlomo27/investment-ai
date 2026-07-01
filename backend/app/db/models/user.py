@@ -29,6 +29,10 @@ class User(Base):
     cash_balance: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     max_single_asset_exposure: Mapped[float] = mapped_column(Float, nullable=False, default=0.03)
 
+    # Extended risk profile fields
+    age_group: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "18-25" | "26-35" | "36-50" | "50+"
+    investment_horizon_months: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 3 | 6 | 12 | 36 | 60 | 120
+
     # Investment preferences (set during onboarding)
     investment_type: Mapped[str] = mapped_column(String(10), nullable=False, default="BOTH")  # STOCKS | ETFS | BOTH
     allows_volatile: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
