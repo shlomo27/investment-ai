@@ -26,6 +26,7 @@ TOP_N      = 100
 LONG_COUNT = 80
 MIN_PRICE  = 1.0
 MIN_AVG_VOLUME = 100_000
+MIN_AVG_VOLUME_TASE = 10_000   # TASE shares often have lower daily volume counts
 DOWNLOAD_CHUNK = 200   # symbols per yf.download() call
 
 
@@ -178,9 +179,10 @@ async def run_pre_screener(db) -> dict:
     for sym in all_symbols:
         if sym in all_data:
             m = _compute_metrics(sym, all_data[sym])
+            min_vol = MIN_AVG_VOLUME_TASE if sym.endswith(".TA") else MIN_AVG_VOLUME
             m.passes_filter = (
                 m.price is not None and m.price >= MIN_PRICE and
-                m.avg_volume is not None and m.avg_volume >= MIN_AVG_VOLUME and
+                m.avg_volume is not None and m.avg_volume >= min_vol and
                 m.momentum_3m is not None
             )
         else:

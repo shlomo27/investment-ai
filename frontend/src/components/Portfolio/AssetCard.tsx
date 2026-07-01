@@ -16,7 +16,7 @@ const AssetCard: React.FC<Props> = ({ position: pos, isHe = false }) => {
     <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 flex items-center justify-between hover:border-gray-700 transition-colors">
       <div className="flex items-center gap-4">
         <div className="w-10 h-10 bg-blue-600/20 rounded-xl flex items-center justify-center">
-          <span className="font-bold text-sm text-blue-400">{pos.symbol.slice(0, 2)}</span>
+          <span className="font-bold text-sm text-blue-400">{pos.symbol.replace(".TA", "").slice(0, 3)}</span>
         </div>
         <div>
           <div className="flex items-center gap-2">

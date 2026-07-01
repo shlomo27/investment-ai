@@ -102,15 +102,46 @@ _ETFS = [
 ]
 
 _TASE_STOCKS = [
-    # symbol, name, name_hebrew, sector
-    ("1082373", "Bank Leumi",    "בנק לאומי",               "Financial"),
-    ("1084763", "Bank Hapoalim", "בנק הפועלים",             "Financial"),
-    ("1081316", "Teva Pharma",   "טבע תעשיות פרמצבטיות",   "Healthcare"),
-    ("5122120", "Nice Systems",  "נייס סיסטמס",             "Technology"),
-    ("1100858", "Check Point",   "צ'ק פוינט",               "Technology"),
-    ("6598496", "Wix.com",       "וויקס",                   "Technology"),
-    ("1092270", "Discount Bank", "בנק דיסקונט",             "Financial"),
-    ("5085386", "Tower Semi",    "טאואר סמיקונדקטור",       "Technology"),
+    # symbol (.TA format for yfinance), name, name_hebrew, sector, risk_level
+    # ── Banks ──────────────────────────────────────────────────────────────
+    ("LUMI.TA",  "Bank Leumi",                "בנק לאומי",             "Financial",          RiskLevel.LOW),
+    ("POLI.TA",  "Bank Hapoalim",             "בנק הפועלים",           "Financial",          RiskLevel.LOW),
+    ("DSCT.TA",  "Discount Bank",             "בנק דיסקונט",           "Financial",          RiskLevel.LOW),
+    ("MIZR.TA",  "Mizrahi-Tefahot Bank",      "מזרחי טפחות",           "Financial",          RiskLevel.LOW),
+    ("FTIN.TA",  "First International Bank",  "הבנק הבינלאומי",        "Financial",          RiskLevel.LOW),
+    # ── Insurance ──────────────────────────────────────────────────────────
+    ("PHOE.TA",  "Phoenix Holdings",          "פניקס",                 "Financial",          RiskLevel.MEDIUM),
+    ("CLLT.TA",  "Clal Insurance",            "כלל ביטוח",             "Financial",          RiskLevel.MEDIUM),
+    ("MGDL.TA",  "Migdal Insurance",          "מגדל",                  "Financial",          RiskLevel.MEDIUM),
+    ("MMHD.TA",  "Menorah Mivtachim",         "מנורה מבטחים",          "Financial",          RiskLevel.MEDIUM),
+    # ── Technology / Cyber / Defense ───────────────────────────────────────
+    ("NICE.TA",  "Nice Systems",              "נייס",                  "Technology",         RiskLevel.MEDIUM),
+    ("CHKP.TA",  "Check Point Software",      "צ'ק פוינט",             "Technology",         RiskLevel.LOW),
+    ("WIX.TA",   "Wix.com",                   "וויקס",                 "Technology",         RiskLevel.HIGH),
+    ("ESLT.TA",  "Elbit Systems",             "אלביט מערכות",          "Industrials",        RiskLevel.MEDIUM),
+    ("TSEM.TA",  "Tower Semiconductor",       "טאואר סמיקונדקטור",     "Technology",         RiskLevel.HIGH),
+    # ── Telecom ────────────────────────────────────────────────────────────
+    ("BEZQ.TA",  "Bezeq",                     "בזק",                   "Communication",      RiskLevel.LOW),
+    ("PTNR.TA",  "Partner Communications",    "פרטנר",                 "Communication",      RiskLevel.MEDIUM),
+    ("CLBH.TA",  "Cellcom Israel",            "סלקום",                 "Communication",      RiskLevel.MEDIUM),
+    # ── Chemicals / Materials ──────────────────────────────────────────────
+    ("ICL.TA",   "ICL Group",                 "כיל",                   "Basic Materials",    RiskLevel.MEDIUM),
+    # ── Energy ─────────────────────────────────────────────────────────────
+    ("DLEKG.TA", "Delek Group",               "דלק קבוצה",             "Energy",             RiskLevel.HIGH),
+    ("ENLT.TA",  "Enlight Renewable Energy",  "אנלייט",                "Energy",             RiskLevel.MEDIUM),
+    # ── Healthcare / Pharma ────────────────────────────────────────────────
+    ("TEVA.TA",  "Teva Pharmaceutical",       "טבע",                   "Healthcare",         RiskLevel.MEDIUM),
+    # ── Real Estate ────────────────────────────────────────────────────────
+    ("AZRT.TA",  "Azrieli Group",             "אזריאלי",               "Real Estate",        RiskLevel.LOW),
+    ("AMOT.TA",  "Amot Investments",          "אמות",                  "Real Estate",        RiskLevel.LOW),
+    ("SPEN.TA",  "Shapir Engineering",        "שפיר",                  "Industrials",        RiskLevel.MEDIUM),
+    ("ALHE.TA",  "Alony-Hetz Properties",     "אלוני חץ",              "Real Estate",        RiskLevel.LOW),
+    # ── Retail / Consumer ──────────────────────────────────────────────────
+    ("RTLS.TA",  "Rami Levy Hashikma",        "רמי לוי",               "Consumer Defensive", RiskLevel.MEDIUM),
+    ("SANO.TA",  "Sano Consumer Products",    "סנו",                   "Consumer Defensive", RiskLevel.LOW),
+    # ── Industrial / Conglomerates ─────────────────────────────────────────
+    ("ELCO.TA",  "Elco Holdings",             "אלקו",                  "Industrials",        RiskLevel.MEDIUM),
+    ("ILCO.TA",  "Israel Corporation",        "קורפ ישראל",            "Industrials",        RiskLevel.MEDIUM),
 ]
 
 
@@ -182,7 +213,7 @@ async def seed_asset_pool(db: AsyncSession) -> dict:
         inserted += 1
 
     # TASE stocks
-    for symbol, name, name_hebrew, sector in _TASE_STOCKS:
+    for symbol, name, name_hebrew, sector, risk_level in _TASE_STOCKS:
         if symbol in existing_symbols:
             skipped += 1
             continue
@@ -194,7 +225,8 @@ async def seed_asset_pool(db: AsyncSession) -> dict:
             asset_type=AssetType.STOCK,
             sector=sector,
             country="IL",
-            risk_level=RiskLevel.MEDIUM,
+            risk_level=risk_level,
+            in_universe=True,
             is_active_in_pool=True,
             fundamental_score=50.0,
             sentiment_score=0.0,
