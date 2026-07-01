@@ -282,4 +282,53 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+    # Performance outcome tracking — daily 02:00 IL (off-hours, low impact)
+    scheduler.add_job(
+        job_track_outcomes,
+        CronTrigger(hour=2, minute=0, timezone="Asia/Jerusalem"),
+        id="scheduled_track_outcomes",
+        replace_existing=True,
+    )
+
+    # Watchlist price alert check — every 10 minutes during market hours
+    scheduler.add_job(
+        job_check_price_alerts,
+        "interval",
+        minutes=10,
+        id="scheduled_price_alerts",
+        replace_existing=True,
+    )
+
     return scheduler
+
+
+async def job_track_outcomes():
+    """Daily 02:00 IL — track WIN/LOSS/NEUTRAL outcomes for recommendations ≥30 days old."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.performance_service import get_performance_service
+
+    logger.info("[scheduler] track_outcomes started")
+    try:
+        svc = get_performance_service()
+        async with AsyncSessionLocal() as db:
+            result = await svc.track_pending_outcomes(db)
+            await db.commit()
+        logger.info(f"[scheduler] track_outcomes done: {result}")
+    except Exception as exc:
+        logger.error(f"[scheduler] track_outcomes failed: {exc}")
+
+
+async def job_check_price_alerts():
+    """Every 10 min — check watchlist price alerts, notify users on trigger."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.performance_service import get_performance_service
+
+    try:
+        svc = get_performance_service()
+        async with AsyncSessionLocal() as db:
+            result = await svc.check_price_alerts(db)
+            await db.commit()
+        if result and result.get("triggered", 0) > 0:
+            logger.info(f"[scheduler] price_alerts: {result['triggered']} triggered")
+    except Exception as exc:
+        logger.error(f"[scheduler] price_alerts failed: {exc}")

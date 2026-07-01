@@ -383,6 +383,12 @@ Dividend Yield: {v(data.get('dividend_yield'), 'N/A')}
 Institutional Ownership: {v(data.get('institutional_ownership'), 'N/A')}
 Short Interest: {v(data.get('short_interest'), 'N/A')}
 
+=== INSIDER ACTIVITY (SEC Form 4) ===
+{self._format_insider_activity(data.get('insider_activity'))}
+
+=== SEC FILINGS ===
+{self._format_sec_filings(data.get('sec_filings'))}
+
 === EARNINGS ===
 Last EPS: {v(earnings.get('last_eps'), 'N/A')} (Estimate: {v(earnings.get('eps_estimate'), 'N/A')}, Surprise: {v(earnings.get('eps_surprise_pct'), 'N/A')}%)
 Revenue Last: ${v(earnings.get('revenue_last'), 0):,.0f} (Estimate: ${v(earnings.get('revenue_estimate'), 0):,.0f})
@@ -497,6 +503,37 @@ CRITICAL RULES FOR JSON RESPONSE:
 - Provide empty arrays [] NOT null for list fields when no data is available"""
 
         return prompt
+
+    @staticmethod
+    def _format_insider_activity(insider: Optional[Dict[str, Any]]) -> str:
+        if not insider:
+            return "Not available (SEC EDGAR)"
+        signal = insider.get("signal", "NEUTRAL")
+        count = insider.get("transaction_count", 0)
+        recents = insider.get("recent_transactions") or []
+        lines = [f"Signal: {signal} | Transactions (90d): {count}"]
+        for t in recents[:3]:
+            lines.append(
+                f"  - {t.get('insider_name','?')} ({t.get('officer_title','?')}): "
+                f"{t.get('transaction_type','?')} {t.get('shares','?')} shares @ ${t.get('price','?')} "
+                f"on {t.get('transaction_date','?')}"
+            )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_sec_filings(sec: Optional[Dict[str, Any]]) -> str:
+        if not sec:
+            return "Not available (SEC EDGAR)"
+        annual = sec.get("latest_annual") or {}
+        quarterly = sec.get("latest_quarterly") or {}
+        lines = []
+        if annual:
+            lines.append(f"Latest 10-K: {annual.get('filed','?')} — {annual.get('report_date','?')}")
+        if quarterly:
+            lines.append(f"Latest 10-Q: {quarterly.get('filed','?')} — {quarterly.get('report_date','?')}")
+        if sec.get("has_recent_8k"):
+            lines.append("Recent 8-K filing detected (material event)")
+        return "\n".join(lines) if lines else "No recent filings found"
 
     @staticmethod
     def _format_news_analysis(news: Optional[Dict[str, Any]]) -> str:

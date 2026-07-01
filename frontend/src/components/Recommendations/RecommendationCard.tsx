@@ -48,11 +48,26 @@ const RecommendationCard: React.FC<Props> = ({
             {rec.asset_name && <p className="text-sm text-gray-400">{rec.asset_name}</p>}
           </div>
 
-          <div className="text-right">
+          <div className="text-right space-y-1">
             <div className="text-2xl font-bold mb-1">
               {rec.confidence_score.toFixed(0)}%
             </div>
             <p className="text-xs text-gray-400">{isHe ? "ביטחון" : "Confidence"}</p>
+            {(() => {
+              const alloc = (rec.fundamental_analysis as any)?.allocation_recommendation;
+              if (!alloc || alloc === "NONE") return null;
+              const cls = alloc === "HIGH" ? "bg-green-900/40 text-green-300 border-green-700/40"
+                : alloc === "MEDIUM" ? "bg-blue-900/40 text-blue-300 border-blue-700/40"
+                : "bg-yellow-900/40 text-yellow-300 border-yellow-700/40";
+              const label = isHe
+                ? { HIGH: "הקצאה גבוהה", MEDIUM: "הקצאה בינונית", LOW: "הקצאה נמוכה" }[alloc] || alloc
+                : alloc;
+              return (
+                <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded border ${cls}`}>
+                  {label}
+                </span>
+              );
+            })()}
           </div>
         </div>
 

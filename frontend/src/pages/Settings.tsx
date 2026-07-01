@@ -23,9 +23,21 @@ const Settings: React.FC = () => {
   const [notifEmail, setNotifEmail] = useState(user?.notification_email ?? true);
   const [notifSms, setNotifSms] = useState(user?.notification_sms ?? false);
   const [notifPush, setNotifPush] = useState(user?.notification_push ?? false);
+  const [ageGroup, setAgeGroup] = useState<string>((user as any)?.age_group ?? "");
+  const [horizonMonths, setHorizonMonths] = useState<number>((user as any)?.investment_horizon_months ?? 12);
 
   const [saved, setSaved] = useState(false);
   const [pushStatus, setPushStatus] = useState<"idle" | "requesting" | "done" | "denied">("idle");
+
+  const AGE_GROUPS = ["18-25", "26-35", "36-50", "50+"];
+  const HORIZONS = [
+    { months: 3, he: "3 חודשים", en: "3 Months" },
+    { months: 6, he: "חצי שנה", en: "6 Months" },
+    { months: 12, he: "שנה", en: "1 Year" },
+    { months: 36, he: "3 שנים", en: "3 Years" },
+    { months: 60, he: "5 שנים", en: "5 Years" },
+    { months: 120, he: "10+ שנים", en: "10+ Years" },
+  ];
 
   const profileMeta = user?.risk_profile ? PROFILE_META[user.risk_profile] : null;
 
@@ -38,7 +50,9 @@ const Settings: React.FC = () => {
         notification_email: notifEmail,
         notification_sms: notifSms,
         notification_push: notifPush,
-      })
+        age_group: ageGroup || undefined,
+        investment_horizon_months: horizonMonths,
+      } as any)
     );
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
@@ -105,6 +119,30 @@ const Settings: React.FC = () => {
             <span className="text-xs text-gray-600 mr-auto">{isHe ? "(הוגדר בהרשמה)" : "(set during onboarding)"}</span>
           </div>
         )}
+
+        {/* Age Group */}
+        <div>
+          <label className="text-xs text-gray-500 block mb-2">{isHe ? "קבוצת גיל" : "Age Group"}</label>
+          <div className="flex gap-2 flex-wrap">
+            {AGE_GROUPS.map(a => (
+              <button key={a} onClick={() => setAgeGroup(a)} className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                ageGroup === a ? "bg-blue-600/20 border-blue-500 text-blue-300" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
+              }`}>{a}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Investment Horizon */}
+        <div>
+          <label className="text-xs text-gray-500 block mb-2">{isHe ? "אופק השקעה" : "Investment Horizon"}</label>
+          <div className="flex gap-2 flex-wrap">
+            {HORIZONS.map(h => (
+              <button key={h.months} onClick={() => setHorizonMonths(h.months)} className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                horizonMonths === h.months ? "bg-blue-600/20 border-blue-500 text-blue-300" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
+              }`}>{isHe ? h.he : h.en}</button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* ── Language ────────────────────────────────────────────────────── */}

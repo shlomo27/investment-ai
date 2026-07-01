@@ -93,6 +93,8 @@ class MarketDataState(TypedDict):
     analyst_recommendation: Optional[str]
     institutional_ownership: Optional[float]
     short_interest: Optional[float]
+    insider_activity: Optional[Dict[str, Any]]
+    sec_filings: Optional[Dict[str, Any]]
     fetch_timestamp: str
     fetch_errors: List[str]
 

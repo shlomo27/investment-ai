@@ -23,6 +23,8 @@ from app.services.market_data.fmp_service import get_fmp_service
 from app.services.market_data.alpaca_service import get_alpaca_service
 from app.services.market_data.finnhub_service import get_finnhub_service
 from app.services.market_data.polygon_service import get_polygon_service
+from app.services.market_data.insider_service import get_insider_service
+from app.services.market_data.sec_service import get_sec_service
 
 logger = structlog.get_logger(__name__)
 
@@ -68,11 +70,13 @@ class DataFetcherAgent:
             self._fetch_price_and_fundamentals(symbol, is_tase),
             self.sentiment_service.get_sentiment(symbol),
             self.news_service.get_news(symbol),
+            get_insider_service().get_insider_summary(symbol),
+            get_sec_service().get_filings_summary(symbol),
         ]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        price_data, sentiment_result, news_result = results
+        price_data, sentiment_result, news_result, insider_result, sec_result = results
 
         # Handle price/fundamentals
         if isinstance(price_data, Exception):
@@ -91,6 +95,16 @@ class DataFetcherAgent:
             logger.warning("News fetch failed", symbol=symbol, error=str(news_result))
             fetch_errors.append(f"News: {str(news_result)}")
             news_result = []
+
+        # Handle insider data
+        if isinstance(insider_result, Exception):
+            logger.warning("Insider fetch failed", symbol=symbol, error=str(insider_result))
+            insider_result = None
+
+        # Handle SEC filings
+        if isinstance(sec_result, Exception):
+            logger.warning("SEC fetch failed", symbol=symbol, error=str(sec_result))
+            sec_result = None
 
         # Use Claude to summarize and validate the raw data
         summarized_context = await self._summarize_with_claude(
@@ -141,6 +155,8 @@ class DataFetcherAgent:
             "analyst_recommendation": price_data.get("analyst_recommendation"),
             "institutional_ownership": price_data.get("institutional_ownership"),
             "short_interest": price_data.get("short_interest"),
+            "insider_activity": insider_result,
+            "sec_filings": sec_result,
             "fetch_timestamp": datetime.now(timezone.utc).isoformat(),
             "fetch_errors": fetch_errors,
         }

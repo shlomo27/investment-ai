@@ -1,8 +1,9 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { fetchPortfolioSummary } from "../store/slices/portfolioSlice";
 import { fetchInbox, fetchUnreadCount } from "../store/slices/notificationsSlice";
+import { performanceApi } from "../api/client";
 
 const Dashboard: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -52,6 +53,11 @@ const Dashboard: React.FC = () => {
 
   const riskProfile = user?.risk_profile || "PASSIVE";
   const invType = (user as any)?.investment_type || "BOTH";
+
+  const [perfSummary, setPerfSummary] = useState<any>(null);
+  useEffect(() => {
+    performanceApi.getSummary().then(setPerfSummary).catch(() => {});
+  }, []);
 
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
@@ -230,6 +236,43 @@ const Dashboard: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* AI Performance Summary */}
+      {perfSummary && perfSummary.total_tracked > 0 && (
+        <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-sm">{isHe ? "ביצועי AI — מעקב המלצות" : "AI Performance Tracker"}</h2>
+            <Link to="/fund" className="text-xs text-blue-400 hover:text-blue-300">
+              {isHe ? "פרטים ←" : "Details →"}
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: isHe ? "אחוז הצלחה" : "Win Rate", value: `${perfSummary.win_rate_pct}%`, color: "text-green-400" },
+              { label: isHe ? "תשואה ממוצעת" : "Avg Return", value: `${perfSummary.avg_return_pct > 0 ? "+" : ""}${perfSummary.avg_return_pct}%`, color: perfSummary.avg_return_pct >= 0 ? "text-green-400" : "text-red-400" },
+              { label: isHe ? "alpha vs S&P500" : "vs S&P 500", value: `${perfSummary.avg_vs_market_pct > 0 ? "+" : ""}${perfSummary.avg_vs_market_pct}%`, color: perfSummary.avg_vs_market_pct >= 0 ? "text-green-400" : "text-red-400" },
+              { label: isHe ? "סה\"כ במעקב" : "Tracked", value: perfSummary.total_tracked, color: "text-white" },
+            ].map(kpi => (
+              <div key={kpi.label} className="bg-gray-800 rounded-xl p-3 text-center">
+                <p className="text-xs text-gray-500 mb-1">{kpi.label}</p>
+                <p className={`text-lg font-bold ${kpi.color}`}>{kpi.value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex gap-3">
+            {/* Win bar */}
+            <div className="flex-1">
+              <div className="flex justify-between text-xs text-gray-500 mb-1">
+                <span>{isHe ? "ניצחונות" : "Wins"} ({perfSummary.win_count})</span>
+                <span>{isHe ? "הפסדים" : "Losses"} ({perfSummary.loss_count})</span>
+              </div>
+              <div className="w-full bg-red-900/40 rounded-full h-2 overflow-hidden">
+                <div className="bg-green-500 h-2 rounded-full" style={{ width: `${perfSummary.win_rate_pct}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

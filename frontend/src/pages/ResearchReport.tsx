@@ -947,6 +947,152 @@ const ResearchReport: React.FC = () => {
               <p className="text-sm text-gray-300">{fa.sector_comparison}</p>
             </div>
           )}
+
+          {/* Hard Exclusions Alert */}
+          {fa.hard_exclusions_triggered && fa.hard_exclusions_triggered.length > 0 && (
+            <div className="bg-red-950/30 border border-red-700/40 rounded-xl p-4">
+              <p className="text-xs font-bold text-red-400 mb-2">⚠️ {isHe ? "חריגות קריטיות" : "Hard Exclusion Flags"}</p>
+              <ul className="space-y-1">
+                {fa.hard_exclusions_triggered.map((flag: string, i: number) => (
+                  <li key={i} className="text-xs text-red-300 flex items-start gap-1.5">
+                    <span className="mt-0.5 shrink-0">✗</span>{flag}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Moat + Catalyst Validation */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {fa.moat_classification && (
+              <div className="bg-gray-800/50 rounded-xl p-4">
+                <p className="text-xs font-bold text-gray-400 mb-2">{isHe ? "חפיר תחרותי" : "Economic Moat"}</p>
+                <span className={`text-sm font-bold px-2 py-1 rounded ${
+                  fa.moat_classification === "NONE" ? "bg-gray-700 text-gray-400" : "bg-blue-900/40 text-blue-300"
+                }`}>{fa.moat_classification?.replace(/_/g, " ")}</span>
+                {fa.moat_evidence && <p className="text-xs text-gray-400 mt-2">{fa.moat_evidence}</p>}
+              </div>
+            )}
+            {fa.catalyst_validation && (
+              <div className="bg-gray-800/50 rounded-xl p-4">
+                <p className="text-xs font-bold text-gray-400 mb-2">{isHe ? "אימות קטליזטור" : "Catalyst Validation"}</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="flex gap-1">
+                    {[1,2,3,4,5].map(n => (
+                      <div key={n} className={`w-4 h-4 rounded-sm ${n <= (fa.catalyst_validation?.catalyst_score || 0) ? "bg-blue-500" : "bg-gray-700"}`} />
+                    ))}
+                  </div>
+                  <span className="text-sm font-bold text-blue-400">{fa.catalyst_validation?.catalyst_score ?? 0}/5</span>
+                </div>
+                {fa.catalyst_validation?.primary_catalyst && (
+                  <p className="text-xs text-gray-300">{fa.catalyst_validation.primary_catalyst}</p>
+                )}
+                {fa.catalyst_validation?.expected_date && (
+                  <p className="text-xs text-gray-500 mt-1">{isHe ? "תאריך צפוי:" : "Expected:"} {fa.catalyst_validation.expected_date}</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Scenario Analysis + EV */}
+      {fa?.scenario_analysis && (
+        <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold">{isHe ? "ניתוח תרחישים" : "Scenario Analysis"}</h2>
+            {fa.expected_value != null && (
+              <div className="text-right">
+                <p className="text-xs text-gray-500">{isHe ? "ערך מצופה (EV)" : "Expected Value"}</p>
+                <p className="text-lg font-bold text-blue-400">${fa.expected_value.toFixed(2)}</p>
+                {fa.expected_value_vs_current_pct != null && (
+                  <p className={`text-xs font-medium ${fa.expected_value_vs_current_pct >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    {fa.expected_value_vs_current_pct >= 0 ? "+" : ""}{fa.expected_value_vs_current_pct.toFixed(1)}% {isHe ? "מהמחיר הנוכחי" : "vs current"}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            {(["bull", "base", "bear"] as const).map((key) => {
+              const s = fa.scenario_analysis?.[key];
+              if (!s) return null;
+              const colors = {
+                bull: { bar: "bg-green-500", text: "text-green-400", bg: "bg-green-950/20 border-green-900/30" },
+                base: { bar: "bg-blue-500", text: "text-blue-400", bg: "bg-blue-950/20 border-blue-900/30" },
+                bear: { bar: "bg-red-500", text: "text-red-400", bg: "bg-red-950/20 border-red-900/30" },
+              };
+              const c = colors[key];
+              const label = { bull: isHe ? "תרחיש שורי" : "Bull Case", base: isHe ? "תרחיש בסיס" : "Base Case", bear: isHe ? "תרחיש דובי" : "Bear Case" }[key];
+              return (
+                <div key={key} className={`rounded-xl p-4 border ${c.bg}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-xs font-bold ${c.text}`}>{label}</span>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className="text-gray-400">{isHe ? "הסתברות" : "P"}:</span>
+                      <span className={`font-bold ${c.text}`}>{s.probability_pct}%</span>
+                      {s.price_target && <span className="text-gray-300 font-mono">${s.price_target.toFixed(2)}</span>}
+                      {(s.upside_pct != null || s.downside_pct != null) && (
+                        <span className={`font-bold ${c.text}`}>
+                          {(s.upside_pct ?? s.downside_pct) >= 0 ? "+" : ""}{(s.upside_pct ?? s.downside_pct).toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-1.5 mb-2">
+                    <div className={`${c.bar} h-1.5 rounded-full transition-all`} style={{ width: `${s.probability_pct}%` }} />
+                  </div>
+                  {s.trigger && <p className="text-xs text-gray-400">{s.trigger}</p>}
+                  {s.timeline_months && (
+                    <p className="text-xs text-gray-500 mt-1">{isHe ? "טווח זמן" : "Timeline"}: {s.timeline_months}M</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Allocation Recommendation */}
+          {fa.allocation_recommendation && fa.allocation_recommendation !== "NONE" && (
+            <div className="mt-4 pt-4 border-t border-gray-800 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-500">{isHe ? "המלצת הקצאה" : "Allocation Recommendation"}</p>
+                <p className="text-xs text-gray-400">{fa.suggested_weight_range && `${isHe ? "משקל מוצע" : "Suggested weight"}: ${fa.suggested_weight_range}`}</p>
+              </div>
+              <span className={`text-sm font-bold px-3 py-1.5 rounded-lg border ${
+                fa.allocation_recommendation === "HIGH" ? "bg-green-900/40 text-green-300 border-green-700/40" :
+                fa.allocation_recommendation === "MEDIUM" ? "bg-blue-900/40 text-blue-300 border-blue-700/40" :
+                fa.allocation_recommendation === "LOW" ? "bg-yellow-900/40 text-yellow-300 border-yellow-700/40" :
+                "bg-gray-800 text-gray-400 border-gray-700"
+              }`}>
+                {isHe ? { HIGH: "הקצאה גבוהה", MEDIUM: "הקצאה בינונית", LOW: "הקצאה נמוכה", HOLD: "המתן" }[fa.allocation_recommendation] || fa.allocation_recommendation : fa.allocation_recommendation}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Thesis Breakers */}
+      {fa?.thesis_breakers && fa.thesis_breakers.length > 0 && (
+        <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+          <h2 className="font-bold mb-4">{isHe ? "שוברי התזה — סיכונים קריטיים" : "Thesis Breakers — Critical Risks"}</h2>
+          <div className="space-y-3">
+            {fa.thesis_breakers.map((tb: any, i: number) => (
+              <div key={i} className="flex items-start gap-3 bg-gray-800/40 rounded-xl p-4">
+                <span className="text-red-400 font-bold text-sm shrink-0">#{tb.rank}</span>
+                <div className="flex-1">
+                  <p className="text-sm text-gray-200 font-medium">{tb.risk}</p>
+                  <div className="flex gap-4 mt-1.5 text-xs text-gray-500">
+                    <span>{isHe ? "הסתברות" : "Probability"}: <span className="text-orange-400 font-medium">{tb.probability_pct}%</span></span>
+                    <span>{isHe ? "השפעה" : "Impact"}: <span className="text-red-400 font-medium">{tb.impact_pct}%</span></span>
+                    {tb.risk_adjusted_cost_pct && (
+                      <span>{isHe ? "עלות מתואמת" : "Adj. Cost"}: <span className="text-gray-300 font-medium">{tb.risk_adjusted_cost_pct.toFixed(1)}%</span></span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
