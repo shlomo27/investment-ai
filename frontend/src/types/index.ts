@@ -95,6 +95,7 @@ export interface User {
   notification_email: boolean;
   notification_sms: boolean;
   notification_push: boolean;
+  totp_enabled: boolean;
   created_at: string;
 }
 

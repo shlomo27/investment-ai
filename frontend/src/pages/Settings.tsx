@@ -36,7 +36,7 @@ const Settings: React.FC = () => {
   const [twoFACode, setTwoFACode] = useState("");
   const [twoFAError, setTwoFAError] = useState<string | null>(null);
   const [twoFALoading, setTwoFALoading] = useState(false);
-  const [twoFAEnabled, setTwoFAEnabled] = useState((user as any)?.totp_enabled ?? false);
+  const [twoFAEnabled, setTwoFAEnabled] = useState(user?.totp_enabled ?? false);
 
   const AGE_GROUPS = ["18-25", "26-35", "36-50", "50+"];
   const HORIZONS = [
