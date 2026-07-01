@@ -10,6 +10,8 @@ import RiskProfileModal from "../components/RiskProfileModal";
 import EarningsCalendar from "../components/EarningsCalendar";
 import SectorDashboard from "../components/SectorDashboard";
 import StockComparison from "../components/StockComparison";
+import PerformanceComparisonChart from "../components/Charts/PerformanceComparisonChart";
+import PerformanceTimelineChart from "../components/Charts/PerformanceTimelineChart";
 
 const FundDashboard: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -243,8 +245,12 @@ const FundDashboard: React.FC = () => {
 
       {/* Non-Fund Tabs */}
       {activeTab === "performance" && (
-        <div className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
-          <PerformanceDashboard isHebrew={isHe} />
+        <div className="space-y-6">
+          <PerformanceComparisonChart isHe={isHe} />
+          <PerformanceTimelineChart isHe={isHe} />
+          <div className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
+            <PerformanceDashboard isHebrew={isHe} />
+          </div>
         </div>
       )}
       {activeTab === "sectors" && (

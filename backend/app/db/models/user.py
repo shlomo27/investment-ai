@@ -43,6 +43,8 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     preferred_language: Mapped[str] = mapped_column(String(10), default="he", nullable=False)
     push_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     notification_email: Mapped[bool] = mapped_column(Boolean, default=True)
     notification_sms: Mapped[bool] = mapped_column(Boolean, default=True)
     notification_push: Mapped[bool] = mapped_column(Boolean, default=True)

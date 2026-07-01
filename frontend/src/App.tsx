@@ -22,6 +22,7 @@ import Orders from "./pages/Orders";
 import Watchlist from "./pages/Watchlist";
 import MasterList from "./pages/MasterList";
 import Settings from "./pages/Settings";
+import Performance from "./pages/Performance";
 import NotFound from "./pages/NotFound";
 
 // Layout
@@ -31,6 +32,7 @@ import Sidebar from "./components/Layout/Sidebar";
 // Services
 import { initPushNotifications } from "./services/pushNotifications";
 import { authApi } from "./api/client";
+import { useWebSocket } from "./hooks/useWebSocket";
 
 // ─── Protected Routes ───────────────────────────────────────────────────────────
 
@@ -106,6 +108,9 @@ const App: React.FC = () => {
       return () => clearInterval(interval);
     }
   }, [isAuthenticated, dispatch]);
+
+  // Real-time WebSocket connection for authenticated users
+  useWebSocket(isAuthenticated ? user?.id : undefined, { enabled: isAuthenticated });
 
   return (
     <Router>
@@ -234,6 +239,16 @@ const App: React.FC = () => {
             <ProtectedRoute>
               <AppLayout>
                 <Settings />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/performance"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Performance />
               </AppLayout>
             </ProtectedRoute>
           }

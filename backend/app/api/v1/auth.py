@@ -16,6 +16,8 @@ from app.core.security import (
     verify_password,
     get_password_hash,
     create_token_pair,
+    create_pre_auth_token,
+    verify_pre_auth_token,
     verify_token,
     get_current_active_user,
     Token,
@@ -99,6 +101,7 @@ class UserResponse(BaseModel):
     created_at: datetime
     age_group: Optional[str] = None
     investment_horizon_months: Optional[int] = None
+    totp_enabled: bool = False
 
     class Config:
         from_attributes = True
@@ -173,8 +176,13 @@ async def login(
             detail="Account is deactivated",
         )
 
-    tokens = create_token_pair(user.id, user.email)
+    # If 2FA is enabled, return a pre-auth token instead of full tokens
+    if getattr(user, "totp_enabled", False):
+        pre_auth = create_pre_auth_token(user.id)
+        logger.info("2FA required for login", user_id=user.id)
+        return {"requires_2fa": True, "pre_auth_token": pre_auth}
 
+    tokens = create_token_pair(user.id, user.email)
     logger.info("User logged in", user_id=user.id, email=user.email)
 
     return AuthResponse(
@@ -308,6 +316,110 @@ async def complete_onboarding(
     )
 
     return UserResponse.from_orm(current_user)
+
+
+@router.post("/2fa/setup")
+async def setup_2fa(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate TOTP secret and QR code for 2FA setup. Does not enable 2FA yet."""
+    import pyotp
+    import qrcode
+    import io
+    import base64
+
+    secret = pyotp.random_base32()
+    totp = pyotp.TOTP(secret)
+    otp_uri = totp.provisioning_uri(name=current_user.email, issuer_name="Investment AI")
+
+    qr = qrcode.QRCode(version=1, box_size=6, border=2)
+    qr.add_data(otp_uri)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    qr_b64 = base64.b64encode(buffer.getvalue()).decode()
+
+    current_user.totp_secret = secret
+    await db.flush()
+
+    return {
+        "secret": secret,
+        "otp_uri": otp_uri,
+        "qr_code": f"data:image/png;base64,{qr_b64}",
+    }
+
+
+@router.post("/2fa/enable")
+async def enable_2fa(
+    code: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify TOTP code and permanently enable 2FA on this account."""
+    import pyotp
+
+    if not current_user.totp_secret:
+        raise HTTPException(status_code=400, detail="Run /auth/2fa/setup first")
+
+    if not pyotp.TOTP(current_user.totp_secret).verify(code, valid_window=1):
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+
+    current_user.totp_enabled = True
+    await db.flush()
+    logger.info("2FA enabled", user_id=current_user.id)
+    return {"enabled": True, "message": "Two-factor authentication is now active"}
+
+
+@router.post("/2fa/disable")
+async def disable_2fa(
+    code: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Disable 2FA after verifying the current TOTP code."""
+    import pyotp
+
+    if not current_user.totp_enabled or not current_user.totp_secret:
+        raise HTTPException(status_code=400, detail="2FA is not enabled")
+
+    if not pyotp.TOTP(current_user.totp_secret).verify(code, valid_window=1):
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+
+    current_user.totp_enabled = False
+    current_user.totp_secret = None
+    await db.flush()
+    logger.info("2FA disabled", user_id=current_user.id)
+    return {"disabled": True, "message": "Two-factor authentication has been disabled"}
+
+
+@router.post("/2fa/login")
+async def complete_2fa_login(
+    pre_auth_token: str,
+    code: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Complete login after password verification: supply pre_auth_token + TOTP code."""
+    import pyotp
+
+    user_id = verify_pre_auth_token(pre_auth_token)
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="Invalid session")
+
+    if not user.totp_enabled or not user.totp_secret:
+        raise HTTPException(status_code=400, detail="2FA not configured for this user")
+
+    if not pyotp.TOTP(user.totp_secret).verify(code, valid_window=1):
+        raise HTTPException(status_code=401, detail="Invalid or expired 2FA code")
+
+    tokens = create_token_pair(user.id, user.email)
+    logger.info("2FA login successful", user_id=user.id)
+
+    return AuthResponse(user=UserResponse.from_orm(user), tokens=tokens)
 
 
 @router.get("/admin/delete-all-users")

@@ -174,6 +174,217 @@ class PerformanceService:
             ],
         }
 
+    async def get_comparison_chart(self, db: AsyncSession) -> Dict[str, Any]:
+        """
+        Build AI vs S&P 500 comparison chart.
+        Groups tracked recommendations by month, computes cumulative returns
+        for both the AI portfolio and a buy-and-hold SPY strategy.
+        """
+        from collections import defaultdict
+
+        result = await db.execute(
+            select(Recommendation).where(
+                and_(
+                    Recommendation.outcome_result.isnot(None),
+                    Recommendation.outcome_result != "PENDING",
+                    Recommendation.outcome_return_pct.isnot(None),
+                    Recommendation.approved_at.isnot(None),
+                )
+            ).order_by(Recommendation.approved_at)
+        )
+        recs = result.scalars().all()
+
+        if not recs:
+            return {
+                "data_points": [],
+                "total_ai_return": 0.0,
+                "total_spy_return": 0.0,
+                "alpha": 0.0,
+                "using_real_spy": False,
+            }
+
+        # Group by month
+        monthly: Dict[str, list] = defaultdict(list)
+        for rec in recs:
+            month_key = rec.approved_at.strftime("%Y-%m")
+            ai_return = rec.outcome_return_pct or 0.0
+            spy_est = ai_return - (rec.outcome_vs_market_pct or 0.0)
+            monthly[month_key].append({"ai": ai_return, "spy_est": spy_est})
+
+        # Fetch real SPY monthly returns
+        spy_real = await self._fetch_spy_monthly_returns(
+            start=recs[0].approved_at.date(),
+            end=recs[-1].approved_at.date(),
+        )
+
+        ai_cum = 100.0
+        spy_cum = 100.0
+        data_points = []
+
+        for month in sorted(monthly.keys()):
+            trades = monthly[month]
+            avg_ai = sum(t["ai"] for t in trades) / len(trades)
+            real_spy = spy_real.get(month)
+            avg_spy = real_spy if real_spy is not None else (
+                sum(t["spy_est"] for t in trades) / len(trades)
+            )
+
+            ai_cum *= (1 + avg_ai / 100)
+            spy_cum *= (1 + avg_spy / 100)
+
+            data_points.append({
+                "month": month,
+                "ai_value": round(ai_cum, 2),
+                "spy_value": round(spy_cum, 2),
+                "ai_month_return": round(avg_ai, 2),
+                "spy_month_return": round(avg_spy, 2),
+                "trade_count": len(trades),
+            })
+
+        total_ai = round(ai_cum - 100, 2)
+        total_spy = round(spy_cum - 100, 2)
+
+        return {
+            "data_points": data_points,
+            "total_ai_return": total_ai,
+            "total_spy_return": total_spy,
+            "alpha": round(total_ai - total_spy, 2),
+            "start_value": 100,
+            "end_ai_value": round(ai_cum, 2),
+            "end_spy_value": round(spy_cum, 2),
+            "using_real_spy": bool(spy_real),
+        }
+
+    async def _fetch_spy_monthly_returns(self, start, end) -> Dict[str, float]:
+        """Fetch real SPY monthly returns from Yahoo Finance."""
+        try:
+            import yfinance as yf
+            from datetime import date, timedelta
+
+            fetch_start = start.replace(day=1)
+            fetch_end = end + timedelta(days=35)
+
+            ticker = yf.Ticker("SPY")
+            hist = ticker.history(
+                start=fetch_start.isoformat(),
+                end=fetch_end.isoformat(),
+                interval="1mo",
+            )
+            monthly: Dict[str, float] = {}
+            for idx, row in hist.iterrows():
+                if row.get("Open", 0) > 0:
+                    monthly[idx.strftime("%Y-%m")] = round(
+                        ((row["Close"] - row["Open"]) / row["Open"]) * 100, 2
+                    )
+            return monthly
+        except Exception as e:
+            logger.warning("SPY monthly fetch failed", error=str(e))
+            return {}
+
+    async def get_performance_timeline(self, db: AsyncSession) -> List[Dict[str, Any]]:
+        """Monthly aggregated win rate, avg return, vs market — for the timeline bar chart."""
+        from collections import defaultdict
+
+        result = await db.execute(
+            select(Recommendation).where(
+                and_(
+                    Recommendation.outcome_result.isnot(None),
+                    Recommendation.outcome_result != "PENDING",
+                    Recommendation.approved_at.isnot(None),
+                )
+            ).order_by(Recommendation.approved_at)
+        )
+        recs = result.scalars().all()
+
+        monthly: Dict[str, Any] = defaultdict(lambda: {
+            "wins": 0, "losses": 0, "neutral": 0,
+            "returns": [], "vs_market": [],
+        })
+
+        for rec in recs:
+            m = monthly[rec.approved_at.strftime("%Y-%m")]
+            if rec.outcome_result == "WIN":
+                m["wins"] += 1
+            elif rec.outcome_result == "LOSS":
+                m["losses"] += 1
+            else:
+                m["neutral"] += 1
+            if rec.outcome_return_pct is not None:
+                m["returns"].append(rec.outcome_return_pct)
+            if rec.outcome_vs_market_pct is not None:
+                m["vs_market"].append(rec.outcome_vs_market_pct)
+
+        timeline = []
+        for month in sorted(monthly.keys()):
+            m = monthly[month]
+            total = m["wins"] + m["losses"] + m["neutral"]
+            win_rate = round(m["wins"] / total * 100, 1) if total else 0.0
+            avg_ret = round(sum(m["returns"]) / len(m["returns"]), 2) if m["returns"] else 0.0
+            avg_vs = round(sum(m["vs_market"]) / len(m["vs_market"]), 2) if m["vs_market"] else 0.0
+            timeline.append({
+                "month": month,
+                "win_rate": win_rate,
+                "avg_return": avg_ret,
+                "avg_vs_market": avg_vs,
+                "total": total,
+                "wins": m["wins"],
+                "losses": m["losses"],
+                "neutral": m["neutral"],
+            })
+
+        return timeline
+
+    async def take_portfolio_snapshot(self, db: AsyncSession) -> Dict[str, Any]:
+        """Take a daily snapshot of every active user's portfolio value."""
+        from app.db.models.user import User
+        from app.db.models.portfolio import Portfolio
+        from app.db.models.portfolio_history import PortfolioHistory
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from datetime import date
+
+        now = datetime.now(timezone.utc)
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        users_result = await db.execute(select(User).where(User.is_active == True))
+        users = users_result.scalars().all()
+
+        snapped = 0
+        for user in users:
+            port_result = await db.execute(
+                select(Portfolio).where(Portfolio.user_id == user.id)
+            )
+            positions = port_result.scalars().all()
+
+            market_value = sum(p.current_value or 0 for p in positions)
+            total_value = market_value + user.cash_balance
+            total_pnl = sum(p.pnl or 0 for p in positions)
+            total_pnl_pct = (total_pnl / (total_value - total_pnl) * 100) if (total_value - total_pnl) > 0 else 0.0
+
+            stmt = pg_insert(PortfolioHistory).values(
+                user_id=user.id,
+                snapshot_date=today,
+                total_value=round(total_value, 2),
+                cash_balance=round(user.cash_balance, 2),
+                market_value=round(market_value, 2),
+                total_pnl=round(total_pnl, 2),
+                total_pnl_pct=round(total_pnl_pct, 2),
+            ).on_conflict_do_update(
+                constraint="uq_portfolio_history_user_date",
+                set_={
+                    "total_value": round(total_value, 2),
+                    "cash_balance": round(user.cash_balance, 2),
+                    "market_value": round(market_value, 2),
+                    "total_pnl": round(total_pnl, 2),
+                    "total_pnl_pct": round(total_pnl_pct, 2),
+                }
+            )
+            await db.execute(stmt)
+            snapped += 1
+
+        await db.flush()
+        logger.info("Portfolio snapshot taken", users=snapped, date=today.isoformat())
+        return {"snapped": snapped, "date": today.isoformat()}
+
     async def check_price_alerts(self, db: AsyncSession) -> List[Dict[str, Any]]:
         """
         Check watchlist items for price alert triggers and send notifications.

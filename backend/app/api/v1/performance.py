@@ -2,13 +2,18 @@
 Performance Tracking API
 GET /performance/summary — overall recommendation performance stats
 GET /performance/history — list of tracked recommendations with outcomes
+GET /performance/comparison — AI vs S&P 500 cumulative return chart
+GET /performance/timeline — monthly win rate breakdown
+GET /performance/portfolio-history — daily portfolio value snapshots
 POST /performance/track-now — manually trigger outcome tracking (admin)
+POST /performance/snapshot-now — manually trigger portfolio snapshot (admin)
 """
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
 
 from app.core.database import get_db
 from app.core.security import get_current_active_user
@@ -73,6 +78,72 @@ async def get_performance_history(
         }
         for r in recs
     ]
+
+
+@router.get("/comparison")
+async def get_comparison_chart(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """AI recommendations vs S&P 500 cumulative return comparison chart data."""
+    return await get_performance_service().get_comparison_chart(db)
+
+
+@router.get("/timeline")
+async def get_performance_timeline(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """Monthly performance breakdown: win rate, avg return, vs market."""
+    return await get_performance_service().get_performance_timeline(db)
+
+
+@router.get("/portfolio-history")
+async def get_portfolio_history(
+    days: int = 90,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """Daily portfolio value snapshots for the current user (last N days)."""
+    from app.db.models.portfolio_history import PortfolioHistory
+    from sqlalchemy import desc
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    result = await db.execute(
+        select(PortfolioHistory)
+        .where(
+            and_(
+                PortfolioHistory.user_id == current_user.id,
+                PortfolioHistory.snapshot_date >= cutoff,
+            )
+        )
+        .order_by(PortfolioHistory.snapshot_date)
+    )
+    rows = result.scalars().all()
+    return [
+        {
+            "date": r.snapshot_date.strftime("%Y-%m-%d"),
+            "total_value": r.total_value,
+            "cash_balance": r.cash_balance,
+            "market_value": r.market_value,
+            "total_pnl": r.total_pnl,
+            "total_pnl_pct": r.total_pnl_pct,
+        }
+        for r in rows
+    ]
+
+
+@router.post("/snapshot-now")
+async def take_portfolio_snapshot(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Admin: manually trigger a portfolio snapshot for all users."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+    result = await get_performance_service().take_portfolio_snapshot(db)
+    await db.commit()
+    return result
 
 
 @router.post("/track-now")

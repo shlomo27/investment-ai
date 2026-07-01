@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { loginUser, registerUser } from "../store/slices/authSlice";
+import { authApi } from "../api/client";
 
 const Login: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -12,6 +13,11 @@ const Login: React.FC = () => {
   const [lang, setLang] = useState<"he" | "en">("he");
 
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
+  const [twoFARequired, setTwoFARequired] = useState(false);
+  const [preAuthToken, setPreAuthToken] = useState("");
+  const [twoFACode, setTwoFACode] = useState("");
+  const [twoFAError, setTwoFAError] = useState("");
+  const [twoFALoading, setTwoFALoading] = useState(false);
   const [registerForm, setRegisterForm] = useState({
     email: "",
     password: "",
@@ -26,8 +32,27 @@ const Login: React.FC = () => {
     e.preventDefault();
     const result = await dispatch(loginUser(loginForm));
     if (loginUser.fulfilled.match(result)) {
-      const user = result.payload;
-      navigate(user.is_onboarded ? "/dashboard" : "/onboarding");
+      const payload = result.payload as any;
+      if (payload?.requires_2fa) {
+        setPreAuthToken(payload.pre_auth_token);
+        setTwoFARequired(true);
+        return;
+      }
+      navigate(payload.is_onboarded ? "/dashboard" : "/onboarding");
+    }
+  };
+
+  const handle2FASubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTwoFALoading(true);
+    setTwoFAError("");
+    try {
+      const res = await authApi.complete2FALogin(preAuthToken, twoFACode);
+      navigate(res.user.is_onboarded ? "/dashboard" : "/onboarding");
+    } catch {
+      setTwoFAError(isHe ? "קוד שגוי, נסה שוב" : "Invalid code, please try again");
+    } finally {
+      setTwoFALoading(false);
     }
   };
 
@@ -99,7 +124,42 @@ const Login: React.FC = () => {
             </div>
           )}
 
-          {mode === "login" ? (
+          {twoFARequired ? (
+            <form onSubmit={handle2FASubmit} className="space-y-4">
+              <div className="text-center mb-2">
+                <div className="text-3xl mb-2">🔐</div>
+                <p className="text-sm text-gray-300 font-medium">
+                  {isHe ? "אימות דו-שלבי" : "Two-Factor Authentication"}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {isHe ? "הכנס את הקוד מאפליקציית האימות שלך" : "Enter the code from your authenticator app"}
+                </p>
+              </div>
+              {twoFAError && (
+                <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 text-red-300 text-sm text-center">
+                  {twoFAError}
+                </div>
+              )}
+              <input
+                value={twoFACode}
+                onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="000000"
+                maxLength={6}
+                autoFocus
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-center text-2xl font-mono tracking-[0.5em] text-white focus:outline-none focus:border-blue-500"
+              />
+              <button
+                type="submit"
+                disabled={twoFACode.length !== 6 || twoFALoading}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl py-3 font-medium transition-colors"
+              >
+                {twoFALoading ? (isHe ? "מאמת..." : "Verifying...") : (isHe ? "אמת כניסה" : "Verify Login")}
+              </button>
+              <button type="button" onClick={() => setTwoFARequired(false)} className="w-full text-gray-500 hover:text-gray-300 text-sm py-1">
+                {isHe ? "← חזור" : "← Back"}
+              </button>
+            </form>
+          ) : mode === "login" ? (
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
@@ -201,7 +261,7 @@ const Login: React.FC = () => {
                 {isLoading ? (isHe ? "נרשם..." : "Registering...") : (isHe ? "הרשמה" : "Register")}
               </button>
             </form>
-          )}
+          ) : null}
         </div>
 
         <p className="text-center text-xs text-gray-600 mt-4">

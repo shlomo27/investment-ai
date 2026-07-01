@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Recommendation, RecommendationType, OrderType, TechnicalAnalysis } from "../../types";
 
 interface Props {
@@ -23,6 +24,7 @@ const RecommendationCard: React.FC<Props> = ({
   onDismiss,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const navigate = useNavigate();
 
   const isBuy = rec.recommendation_type.includes("BUY");
   const isSell = rec.recommendation_type.includes("SELL");
@@ -213,6 +215,12 @@ const RecommendationCard: React.FC<Props> = ({
           className="text-xs bg-cyan-900/20 border border-cyan-700/50 text-cyan-400 rounded-lg px-3 py-1.5 hover:bg-cyan-900/40 disabled:opacity-50"
         >
           {isLoadingTechnical ? (isHe ? "מנתח..." : "Analyzing...") : (isHe ? "ניתוח טכני" : "Technical")}
+        </button>
+        <button
+          onClick={() => navigate(`/research/${rec.id}`)}
+          className="text-xs bg-yellow-900/20 border border-yellow-700/50 text-yellow-400 rounded-lg px-3 py-1.5 hover:bg-yellow-900/40"
+        >
+          {isHe ? "מחקר מלא" : "Research"}
         </button>
         <div className="flex-1" />
         {isBuy || (!isSell) ? (

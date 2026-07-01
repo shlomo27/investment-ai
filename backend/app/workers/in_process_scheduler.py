@@ -299,6 +299,14 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+    # Daily portfolio snapshot — 18:00 IL (after US market close)
+    scheduler.add_job(
+        job_portfolio_snapshot,
+        CronTrigger(hour=18, minute=0, timezone="Asia/Jerusalem"),
+        id="scheduled_portfolio_snapshot",
+        replace_existing=True,
+    )
+
     return scheduler
 
 
@@ -332,3 +340,18 @@ async def job_check_price_alerts():
             logger.info(f"[scheduler] price_alerts: {result['triggered']} triggered")
     except Exception as exc:
         logger.error(f"[scheduler] price_alerts failed: {exc}")
+
+
+async def job_portfolio_snapshot():
+    """Daily 18:00 IL — snapshot all user portfolio values for historical chart."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.performance_service import get_performance_service
+
+    try:
+        svc = get_performance_service()
+        async with AsyncSessionLocal() as db:
+            result = await svc.take_portfolio_snapshot(db)
+            await db.commit()
+        logger.info(f"[scheduler] portfolio_snapshot done: {result}")
+    except Exception as exc:
+        logger.error(f"[scheduler] portfolio_snapshot failed: {exc}")

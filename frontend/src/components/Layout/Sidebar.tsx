@@ -18,6 +18,7 @@ const CLIENT_ITEMS: NavItem[] = [
   { to: "/master-list", icon: "📋", label_he: "רשימת מאסטר", label_en: "Master List" },
   { to: "/dashboard", icon: "🏠", label_he: "סקירה כללית", label_en: "Overview" },
   { to: "/portfolio", icon: "📊", label_he: "תיק השקעות", label_en: "Portfolio" },
+  { to: "/performance", icon: "📈", label_he: "ביצועי AI", label_en: "AI Performance" },
   { to: "/orders", icon: "📑", label_he: "עסקאות", label_en: "Orders" },
   { to: "/watchlist", icon: "👁", label_he: "מעקב", label_en: "Watchlist" },
 ];

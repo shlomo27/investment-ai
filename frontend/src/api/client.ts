@@ -134,15 +134,36 @@ export const authApi = {
     return response.data;
   },
 
-  login: async (email: string, password: string): Promise<AuthResponse> => {
-    const response = await api.post<AuthResponse>("/auth/login", {
-      email,
-      password,
+  login: async (email: string, password: string): Promise<AuthResponse | { requires_2fa: true; pre_auth_token: string }> => {
+    const response = await api.post("/auth/login", { email, password });
+    if (response.data.requires_2fa) return response.data;
+    const { tokens } = response.data as AuthResponse;
+    localStorage.setItem("access_token", tokens.access_token);
+    localStorage.setItem("refresh_token", tokens.refresh_token);
+    return response.data as AuthResponse;
+  },
+
+  complete2FALogin: async (preAuthToken: string, code: string): Promise<AuthResponse> => {
+    const response = await api.post<AuthResponse>("/auth/2fa/login", null, {
+      params: { pre_auth_token: preAuthToken, code },
     });
     const { tokens } = response.data;
     localStorage.setItem("access_token", tokens.access_token);
     localStorage.setItem("refresh_token", tokens.refresh_token);
     return response.data;
+  },
+
+  setup2FA: async (): Promise<{ secret: string; otp_uri: string; qr_code: string }> => {
+    const response = await api.post("/auth/2fa/setup");
+    return response.data;
+  },
+
+  enable2FA: async (code: string): Promise<void> => {
+    await api.post("/auth/2fa/enable", null, { params: { code } });
+  },
+
+  disable2FA: async (code: string): Promise<void> => {
+    await api.post("/auth/2fa/disable", null, { params: { code } });
   },
 
   logout: async (): Promise<void> => {
@@ -516,6 +537,28 @@ export const performanceApi = {
     const response = await api.get("/performance/history", {
       params: { limit, outcome_only: outcomeOnly },
     });
+    return response.data;
+  },
+
+  getComparison: async (): Promise<any> => {
+    const response = await api.get("/performance/comparison");
+    return response.data;
+  },
+
+  getTimeline: async (): Promise<any[]> => {
+    const response = await api.get("/performance/timeline");
+    return response.data;
+  },
+
+  getPortfolioHistory: async (days = 90): Promise<any[]> => {
+    const response = await api.get("/performance/portfolio-history", {
+      params: { days },
+    });
+    return response.data;
+  },
+
+  snapshotNow: async (): Promise<any> => {
+    const response = await api.post("/performance/snapshot-now");
     return response.data;
   },
 

@@ -29,6 +29,15 @@ const Settings: React.FC = () => {
   const [saved, setSaved] = useState(false);
   const [pushStatus, setPushStatus] = useState<"idle" | "requesting" | "done" | "denied">("idle");
 
+  // 2FA state
+  const [twoFAStep, setTwoFAStep] = useState<"idle" | "setup" | "verify" | "disable">("idle");
+  const [twoFAQR, setTwoFAQR] = useState<string | null>(null);
+  const [twoFASecret, setTwoFASecret] = useState<string | null>(null);
+  const [twoFACode, setTwoFACode] = useState("");
+  const [twoFAError, setTwoFAError] = useState<string | null>(null);
+  const [twoFALoading, setTwoFALoading] = useState(false);
+  const [twoFAEnabled, setTwoFAEnabled] = useState((user as any)?.totp_enabled ?? false);
+
   const AGE_GROUPS = ["18-25", "26-35", "36-50", "50+"];
   const HORIZONS = [
     { months: 3, he: "3 חודשים", en: "3 Months" },
@@ -56,6 +65,54 @@ const Settings: React.FC = () => {
     );
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
+  };
+
+  const handle2FASetup = async () => {
+    setTwoFALoading(true);
+    setTwoFAError(null);
+    try {
+      const res = await authApi.setup2FA();
+      setTwoFAQR(res.qr_code);
+      setTwoFASecret(res.secret);
+      setTwoFAStep("setup");
+    } catch {
+      setTwoFAError(isHe ? "שגיאה בהגדרת 2FA" : "Failed to setup 2FA");
+    } finally {
+      setTwoFALoading(false);
+    }
+  };
+
+  const handle2FAEnable = async () => {
+    if (twoFACode.length !== 6) return;
+    setTwoFALoading(true);
+    setTwoFAError(null);
+    try {
+      await authApi.enable2FA(twoFACode);
+      setTwoFAEnabled(true);
+      setTwoFAStep("idle");
+      setTwoFACode("");
+      setTwoFAQR(null);
+    } catch {
+      setTwoFAError(isHe ? "קוד שגוי, נסה שוב" : "Invalid code, please try again");
+    } finally {
+      setTwoFALoading(false);
+    }
+  };
+
+  const handle2FADisable = async () => {
+    if (twoFACode.length !== 6) return;
+    setTwoFALoading(true);
+    setTwoFAError(null);
+    try {
+      await authApi.disable2FA(twoFACode);
+      setTwoFAEnabled(false);
+      setTwoFAStep("idle");
+      setTwoFACode("");
+    } catch {
+      setTwoFAError(isHe ? "קוד שגוי, נסה שוב" : "Invalid code, please try again");
+    } finally {
+      setTwoFALoading(false);
+    }
   };
 
   const handleEnablePush = async () => {
@@ -202,6 +259,115 @@ const Settings: React.FC = () => {
              : pushStatus === "done"      ? (isHe ? "✓ Push הופעל!" : "✓ Push enabled!")
              : (isHe ? "🔔 הפעל התרעות Push" : "🔔 Enable Push Notifications")}
           </button>
+        )}
+      </div>
+
+      {/* ── Two-Factor Authentication ────────────────────────────────────── */}
+      <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-sm text-gray-400 uppercase tracking-wider">
+              {isHe ? "אימות דו-שלבי (2FA)" : "Two-Factor Authentication"}
+            </h2>
+            <p className="text-xs text-gray-500 mt-1">
+              {isHe
+                ? "הגן על חשבונך עם Google Authenticator או כל אפליקציית TOTP"
+                : "Protect your account with Google Authenticator or any TOTP app"}
+            </p>
+          </div>
+          <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${twoFAEnabled ? "bg-green-900/40 text-green-300" : "bg-gray-800 text-gray-500"}`}>
+            {twoFAEnabled ? (isHe ? "פעיל" : "Enabled") : (isHe ? "כבוי" : "Disabled")}
+          </span>
+        </div>
+
+        {twoFAError && (
+          <div className="bg-red-900/30 border border-red-700/40 rounded-xl px-3 py-2 text-xs text-red-300">
+            {twoFAError}
+          </div>
+        )}
+
+        {twoFAStep === "idle" && (
+          twoFAEnabled ? (
+            <button
+              onClick={() => { setTwoFAStep("disable"); setTwoFACode(""); setTwoFAError(null); }}
+              className="w-full border border-red-700/50 text-red-400 hover:bg-red-900/20 text-sm py-2.5 rounded-xl transition-colors"
+            >
+              {isHe ? "בטל אימות דו-שלבי" : "Disable 2FA"}
+            </button>
+          ) : (
+            <button
+              onClick={handle2FASetup}
+              disabled={twoFALoading}
+              className="w-full border border-blue-700/50 text-blue-400 hover:bg-blue-900/20 text-sm py-2.5 rounded-xl transition-colors disabled:opacity-50"
+            >
+              {twoFALoading ? (isHe ? "מכין..." : "Setting up...") : (isHe ? "🔐 הפעל אימות דו-שלבי" : "🔐 Enable 2FA")}
+            </button>
+          )
+        )}
+
+        {twoFAStep === "setup" && twoFAQR && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-300">
+              {isHe
+                ? "סרוק את קוד ה-QR עם Google Authenticator, לאחר מכן הכנס את הקוד שמוצג:"
+                : "Scan the QR code with Google Authenticator, then enter the code shown:"}
+            </p>
+            <div className="flex justify-center">
+              <img src={twoFAQR} alt="2FA QR Code" className="w-48 h-48 rounded-xl border-4 border-white" />
+            </div>
+            {twoFASecret && (
+              <div className="bg-gray-800 rounded-xl px-4 py-2 text-center">
+                <p className="text-xs text-gray-500 mb-1">{isHe ? "או הכנס ידנית:" : "Or enter manually:"}</p>
+                <code className="text-xs text-blue-300 font-mono tracking-widest">{twoFASecret}</code>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                value={twoFACode}
+                onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="000000"
+                maxLength={6}
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-center text-lg font-mono tracking-[0.4em] text-white focus:outline-none focus:border-blue-500"
+              />
+              <button
+                onClick={handle2FAEnable}
+                disabled={twoFACode.length !== 6 || twoFALoading}
+                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+              >
+                {twoFALoading ? "..." : (isHe ? "אמת" : "Verify")}
+              </button>
+            </div>
+            <button onClick={() => { setTwoFAStep("idle"); setTwoFAQR(null); }} className="w-full text-gray-500 hover:text-gray-300 text-xs py-1">
+              {isHe ? "ביטול" : "Cancel"}
+            </button>
+          </div>
+        )}
+
+        {twoFAStep === "disable" && (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-300">
+              {isHe ? "הכנס את הקוד מהאפליקציה כדי לבטל:" : "Enter your authenticator code to disable:"}
+            </p>
+            <div className="flex gap-2">
+              <input
+                value={twoFACode}
+                onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="000000"
+                maxLength={6}
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-center text-lg font-mono tracking-[0.4em] text-white focus:outline-none focus:border-blue-500"
+              />
+              <button
+                onClick={handle2FADisable}
+                disabled={twoFACode.length !== 6 || twoFALoading}
+                className="bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-medium"
+              >
+                {twoFALoading ? "..." : (isHe ? "בטל" : "Disable")}
+              </button>
+            </div>
+            <button onClick={() => { setTwoFAStep("idle"); setTwoFACode(""); }} className="w-full text-gray-500 hover:text-gray-300 text-xs py-1">
+              {isHe ? "חזור" : "Cancel"}
+            </button>
+          </div>
         )}
       </div>
 

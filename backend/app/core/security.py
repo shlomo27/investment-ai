@@ -68,6 +68,30 @@ def verify_token(token: str, token_type: str = "access") -> TokenData:
         raise credentials_exception
 
 
+def create_pre_auth_token(user_id: int) -> str:
+    """Short-lived token (10 min) used during the 2FA verification step."""
+    expire = datetime.now(timezone.utc) + timedelta(minutes=10)
+    return jwt.encode(
+        {"sub": str(user_id), "type": "pre_auth", "exp": expire},
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+    )
+
+
+def verify_pre_auth_token(token: str) -> int:
+    """Verify pre-auth token and return user_id. Raises HTTPException on failure."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("type") != "pre_auth":
+            raise ValueError("wrong type")
+        return int(payload["sub"])
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired 2FA session",
+        )
+
+
 def create_token_pair(user_id: int, email: str) -> Token:
     access_token = create_access_token({"sub": str(user_id), "email": email})
     refresh_token = create_refresh_token({"sub": str(user_id), "email": email})
