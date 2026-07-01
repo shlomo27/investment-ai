@@ -49,6 +49,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
 class ProfileUpdateRequest(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
@@ -212,11 +216,11 @@ async def login_form(
 
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
-    refresh_token: str,
+    body: RefreshRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """Refresh access token using refresh token."""
-    token_data = verify_token(refresh_token, token_type="refresh")
+    """Refresh access token using refresh token (sent in JSON body)."""
+    token_data = verify_token(body.refresh_token, token_type="refresh")
 
     result = await db.execute(select(User).where(User.id == token_data.user_id))
     user = result.scalar_one_or_none()

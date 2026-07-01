@@ -40,6 +40,8 @@ class RecommendationResponse(BaseModel):
     technical_analysis: Optional[Dict[str, Any]]
     risk_factors: Optional[List]
     expected_return_pct: Optional[float]
+    trigger_type: Optional[str] = None
+    trigger_details: Optional[str] = None
     asset_name: Optional[str]
     sector: Optional[str]
     created_at: datetime
@@ -120,6 +122,8 @@ async def get_recommendations(
             technical_analysis=rec.technical_analysis,
             risk_factors=rec.risk_factors,
             expected_return_pct=rec.expected_return_pct,
+            trigger_type=rec.trigger_type,
+            trigger_details=rec.trigger_details,
             asset_name=asset.name if asset else None,
             sector=asset.sector if asset else None,
             created_at=rec.created_at,
@@ -221,6 +225,8 @@ async def get_recommendation(
         technical_analysis=rec.technical_analysis,
         risk_factors=rec.risk_factors,
         expected_return_pct=rec.expected_return_pct,
+        trigger_type=rec.trigger_type,
+        trigger_details=rec.trigger_details,
         asset_name=asset.name if asset else None,
         sector=asset.sector if asset else None,
         created_at=rec.created_at,

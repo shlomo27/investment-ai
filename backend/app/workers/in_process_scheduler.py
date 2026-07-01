@@ -8,6 +8,7 @@ across the 4 uvicorn workers only ONE worker actually executes each job
 Schedule (Asia/Jerusalem timezone):
   Sunday    07:00  — load_universe         (refresh S&P500+S&P400+TA-125 from Wikipedia)
   Daily     07:30  — earnings_watcher      (only during earnings seasons; ≥20 fresh → trigger quarterly scan)
+  Daily     08:00  — pre_screener          (momentum-score universe → refresh active pool: top 80 LONG + 20 SHORT)
   Every 30min      — ta_scan               (TA for all master-list stocks — free, no Claude)
   Every 30min      — news_watcher          (news+social for master-list stocks → alerts to holders)
   Wednesday 09:00  — weekly_full_scan      (full Claude AI on ~100 active pool stocks — keeps recs fresh)
@@ -237,6 +238,15 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         job_load_universe,
         CronTrigger(day_of_week="sun", hour=7, minute=0, timezone="Asia/Jerusalem"),
         id="scheduled_load_universe",
+        replace_existing=True,
+    )
+
+    # Daily pre-screener — 08:00 IL: momentum-score the universe, refresh the
+    # active pool (top 80 LONG + 20 SHORT) that ta_scan and full_scan work on.
+    scheduler.add_job(
+        job_run_prescreener,
+        CronTrigger(hour=8, minute=0, timezone="Asia/Jerusalem"),
+        id="scheduled_prescreener",
         replace_existing=True,
     )
 

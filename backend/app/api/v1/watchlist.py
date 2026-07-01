@@ -32,6 +32,9 @@ class WatchlistItemResponse(BaseModel):
     symbol: str
     asset_id: Optional[int]
     alert_on_technical_signal: bool
+    alert_price_above: Optional[float] = None
+    alert_price_below: Optional[float] = None
+    alert_triggered_at: Optional[datetime] = None
     last_technical_analysis: Optional[Dict[str, Any]]
     last_signal_sent_at: Optional[datetime]
     notes: Optional[str]
@@ -70,6 +73,9 @@ async def get_watchlist(
             symbol=item.symbol,
             asset_id=item.asset_id,
             alert_on_technical_signal=item.alert_on_technical_signal,
+            alert_price_above=item.alert_price_above,
+            alert_price_below=item.alert_price_below,
+            alert_triggered_at=item.alert_triggered_at,
             last_technical_analysis=item.last_technical_analysis,
             last_signal_sent_at=item.last_signal_sent_at,
             notes=item.notes,

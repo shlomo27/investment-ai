@@ -149,7 +149,7 @@ async def lifespan(app: FastAPI):
         scheduler.start()
         logger.info(
             "In-process scheduler started",
-            jobs=["load_universe Sun 07:00 IL", "prescreener daily 08:00 IL", "full_scan daily 09:00 IL"],
+            jobs=["load_universe Sun 07:00 IL", "prescreener daily 08:00 IL", "full_scan Wed 09:00 IL"],
         )
     except Exception as exc:
         logger.warning("In-process scheduler failed to start — manual scans still available", error=str(exc))

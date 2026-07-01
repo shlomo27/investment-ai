@@ -51,6 +51,7 @@ export enum Exchange {
   TASE = "TASE",
   AMEX = "AMEX",
   LSE = "LSE",
+  EURONEXT = "EURONEXT",
   OTHER = "OTHER",
 }
 
