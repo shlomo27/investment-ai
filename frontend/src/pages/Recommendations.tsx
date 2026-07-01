@@ -8,8 +8,9 @@ import {
   acknowledgeRecommendation,
 } from "../store/slices/notificationsSlice";
 import { recommendationsApi, ordersApi } from "../api/client";
-import { Recommendation, OrderType, RecommendationType } from "../types";
+import { Recommendation, OrderType, RecommendationType, TechnicalAnalysis } from "../types";
 import ConfirmTradeModal from "../components/Trading/ConfirmTradeModal";
+import RecommendationCard from "../components/Recommendations/RecommendationCard";
 
 type DirectionFilter = "ALL" | "LONG" | "SHORT";
 
@@ -33,11 +34,14 @@ const Recommendations: React.FC = () => {
   const { notifications, recommendations, isLoading } = useAppSelector(
     (s) => s.notifications
   );
+  const { summary: portfolioSummary } = useAppSelector((s) => s.portfolio);
   const isHe = user?.preferred_language === "he";
 
   const [view, setView] = useState<"inbox" | "signals">("inbox");
   const [dirFilter, setDirFilter] = useState<DirectionFilter>("ALL");
   const [tradeModal, setTradeModal] = useState<{ rec: Recommendation; type: OrderType } | null>(null);
+  const [techMap, setTechMap] = useState<Record<number, TechnicalAnalysis>>({});
+  const [loadingTech, setLoadingTech] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     dispatch(fetchInbox({ unreadOnly: false }));
@@ -50,6 +54,25 @@ const Recommendations: React.FC = () => {
 
   const handleAcknowledge = (recId: number) => {
     dispatch(acknowledgeRecommendation(recId));
+  };
+
+  const handleRequestTechnical = async (recId: number) => {
+    setLoadingTech((prev) => ({ ...prev, [recId]: true }));
+    try {
+      const result = await recommendationsApi.requestTechnicalAnalysis(recId);
+      setTechMap((prev) => ({ ...prev, [recId]: result.technical_analysis }));
+    } catch {
+      // silently fail — tech analysis is optional
+    } finally {
+      setLoadingTech((prev) => ({ ...prev, [recId]: false }));
+    }
+  };
+
+  const getSuggestedAmount = (rec: Recommendation): number | undefined => {
+    if (!portfolioSummary?.total_value) return undefined;
+    const alloc = (rec.fundamental_analysis as any)?.allocation_recommendation;
+    const pct = alloc === "HIGH" ? 0.15 : alloc === "MEDIUM" ? 0.10 : 0.05;
+    return portfolioSummary.total_value * pct;
   };
 
   const handleConfirmTrade = async (quantity: number, price: number) => {
@@ -244,101 +267,21 @@ const Recommendations: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredRecs.map((rec) => {
-                const long = isLong(rec.recommendation_type);
-                const short = isShort(rec.recommendation_type);
-                const fa = rec.fundamental_analysis;
-                const trigger = getTriggerBadge(rec.trigger_type);
-                const returnPct = rec.expected_return_pct ?? fa?.expected_return_pct;
-
-                return (
-                  <div
-                    key={rec.id}
-                    className={`bg-gray-900 rounded-2xl p-5 border transition-colors hover:border-gray-600 ${
-                      long ? "border-green-900/40" : short ? "border-red-900/40" : "border-gray-800"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        {/* Symbol + badges */}
-                        <div className="flex items-center gap-2 flex-wrap mb-2">
-                          <span className="font-mono font-bold text-lg">{rec.symbol}</span>
-                          <span className={`text-xs px-2 py-0.5 rounded border ${recBadgeClass(rec.recommendation_type)}`}>
-                            {rec.recommendation_type.replace("_", " ")}
-                          </span>
-                          {fa?.direction_bias && fa.direction_bias !== "NEUTRAL" && (
-                            <span className={`text-xs px-1.5 py-0.5 rounded ${
-                              fa.direction_bias === "LONG" ? "bg-green-900/30 text-green-400" : "bg-red-900/30 text-red-400"
-                            }`}>
-                              {fa.direction_bias}
-                            </span>
-                          )}
-                          {trigger && (
-                            <span className={`text-xs px-1.5 py-0.5 rounded ${trigger.cls}`}>
-                              {trigger.label}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Thesis or asset name */}
-                        {fa?.thesis ? (
-                          <p className="text-sm text-gray-300 line-clamp-2">{fa.thesis}</p>
-                        ) : rec.asset_name ? (
-                          <p className="text-sm text-gray-400">{rec.asset_name}</p>
-                        ) : null}
-
-                        {/* Key numbers */}
-                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
-                          <span>{isHe ? "ביטחון:" : "Conf:"} <span className="text-white font-medium">{rec.confidence_score.toFixed(0)}%</span></span>
-                          {rec.target_price && (
-                            <span>{isHe ? "יעד:" : "Target:"} <span className="text-white font-medium">${rec.target_price.toFixed(2)}</span></span>
-                          )}
-                          {rec.stop_loss && (
-                            <span>Stop: <span className="text-white font-medium">${rec.stop_loss.toFixed(2)}</span></span>
-                          )}
-                          {returnPct != null && (
-                            <span className={returnPct >= 0 ? "text-green-400" : "text-red-400"}>
-                              {returnPct >= 0 ? "+" : ""}{returnPct.toFixed(1)}%
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                        <Link
-                          to={`/research/${rec.id}`}
-                          className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg"
-                        >
-                          {isHe ? "דוח מחקר" : "Research"}
-                        </Link>
-                        {long && (
-                          <button
-                            onClick={() => setTradeModal({ rec, type: OrderType.BUY })}
-                            className="text-xs bg-green-700 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg"
-                          >
-                            {isHe ? "קנה" : "Buy"}
-                          </button>
-                        )}
-                        {short && (
-                          <button
-                            onClick={() => setTradeModal({ rec, type: OrderType.SELL })}
-                            className="text-xs bg-red-700 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg"
-                          >
-                            Short
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleAcknowledge(rec.id)}
-                          className="text-xs text-gray-500 hover:text-gray-300"
-                        >
-                          {isHe ? "התעלם" : "Dismiss"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {filteredRecs.map((rec) => (
+                <RecommendationCard
+                  key={rec.id}
+                  recommendation={rec}
+                  isHe={isHe}
+                  technicalAnalysis={techMap[rec.id]}
+                  isLoadingTechnical={!!loadingTech[rec.id]}
+                  onRequestTechnical={() => handleRequestTechnical(rec.id)}
+                  onBuy={() => setTradeModal({ rec, type: OrderType.BUY })}
+                  onSell={() => setTradeModal({ rec, type: OrderType.SELL })}
+                  onDismiss={() => handleAcknowledge(rec.id)}
+                  suggestedAmount={getSuggestedAmount(rec)}
+                  approvedAt={rec.approved_at}
+                />
+              ))}
             </div>
           )}
         </div>

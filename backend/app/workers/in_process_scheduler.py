@@ -159,7 +159,7 @@ async def job_run_prescreener():
 
 
 async def job_run_full_scan():
-    """Daily 09:00 IL — full AI pipeline on all 100 active pool stocks (3 concurrent)."""
+    """Weekly — Wednesday 09:00 IL — full AI pipeline on all 100 active pool stocks (3 concurrent)."""
     from app.core.database import AsyncSessionLocal
     from app.db.models.asset import Asset
     from app.agents.workflow import run_investment_workflow
