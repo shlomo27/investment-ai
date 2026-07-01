@@ -1,8 +1,9 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useAppDispatch } from "../store";
-import { addRealtimeNotification, setUnreadCount } from "../store/slices/notificationsSlice";
+import { addRealtimeNotification } from "../store/slices/notificationsSlice";
 
-const WS_BASE = (import.meta.env.VITE_API_URL || "").replace(/^http/, "ws");
+const rawBase = import.meta.env.VITE_API_URL || `${location.protocol}//${location.host}`;
+const WS_BASE = rawBase.replace(/^https/, "wss").replace(/^http/, "ws");
 const RECONNECT_DELAY_MS = 3000;
 const MAX_RECONNECTS = 5;
 
@@ -48,7 +49,6 @@ export function useWebSocket(userId: number | undefined, opts: Options = {}) {
         }
         if (msg.type === "notification" && msg.data) {
           dispatch(addRealtimeNotification(msg.data));
-          dispatch(setUnreadCount((prev: number) => prev + 1) as any);
         }
         opts.onMessage?.(msg);
       } catch {

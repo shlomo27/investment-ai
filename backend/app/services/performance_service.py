@@ -409,6 +409,9 @@ class PerformanceService:
         )
         recs = result.scalars().all()
 
+        if not initial_capital or initial_capital <= 0:
+            initial_capital = 100000.0
+
         if len(recs) < 2:
             return {
                 "data_points": [],

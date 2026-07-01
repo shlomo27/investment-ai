@@ -422,24 +422,3 @@ async def complete_2fa_login(
     return AuthResponse(user=UserResponse.from_orm(user), tokens=tokens)
 
 
-@router.get("/admin/delete-all-users")
-async def admin_delete_all_users(
-    secret: str,
-    db: AsyncSession = Depends(get_db),
-):
-    """Dev utility — deletes ALL users and their data. Requires ?secret= query param."""
-    if secret != "investai-dev-2026":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid secret")
-
-    from sqlalchemy import text
-    # Delete in correct FK order (children before parents)
-    await db.execute(text("DELETE FROM notifications"))
-    await db.execute(text("DELETE FROM orders"))
-    await db.execute(text("DELETE FROM portfolios"))
-    await db.execute(text("DELETE FROM watchlist"))
-    await db.execute(text("DELETE FROM recommendations"))
-    await db.execute(text("DELETE FROM users"))
-    await db.commit()
-
-    logger.warning("admin_delete_all_users: all users deleted")
-    return {"deleted": True, "message": "All users deleted. You can now re-register."}

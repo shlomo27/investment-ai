@@ -26,7 +26,9 @@ export const loginUser = createAsyncThunk(
   ) => {
     try {
       const response = await authApi.login(email, password);
-      return response.user;
+      // 2FA challenge — return the full object so Login.tsx can show the code screen
+      if ("requires_2fa" in response) return response;
+      return (response as any).user as User;
     } catch (error: any) {
       return rejectWithValue(
         error.response?.data?.detail || "Login failed"
@@ -144,9 +146,11 @@ const authSlice = createSlice({
       })
       .addCase(loginUser.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.user = action.payload;
-        state.isAuthenticated = true;
         state.error = null;
+        // 2FA challenge — don't set user/isAuthenticated yet
+        if (action.payload && (action.payload as any).requires_2fa) return;
+        state.user = action.payload as User;
+        state.isAuthenticated = true;
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.isLoading = false;

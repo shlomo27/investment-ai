@@ -262,6 +262,9 @@ async def add_to_pool(
     resolved_symbol: str = (body.symbol if body else None) or symbol or ""
     resolved_exchange: str = (body.exchange if body else None) or exchange or "NASDAQ"
 
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
     if not resolved_symbol:
         from fastapi import HTTPException as _HTTPException
         raise _HTTPException(
@@ -319,6 +322,8 @@ async def seed_pool(
     db: AsyncSession = Depends(get_db),
 ):
     """Seed the asset pool with curated stocks."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
     from app.db.seed import seed_asset_pool
     result = await seed_asset_pool(db)
     return result
@@ -330,6 +335,8 @@ async def load_universe_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     """Load S&P 500 + S&P 400 constituents into the universe (admin action)."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
     from app.workers.universe_loader import load_universe
     result = await load_universe(db)
     return result
