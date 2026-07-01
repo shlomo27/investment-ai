@@ -23,15 +23,24 @@ const Portfolio: React.FC = () => {
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{isHe ? "תיק ההשקעות שלי" : "My Portfolio"}</h1>
-        {rebalancingSuggestions.length > 0 && (
+        <h1 className="text-2xl font-bold print-header">{isHe ? "תיק ההשקעות שלי" : "My Portfolio"}</h1>
+        <div className="flex items-center gap-2">
+          {rebalancingSuggestions.length > 0 && (
+            <button
+              onClick={() => setShowRebalancing(!showRebalancing)}
+              className="no-print text-sm bg-yellow-600/20 border border-yellow-600/50 text-yellow-400 px-4 py-2 rounded-xl hover:bg-yellow-600/30"
+            >
+              {isHe ? `${rebalancingSuggestions.length} הצעות איזון` : `${rebalancingSuggestions.length} Rebalancing Tips`}
+            </button>
+          )}
           <button
-            onClick={() => setShowRebalancing(!showRebalancing)}
-            className="text-sm bg-yellow-600/20 border border-yellow-600/50 text-yellow-400 px-4 py-2 rounded-xl hover:bg-yellow-600/30"
+            onClick={() => window.print()}
+            className="no-print text-sm bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white rounded-xl px-4 py-2 transition-colors flex items-center gap-2"
           >
-            {isHe ? `${rebalancingSuggestions.length} הצעות איזון` : `${rebalancingSuggestions.length} Rebalancing Tips`}
+            <span>📄</span>
+            {isHe ? "ייצוא PDF" : "Export PDF"}
           </button>
-        )}
+        </div>
       </div>
 
       {/* Summary Row */}

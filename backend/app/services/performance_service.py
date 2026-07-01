@@ -385,6 +385,128 @@ class PerformanceService:
         logger.info("Portfolio snapshot taken", users=snapped, date=today.isoformat())
         return {"snapped": snapped, "date": today.isoformat()}
 
+    async def run_backtest(
+        self, db: AsyncSession, initial_capital: float = 100000.0
+    ) -> Dict[str, Any]:
+        """
+        Simulate equal-weight portfolio using all tracked recommendations.
+        Each recommendation receives initial_capital / n_trades allocation.
+        Returns equity curve + risk metrics (max drawdown, Sharpe ratio).
+        """
+        import math
+        from collections import defaultdict
+
+        result = await db.execute(
+            select(Recommendation).where(
+                and_(
+                    Recommendation.outcome_result.isnot(None),
+                    Recommendation.outcome_return_pct.isnot(None),
+                    Recommendation.current_price_at_recommendation.isnot(None),
+                    Recommendation.approved_at.isnot(None),
+                    Recommendation.outcome_date.isnot(None),
+                )
+            ).order_by(Recommendation.approved_at)
+        )
+        recs = result.scalars().all()
+
+        if len(recs) < 2:
+            return {
+                "data_points": [],
+                "initial_capital": initial_capital,
+                "final_value": initial_capital,
+                "total_return_pct": 0.0,
+                "max_drawdown_pct": 0.0,
+                "sharpe_ratio": 0.0,
+                "win_rate_pct": 0.0,
+                "total_trades": len(recs),
+                "message": "At least 2 completed recommendations required for backtesting",
+            }
+
+        n_trades = len(recs)
+        position_size = initial_capital / n_trades
+
+        # Build chronological entry/exit events
+        events: list = []
+        for rec in recs:
+            events.append({
+                "date": rec.approved_at.date(),
+                "type": "entry",
+                "amount": position_size,
+            })
+            pnl = position_size * (rec.outcome_return_pct / 100)
+            events.append({
+                "date": rec.outcome_date.date(),
+                "type": "exit",
+                "amount": position_size,
+                "pnl": pnl,
+            })
+        events.sort(key=lambda e: (e["date"], 0 if e["type"] == "exit" else 1))
+
+        # Simulate portfolio through events
+        cash = initial_capital
+        invested = 0.0
+        peak = initial_capital
+        max_drawdown = 0.0
+        monthly_snapshots: dict = {}
+
+        for ev in events:
+            if ev["type"] == "entry":
+                cash -= ev["amount"]
+                invested += ev["amount"]
+            else:
+                cash += ev["amount"] + ev["pnl"]
+                invested -= ev["amount"]
+
+            portfolio_value = cash + invested
+            if portfolio_value > peak:
+                peak = portfolio_value
+            drawdown = (peak - portfolio_value) / peak * 100 if peak > 0 else 0.0
+            if drawdown > max_drawdown:
+                max_drawdown = drawdown
+
+            month_key = ev["date"].strftime("%Y-%m")
+            monthly_snapshots[month_key] = round(portfolio_value, 2)
+
+        # Build monthly data points
+        data_points = []
+        monthly_returns_list: list = []
+        prev_val = initial_capital
+        for month in sorted(monthly_snapshots.keys()):
+            val = monthly_snapshots[month]
+            month_ret = (val - prev_val) / prev_val * 100 if prev_val > 0 else 0.0
+            monthly_returns_list.append(month_ret)
+            data_points.append({
+                "month": month,
+                "value": val,
+                "return_pct": round(month_ret, 2),
+            })
+            prev_val = val
+
+        final_value = data_points[-1]["value"] if data_points else initial_capital
+        total_return = (final_value - initial_capital) / initial_capital * 100
+
+        # Annualized Sharpe (risk-free ≈ 0 for simplicity)
+        sharpe = 0.0
+        if len(monthly_returns_list) > 1:
+            avg = sum(monthly_returns_list) / len(monthly_returns_list)
+            variance = sum((r - avg) ** 2 for r in monthly_returns_list) / (len(monthly_returns_list) - 1)
+            std = math.sqrt(variance) if variance > 0 else 0.0
+            if std > 0:
+                sharpe = round((avg / std) * (12 ** 0.5), 2)
+
+        wins = sum(1 for r in recs if r.outcome_result == "WIN")
+
+        return {
+            "initial_capital": initial_capital,
+            "final_value": round(final_value, 2),
+            "total_return_pct": round(total_return, 2),
+            "max_drawdown_pct": round(max_drawdown, 2),
+            "sharpe_ratio": sharpe,
+            "win_rate_pct": round(wins / n_trades * 100, 1),
+            "total_trades": n_trades,
+            "data_points": data_points,
+        }
+
     async def check_price_alerts(self, db: AsyncSession) -> List[Dict[str, Any]]:
         """
         Check watchlist items for price alert triggers and send notifications.

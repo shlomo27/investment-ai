@@ -4,6 +4,7 @@ import { performanceApi } from "../api/client";
 import PerformanceComparisonChart from "../components/Charts/PerformanceComparisonChart";
 import PerformanceTimelineChart from "../components/Charts/PerformanceTimelineChart";
 import PortfolioHistoryChart from "../components/Charts/PortfolioHistoryChart";
+import BacktestChart from "../components/Charts/BacktestChart";
 
 const Performance: React.FC = () => {
   const { user } = useAppSelector((s) => s.auth);
@@ -36,15 +37,24 @@ const Performance: React.FC = () => {
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold">
-          {isHe ? "ביצועי מערכת AI" : "AI Performance Analytics"}
-        </h1>
-        <p className="text-gray-400 text-sm mt-1">
-          {isHe
-            ? "השוואה אובייקטיבית בין ביצועי ההמלצות לבין S&P 500"
-            : "Objective comparison of AI recommendations vs the S&P 500"}
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold print-header">
+            {isHe ? "ביצועי מערכת AI" : "AI Performance Analytics"}
+          </h1>
+          <p className="text-gray-400 text-sm mt-1">
+            {isHe
+              ? "השוואה אובייקטיבית בין ביצועי ההמלצות לבין S&P 500"
+              : "Objective comparison of AI recommendations vs the S&P 500"}
+          </p>
+        </div>
+        <button
+          onClick={() => window.print()}
+          className="no-print flex items-center gap-2 text-sm bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white rounded-xl px-4 py-2 transition-colors"
+        >
+          <span>📄</span>
+          {isHe ? "ייצוא PDF" : "Export PDF"}
+        </button>
       </div>
 
       {/* KPI Summary */}
@@ -100,6 +110,9 @@ const Performance: React.FC = () => {
 
       {/* Monthly Timeline */}
       <PerformanceTimelineChart isHe={isHe} />
+
+      {/* Backtest Simulation */}
+      <BacktestChart isHe={isHe} />
 
       {/* Portfolio History */}
       <PortfolioHistoryChart isHe={isHe} days={90} />

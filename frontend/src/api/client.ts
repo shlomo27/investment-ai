@@ -566,6 +566,13 @@ export const performanceApi = {
     const response = await api.post("/performance/track-now");
     return response.data;
   },
+
+  getBacktest: async (initialCapital = 100000): Promise<any> => {
+    const response = await api.get("/performance/backtest", {
+      params: { initial_capital: initialCapital },
+    });
+    return response.data;
+  },
 };
 
 // ─── Enhanced Market API additions ───────────────────────────────────────────

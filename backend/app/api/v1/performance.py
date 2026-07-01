@@ -146,6 +146,16 @@ async def take_portfolio_snapshot(
     return result
 
 
+@router.get("/backtest")
+async def run_backtest(
+    initial_capital: float = 100000.0,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """Simulate equal-weight portfolio performance across all tracked recommendations."""
+    return await get_performance_service().run_backtest(db, initial_capital=initial_capital)
+
+
 @router.post("/track-now")
 async def trigger_outcome_tracking(
     current_user: User = Depends(get_current_active_user),

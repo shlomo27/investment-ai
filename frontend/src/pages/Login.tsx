@@ -261,7 +261,7 @@ const Login: React.FC = () => {
                 {isLoading ? (isHe ? "נרשם..." : "Registering...") : (isHe ? "הרשמה" : "Register")}
               </button>
             </form>
-          ) : null}
+          )}
         </div>
 
         <p className="text-center text-xs text-gray-600 mt-4">
