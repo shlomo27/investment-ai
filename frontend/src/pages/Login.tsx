@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
-import { loginUser, registerUser } from "../store/slices/authSlice";
+import { loginUser, registerUser, setUser } from "../store/slices/authSlice";
 import { authApi } from "../api/client";
 
 const Login: React.FC = () => {
@@ -48,6 +48,7 @@ const Login: React.FC = () => {
     setTwoFAError("");
     try {
       const res = await authApi.complete2FALogin(preAuthToken, twoFACode);
+      dispatch(setUser(res.user));
       navigate(res.user.is_onboarded ? "/dashboard" : "/onboarding");
     } catch {
       setTwoFAError(isHe ? "קוד שגוי, נסה שוב" : "Invalid code, please try again");
