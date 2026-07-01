@@ -86,6 +86,10 @@ export interface User {
   phone?: string;
   risk_profile: RiskProfile;
   risk_score: number;
+  age_group?: string;
+  investment_horizon_months?: number;
+  allows_short?: boolean;
+  allows_volatile?: boolean;
   cash_balance: number;
   max_single_asset_exposure: number;
   is_active: boolean;
@@ -264,6 +268,41 @@ export interface QuantitativeModels {
   comps?: QuantComps;
 }
 
+export interface CatalystValidation {
+  primary_catalyst?: string;
+  is_specific?: boolean;
+  is_dated?: boolean;
+  expected_date?: string;
+  is_quantified?: boolean;
+  quantified_impact?: string;
+  is_verifiable?: boolean;
+  not_priced_in?: boolean;
+  catalyst_score?: number;
+}
+
+export interface ScenarioLeg {
+  probability_pct: number;
+  trigger?: string;
+  price_target?: number;
+  timeline_months?: number;
+  upside_pct?: number;
+  downside_pct?: number;
+}
+
+export interface ScenarioAnalysis {
+  bull?: ScenarioLeg;
+  base?: ScenarioLeg;
+  bear?: ScenarioLeg;
+}
+
+export interface ThesisBreaker {
+  rank: number;
+  risk: string;
+  probability_pct: number;
+  impact_pct: number;
+  risk_adjusted_cost_pct: number;
+}
+
 export interface FundamentalAnalysis {
   recommendation_type: RecommendationType;
   direction_bias?: "LONG" | "SHORT" | "NEUTRAL";
@@ -289,6 +328,19 @@ export interface FundamentalAnalysis {
   analyst_notes: string;
   expected_return_pct?: number;
   quantitative_models?: QuantitativeModels;
+  // Deep-dive fields emitted by the fundamental agent (optional; may be absent on older records)
+  data_completeness?: number;
+  hard_exclusions_triggered?: string[];
+  auto_disqualified?: boolean;
+  moat_classification?: "COST_MONOPOLY" | "SWITCHING_COST" | "NETWORK_EFFECT" | "REGULATORY" | "NONE";
+  moat_evidence?: string;
+  catalyst_validation?: CatalystValidation;
+  scenario_analysis?: ScenarioAnalysis;
+  expected_value?: number | null;
+  expected_value_vs_current_pct?: number | null;
+  allocation_recommendation?: "HIGH" | "MEDIUM" | "LOW" | "HOLD" | "NONE";
+  suggested_weight_range?: string;
+  thesis_breakers?: ThesisBreaker[];
 }
 
 export interface SentimentData {

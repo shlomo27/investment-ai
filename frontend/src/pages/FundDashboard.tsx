@@ -43,8 +43,8 @@ const FundDashboard: React.FC = () => {
 
   // Simulation state
   const [simSymbol, setSimSymbol] = useState("MU");
-  const [simStep, setSimStep] = useState<Record<number, any>>({});
-  const [simLoading, setSimLoading] = useState<Record<number, boolean>>({});
+  const [simStep, setSimStep] = useState<Record<string, any>>({});
+  const [simLoading, setSimLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     dispatch(fetchPortfolioSummary());

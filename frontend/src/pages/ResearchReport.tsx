@@ -1033,11 +1033,15 @@ const ResearchReport: React.FC = () => {
                       <span className="text-gray-400">{isHe ? "הסתברות" : "P"}:</span>
                       <span className={`font-bold ${c.text}`}>{s.probability_pct}%</span>
                       {s.price_target && <span className="text-gray-300 font-mono">${s.price_target.toFixed(2)}</span>}
-                      {(s.upside_pct != null || s.downside_pct != null) && (
-                        <span className={`font-bold ${c.text}`}>
-                          {(s.upside_pct ?? s.downside_pct) >= 0 ? "+" : ""}{(s.upside_pct ?? s.downside_pct).toFixed(1)}%
-                        </span>
-                      )}
+                      {(() => {
+                        const pct = s.upside_pct ?? s.downside_pct;
+                        if (pct == null) return null;
+                        return (
+                          <span className={`font-bold ${c.text}`}>
+                            {pct >= 0 ? "+" : ""}{pct.toFixed(1)}%
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                   <div className="w-full bg-gray-800 rounded-full h-1.5 mb-2">
@@ -1065,7 +1069,7 @@ const ResearchReport: React.FC = () => {
                 fa.allocation_recommendation === "LOW" ? "bg-yellow-900/40 text-yellow-300 border-yellow-700/40" :
                 "bg-gray-800 text-gray-400 border-gray-700"
               }`}>
-                {isHe ? { HIGH: "הקצאה גבוהה", MEDIUM: "הקצאה בינונית", LOW: "הקצאה נמוכה", HOLD: "המתן" }[fa.allocation_recommendation] || fa.allocation_recommendation : fa.allocation_recommendation}
+                {isHe ? ({ HIGH: "הקצאה גבוהה", MEDIUM: "הקצאה בינונית", LOW: "הקצאה נמוכה", HOLD: "המתן" } as Record<string, string>)[fa.allocation_recommendation] || fa.allocation_recommendation : fa.allocation_recommendation}
               </span>
             </div>
           )}

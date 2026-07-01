@@ -77,7 +77,7 @@ const RecommendationCard: React.FC<Props> = ({
                 : alloc === "MEDIUM" ? "bg-blue-900/40 text-blue-300 border-blue-700/40"
                 : "bg-yellow-900/40 text-yellow-300 border-yellow-700/40";
               const label = isHe
-                ? { HIGH: "הקצאה גבוהה", MEDIUM: "הקצאה בינונית", LOW: "הקצאה נמוכה" }[alloc] || alloc
+                ? ({ HIGH: "הקצאה גבוהה", MEDIUM: "הקצאה בינונית", LOW: "הקצאה נמוכה" } as Record<string, string>)[alloc] || alloc
                 : alloc;
               return (
                 <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded border ${cls}`}>
