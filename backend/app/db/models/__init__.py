@@ -5,6 +5,7 @@ from app.db.models.order import Order, OrderType, OrderStatus
 from app.db.models.recommendation import Recommendation, RecommendationType, RecommendationStatus
 from app.db.models.notification import Notification, NotificationType
 from app.db.models.watchlist import Watchlist
+from app.db.models.portfolio_history import PortfolioHistory
 
 __all__ = [
     "User", "RiskProfile",
@@ -14,4 +15,5 @@ __all__ = [
     "Recommendation", "RecommendationType", "RecommendationStatus",
     "Notification", "NotificationType",
     "Watchlist",
+    "PortfolioHistory",
 ]
