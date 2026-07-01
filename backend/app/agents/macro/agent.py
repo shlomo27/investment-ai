@@ -111,28 +111,30 @@ async def fetch_realtime_macro() -> Dict[str, Any]:
     return result
 
 
-async def fetch_israeli_macro(client: httpx.AsyncClient) -> Dict[str, Any]:
+async def fetch_israeli_macro() -> Dict[str, Any]:
     """
     Fetch Israeli macro indicators from FRED (free, no key required).
-    FRED series used:
-      INTDSRILM193N — Bank of Israel benchmark interest rate
-      DEXILAS       — USD/ILS spot exchange rate (daily)
-      ISRPCPIALLAINMEI — Israel CPI all items
+    Self-contained — opens its own httpx client, matching fetch_realtime_macro().
+    FRED series:
+      INTDSRILM193N    — Bank of Israel benchmark interest rate
+      DEXILAS          — USD/ILS spot exchange rate (daily)
+      ISRPCPIALLAINMEI — Israel CPI all items (YoY computed)
     """
     result: Dict[str, Any] = {}
     try:
-        boi_rate, usd_ils, il_cpi_vals = await asyncio.gather(
-            _fetch_fred_series(client, "INTDSRILM193N"),
-            _fetch_fred_series(client, "DEXILAS"),
-            asyncio.to_thread(_fetch_fred_cpi_series_sync, "ISRPCPIALLAINMEI"),
-            return_exceptions=True,
-        )
+        async with httpx.AsyncClient(timeout=10) as client:
+            boi_rate, usd_ils = await asyncio.gather(
+                _fetch_fred_series(client, "INTDSRILM193N"),
+                _fetch_fred_series(client, "DEXILAS"),
+                return_exceptions=True,
+            )
+        il_cpi = await asyncio.to_thread(_fetch_fred_cpi_series_sync, "ISRPCPIALLAINMEI")
         if isinstance(boi_rate, float):
             result["boi_interest_rate_pct"] = round(boi_rate, 2)
         if isinstance(usd_ils, float):
             result["usd_ils_rate"] = round(usd_ils, 4)
-        if isinstance(il_cpi_vals, float):
-            result["il_cpi_yoy_pct"] = round(il_cpi_vals, 2)
+        if isinstance(il_cpi, float):
+            result["il_cpi_yoy_pct"] = round(il_cpi, 2)
     except Exception as e:
         logger.debug("Israeli macro fetch failed", error=str(e))
     return result
@@ -208,12 +210,12 @@ class MacroContextAgent:
             logger.warning("Gemini unavailable, skipping macro analysis", symbol=symbol)
             return self._empty_analysis(symbol, "GEMINI_API_KEY not configured")
 
-        # Fetch macro data: always US, add Israeli data for TASE stocks
-        async with httpx.AsyncClient(timeout=10) as client:
-            tasks = [fetch_realtime_macro()]
-            if is_israeli:
-                tasks.append(fetch_israeli_macro(client))
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Fetch macro data: always US, add Israeli data for TASE stocks.
+        # Both functions are self-contained and open their own httpx clients.
+        tasks = [fetch_realtime_macro()]
+        if is_israeli:
+            tasks.append(fetch_israeli_macro())
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         realtime_macro: Dict[str, Any] = results[0] if isinstance(results[0], dict) else {}
         israeli_macro: Dict[str, Any] = results[1] if is_israeli and isinstance(results[1], dict) else {}

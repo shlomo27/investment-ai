@@ -162,10 +162,12 @@ def _fetch_ta125_wikipedia() -> list[dict]:
                 sector_raw = str(row[sector_col]).strip() if sector_col else ""
                 sector = _map_tase_sector(sector_raw) if sector_raw and sector_raw != "nan" else "Other"
                 results.append({
-                    "symbol": sym,
-                    "name":   name,
-                    "sector": sector,
-                    "cap_tier": "MID",
+                    "symbol":     sym,
+                    "name":       name,
+                    "name_he":    "",              # Wikipedia doesn't provide Hebrew names
+                    "sector":     sector,
+                    "risk_level": RiskLevel.MEDIUM,  # default; fallback list has per-stock values
+                    "cap_tier":   "MID",
                 })
             if len(results) >= 50:
                 logger.info(f"[universe] Fetched {len(results)} TA-125 stocks from Wikipedia")
