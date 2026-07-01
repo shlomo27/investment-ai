@@ -460,6 +460,9 @@ async def scan_pool_now(
     Start a full AI scan of all active pool stocks in the background.
     Returns immediately — poll GET /pool/scan-status for progress.
     """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
     import asyncio
     from sqlalchemy import select
     from app.db.models.asset import Asset
@@ -548,6 +551,9 @@ async def simulate_ta_scan(
     current_user: User = Depends(get_current_active_user),
 ):
     """Admin: run TA scan immediately (normally runs every 30 min)."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
     import asyncio
     from app.workers.in_process_scheduler import job_daily_ta_scan
     asyncio.create_task(job_daily_ta_scan())
@@ -560,6 +566,9 @@ async def simulate_test_notification(
     db: AsyncSession = Depends(get_db),
 ):
     """Admin: send a test notification to yourself via all configured channels."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
     from app.services.notifications.service import NotificationService
     from app.db.models.notification import NotificationType
     from app.core.config import settings
@@ -641,6 +650,9 @@ async def simulate_create_test_position(
     db: AsyncSession = Depends(get_db),
 ):
     """Admin: create a test portfolio position so TA alerts will fire for this symbol."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
     from app.db.models.portfolio import Portfolio
     from sqlalchemy import select as sa_select
 
@@ -683,6 +695,9 @@ async def simulate_remove_test_position(
     db: AsyncSession = Depends(get_db),
 ):
     """Admin: remove a test position after simulation."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
     from app.db.models.portfolio import Portfolio
     from sqlalchemy import select as sa_select, delete as sa_delete
 
@@ -877,6 +892,9 @@ async def publish_master_list(
     - Top 30 BUY / STRONG_BUY approved recommendations
     - Top 20 SELL / STRONG_SELL approved recommendations
     """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
     from app.db.models.master_list import MasterListEntry
     from app.db.models.recommendation import Recommendation, RecommendationStatus, RecommendationType
     from app.db.models.asset import Asset as AssetModel
