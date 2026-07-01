@@ -3,6 +3,7 @@ import { useAppDispatch, useAppSelector } from "../store";
 import { fetchPortfolioSummary, fetchPortfolioRisk, fetchRebalancingSuggestions } from "../store/slices/portfolioSlice";
 import RiskMeter from "../components/Portfolio/RiskMeter";
 import AssetCard from "../components/Portfolio/AssetCard";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
 const Portfolio: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -107,6 +108,67 @@ const Portfolio: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Sector Allocation Pie Chart */}
+      {summary?.positions && summary.positions.length > 0 && (() => {
+        const PIE_COLORS = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6"];
+        const hasSector = summary.positions.some(p => p.sector);
+        let chartData: { name: string; value: number }[];
+
+        if (hasSector) {
+          const sectorMap: Record<string, number> = {};
+          summary.positions.forEach(p => {
+            const key = p.sector || (isHe ? "אחר" : "Other");
+            sectorMap[key] = (sectorMap[key] || 0) + p.current_value;
+          });
+          chartData = Object.entries(sectorMap).map(([name, value]) => ({ name, value }));
+        } else {
+          const sorted = [...summary.positions].sort((a, b) => b.current_value - a.current_value);
+          const top5 = sorted.slice(0, 5);
+          const rest = sorted.slice(5);
+          chartData = top5.map(p => ({ name: p.symbol, value: p.current_value }));
+          if (rest.length > 0) {
+            const otherValue = rest.reduce((acc, p) => acc + p.current_value, 0);
+            chartData.push({ name: isHe ? "אחר" : "Other", value: otherValue });
+          }
+        }
+
+        const total = chartData.reduce((acc, d) => acc + d.value, 0);
+
+        return (
+          <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+            <h2 className="font-bold mb-4">{isHe ? "הקצאה לפי סקטור" : "Allocation by Sector"}</h2>
+            <div className="flex items-center gap-6">
+              <div className="w-48 h-48 flex-shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={chartData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" paddingAngle={2}>
+                      {chartData.map((_, i) => (
+                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(value: number) => [`₪${value.toLocaleString("en", { maximumFractionDigits: 0 })}`, ""]}
+                      contentStyle={{ background: "#1f2937", border: "1px solid #374151", borderRadius: "8px", color: "#f9fafb" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="flex-1 space-y-2">
+                {chartData.map((d, i) => (
+                  <div key={d.name} className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                      <span className="text-gray-300">{d.name}</span>
+                    </div>
+                    <span className="text-gray-400 font-medium">{total > 0 ? ((d.value / total) * 100).toFixed(1) : 0}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Rebalancing Suggestions */}
       {showRebalancing && rebalancingSuggestions.length > 0 && (

@@ -2,20 +2,21 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { fetchPortfolioSummary } from "../store/slices/portfolioSlice";
-import { fetchInbox, fetchUnreadCount } from "../store/slices/notificationsSlice";
+import { fetchInbox, fetchUnreadCount, fetchRecommendations } from "../store/slices/notificationsSlice";
 import { performanceApi } from "../api/client";
 
 const Dashboard: React.FC = () => {
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
   const { summary, isLoading: portfolioLoading } = useAppSelector((state) => state.portfolio);
-  const { notifications, unreadCount } = useAppSelector((state) => state.notifications);
+  const { notifications, unreadCount, recommendations } = useAppSelector((state) => state.notifications);
 
   const isHe = user?.preferred_language === "he";
 
   useEffect(() => {
     dispatch(fetchPortfolioSummary());
     dispatch(fetchInbox({ unreadOnly: false }));
+    dispatch(fetchRecommendations({}));
   }, [dispatch]);
 
   const formatCurrency = (value: number, currency = "₪") =>
@@ -58,6 +59,16 @@ const Dashboard: React.FC = () => {
   useEffect(() => {
     performanceApi.getSummary().then(setPerfSummary).catch(() => {});
   }, []);
+
+  const stopLossWarnings = recommendations
+    .filter(r => r.stop_loss && r.current_price_at_recommendation)
+    .map(r => {
+      const currentPrice = r.current_price_at_recommendation!;
+      const stopLoss = r.stop_loss!;
+      const pctFromStop = ((currentPrice - stopLoss) / stopLoss) * 100;
+      return { symbol: r.symbol, currentPrice, stopLoss, pctFromStop };
+    })
+    .filter(w => w.pctFromStop >= 0 && w.pctFromStop <= 8);
 
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
@@ -141,6 +152,23 @@ const Dashboard: React.FC = () => {
               </span>
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Stop-Loss Warnings */}
+      {stopLossWarnings.length > 0 && (
+        <div className="bg-red-900/20 border border-red-700/50 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-red-400 text-lg">⚠️</span>
+            <h3 className="font-bold text-red-400">{isHe ? "אזהרת סטופ לוס" : "Stop-Loss Alert"}</h3>
+          </div>
+          {stopLossWarnings.map(w => (
+            <div key={w.symbol} className="flex items-center justify-between text-sm py-1">
+              <span className="font-bold">{w.symbol}</span>
+              <span className="text-red-300">{isHe ? `מחיר נוכחי ₪${w.currentPrice} קרוב לסטופ ₪${w.stopLoss}` : `₪${w.currentPrice} near stop ₪${w.stopLoss}`}</span>
+              <span className="text-red-400 font-bold">{w.pctFromStop.toFixed(1)}%</span>
+            </div>
+          ))}
         </div>
       )}
 

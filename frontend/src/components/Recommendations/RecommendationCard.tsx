@@ -11,6 +11,8 @@ interface Props {
   onBuy: () => void;
   onSell: () => void;
   onDismiss: () => void;
+  suggestedAmount?: number;
+  approvedAt?: string;
 }
 
 const RecommendationCard: React.FC<Props> = ({
@@ -22,6 +24,8 @@ const RecommendationCard: React.FC<Props> = ({
   onBuy,
   onSell,
   onDismiss,
+  suggestedAmount,
+  approvedAt,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const navigate = useNavigate();
@@ -48,6 +52,17 @@ const RecommendationCard: React.FC<Props> = ({
               </span>
             </div>
             {rec.asset_name && <p className="text-sm text-gray-400">{rec.asset_name}</p>}
+            {(() => {
+              if (!approvedAt) return null;
+              const ageDays = Math.floor((Date.now() - new Date(approvedAt).getTime()) / 86400000);
+              if (ageDays < 3) {
+                return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-green-900/40 text-green-300 border border-green-700/40">🟢 {isHe ? "חדשה" : "Fresh"}</span>;
+              } else if (ageDays <= 7) {
+                return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300 border border-yellow-700/40">🟡 {isHe ? `${ageDays} ימים` : `${ageDays} days`}</span>;
+              } else {
+                return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-red-900/40 text-red-300 border border-red-700/40">🔴 {isHe ? "ישנה - מומלץ לרענן" : "Stale - refresh recommended"}</span>;
+              }
+            })()}
           </div>
 
           <div className="text-right space-y-1">
@@ -74,7 +89,7 @@ const RecommendationCard: React.FC<Props> = ({
         </div>
 
         {/* Key Metrics */}
-        <div className="grid grid-cols-3 gap-4 mt-4">
+        <div className="grid grid-cols-4 gap-4 mt-4">
           <div>
             <p className="text-xs text-gray-400">{isHe ? "מחיר נוכחי" : "Current Price"}</p>
             <p className="font-bold">{fmt(rec.current_price_at_recommendation)}</p>
@@ -86,6 +101,12 @@ const RecommendationCard: React.FC<Props> = ({
           <div>
             <p className="text-xs text-gray-400">{isHe ? "סטופ לוס" : "Stop Loss"}</p>
             <p className="font-bold text-red-400">{fmt(rec.stop_loss)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400">{isHe ? "השקעה מוצעת" : "Suggested"}</p>
+            <p className="font-bold text-blue-400">
+              {suggestedAmount ? `₪${Math.round(suggestedAmount).toLocaleString("en")}` : "—"}
+            </p>
           </div>
         </div>
 

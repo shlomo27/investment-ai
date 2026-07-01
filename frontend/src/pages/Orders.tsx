@@ -25,6 +25,30 @@ const Orders: React.FC = () => {
     setIsLoading(false);
   };
 
+  const exportCSV = () => {
+    if (!orders.length) return;
+    const headers = isHe
+      ? ['סמל', 'סוג', 'כמות', 'מחיר', 'סה"כ', 'סטטוס', 'תאריך']
+      : ['Symbol', 'Type', 'Quantity', 'Price', 'Total', 'Status', 'Date'];
+    const rows = orders.map(o => [
+      o.symbol,
+      o.order_type,
+      o.quantity,
+      (o.executed_price ?? o.price_at_order).toFixed(2),
+      (o.executed_total ?? o.total_amount).toFixed(2),
+      o.status,
+      o.created_at ? new Date(o.created_at).toLocaleDateString() : '',
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleCancel = async (orderId: number) => {
     if (!window.confirm(isHe ? "האם לבטל את ההזמנה?" : "Cancel this order?")) return;
     try {
@@ -51,7 +75,16 @@ const Orders: React.FC = () => {
 
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
-      <h1 className="text-2xl font-bold">{isHe ? "היסטוריית עסקאות" : "Trade History"}</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">{isHe ? "היסטוריית עסקאות" : "Trade History"}</h1>
+        <button
+          onClick={exportCSV}
+          disabled={!orders.length}
+          className="no-print text-sm bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 rounded-xl px-4 py-2 flex items-center gap-2 disabled:opacity-40"
+        >
+          <span>📥</span>{isHe ? "ייצוא CSV" : "Export CSV"}
+        </button>
+      </div>
 
       {/* Filter tabs */}
       <div className="flex gap-2 flex-wrap">
