@@ -6,13 +6,12 @@ across the 4 uvicorn workers only ONE worker actually executes each job
 (SQLAlchemy job store uses DB-level locking for coordination).
 
 Schedule (Asia/Jerusalem timezone):
-  Sunday 07:00  — load_universe         (refresh S&P500+S&P400 from Wikipedia)
-  Daily  07:30  — earnings_watcher      (only during earnings seasons; ≥20 fresh → trigger quarterly scan)
-  Every 30 min  — ta_scan               (TA for all 50 master-list stocks — free, no Claude)
-  Every 30 min  — news_watcher          (news+social for master-list stocks → alerts to holders)
-  Daily  08:00  — run_prescreener       (score ~900 stocks, activate top 100)
-  Daily  09:00  — run_full_scan         (AI pipeline on 100 active stocks, 3 concurrent)
-  Daily  12:00  — quarterly_scan_batch  (50 stocks/day when quarterly scan is active)
+  Sunday    07:00  — load_universe         (refresh S&P500+S&P400+TA-125 from Wikipedia)
+  Daily     07:30  — earnings_watcher      (only during earnings seasons; ≥20 fresh → trigger quarterly scan)
+  Every 30min      — ta_scan               (TA for all master-list stocks — free, no Claude)
+  Every 30min      — news_watcher          (news+social for master-list stocks → alerts to holders)
+  Wednesday 09:00  — weekly_full_scan      (full Claude AI on ~100 active pool stocks — keeps recs fresh)
+  Daily     12:00  — quarterly_scan_batch  (50 stocks/day when quarterly scan is active)
 
 Quarterly flow:
   1. earnings_watcher detects ≥20 stocks with verified fresh earnings
@@ -241,9 +240,15 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
-    # NOTE: pre_screener and full_scan are NOT scheduled daily.
-    # They run quarterly via admin trigger or quarterly_scan_batch.
-    # job_run_prescreener() and job_run_full_scan() remain available for manual/admin use.
+    # Weekly active-pool scan — every Wednesday 09:00 IL
+    # Runs full Claude AI pipeline on all ~100 active pool stocks so recommendations
+    # stay fresh between quarterly earnings seasons (events, rate changes, geopolitics).
+    scheduler.add_job(
+        job_run_full_scan,
+        CronTrigger(day_of_week="wed", hour=9, minute=0, timezone="Asia/Jerusalem"),
+        id="scheduled_weekly_full_scan",
+        replace_existing=True,
+    )
 
     # Daily earnings check — 07:30 IL (only fires during 4 earnings seasons)
     from app.workers.earnings_watcher import job_earnings_queue_check

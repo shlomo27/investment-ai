@@ -60,7 +60,7 @@ async def _fetch_fear_greed(client: httpx.AsyncClient) -> Optional[Dict[str, Any
 
 async def fetch_realtime_macro() -> Dict[str, Any]:
     """
-    Fetch current macro indicators from FRED + CNN Fear & Greed (all free, no key).
+    Fetch current US macro indicators from FRED + CNN Fear & Greed (all free, no key).
     Returns a dict with latest values.
     """
     result: Dict[str, Any] = {}
@@ -110,6 +110,60 @@ async def fetch_realtime_macro() -> Dict[str, Any]:
 
     return result
 
+
+async def fetch_israeli_macro(client: httpx.AsyncClient) -> Dict[str, Any]:
+    """
+    Fetch Israeli macro indicators from FRED (free, no key required).
+    FRED series used:
+      INTDSRILM193N — Bank of Israel benchmark interest rate
+      DEXILAS       — USD/ILS spot exchange rate (daily)
+      ISRPCPIALLAINMEI — Israel CPI all items
+    """
+    result: Dict[str, Any] = {}
+    try:
+        boi_rate, usd_ils, il_cpi_vals = await asyncio.gather(
+            _fetch_fred_series(client, "INTDSRILM193N"),
+            _fetch_fred_series(client, "DEXILAS"),
+            asyncio.to_thread(_fetch_fred_cpi_series_sync, "ISRPCPIALLAINMEI"),
+            return_exceptions=True,
+        )
+        if isinstance(boi_rate, float):
+            result["boi_interest_rate_pct"] = round(boi_rate, 2)
+        if isinstance(usd_ils, float):
+            result["usd_ils_rate"] = round(usd_ils, 4)
+        if isinstance(il_cpi_vals, float):
+            result["il_cpi_yoy_pct"] = round(il_cpi_vals, 2)
+    except Exception as e:
+        logger.debug("Israeli macro fetch failed", error=str(e))
+    return result
+
+
+def _fetch_fred_cpi_series_sync(series_id: str) -> Optional[float]:
+    """Synchronous CPI YoY computation — run in thread pool."""
+    import requests as _req
+    try:
+        resp = _req.get(
+            "https://fred.stlouisfed.org/graph/fredgraph.csv",
+            params={"id": series_id},
+            timeout=8,
+        )
+        if resp.status_code != 200:
+            return None
+        lines = [l for l in resp.text.strip().split("\n") if l and not l.startswith("DATE")]
+        valid = []
+        for line in lines:
+            parts = line.split(",")
+            if len(parts) == 2 and parts[1].strip() not in (".", ""):
+                try:
+                    valid.append(float(parts[1].strip()))
+                except ValueError:
+                    pass
+        if len(valid) >= 13:
+            return (valid[-1] - valid[-13]) / valid[-13] * 100
+    except Exception:
+        pass
+    return None
+
 SYSTEM_PROMPT = """You are a macro and sector research analyst with deep expertise in global markets.
 You provide broad market context that complements detailed fundamental analysis.
 
@@ -145,19 +199,27 @@ class MacroContextAgent:
     async def analyze(self, market_data: MarketDataState) -> Dict[str, Any]:
         symbol = market_data["symbol"]
         sector = market_data.get("sector", "Unknown")
+        is_israeli = market_data.get("country", "US") == "IL" or str(market_data.get("exchange", "")).upper() == "TASE"
 
-        logger.info("MacroContextAgent starting", symbol=symbol, sector=sector)
+        logger.info("MacroContextAgent starting", symbol=symbol, sector=sector, is_israeli=is_israeli)
 
         llm = self._get_llm()
         if llm is None:
             logger.warning("Gemini unavailable, skipping macro analysis", symbol=symbol)
             return self._empty_analysis(symbol, "GEMINI_API_KEY not configured")
 
-        # Fetch real-time macro data in parallel with prompt building
-        realtime_macro = await fetch_realtime_macro()
-        logger.debug("Real-time macro fetched", data=realtime_macro)
+        # Fetch macro data: always US, add Israeli data for TASE stocks
+        async with httpx.AsyncClient(timeout=10) as client:
+            tasks = [fetch_realtime_macro()]
+            if is_israeli:
+                tasks.append(fetch_israeli_macro(client))
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        prompt = self._build_prompt(market_data, realtime_macro)
+        realtime_macro: Dict[str, Any] = results[0] if isinstance(results[0], dict) else {}
+        israeli_macro: Dict[str, Any] = results[1] if is_israeli and isinstance(results[1], dict) else {}
+
+        logger.debug("Macro fetched", us=realtime_macro, israeli=israeli_macro)
+        prompt = self._build_prompt(market_data, realtime_macro, israeli_macro if is_israeli else None)
 
         try:
             response = await asyncio.get_event_loop().run_in_executor(
@@ -177,8 +239,10 @@ class MacroContextAgent:
             result["symbol"] = symbol
             result["analyzed_at"] = datetime.now(timezone.utc).isoformat()
             result["realtime_macro"] = realtime_macro
+            if israeli_macro:
+                result["israeli_macro"] = israeli_macro
+            parts = []
             if realtime_macro:
-                parts = []
                 if "fed_funds_rate_pct" in realtime_macro:
                     parts.append(f"Fed Rate: {realtime_macro['fed_funds_rate_pct']}%")
                 if "ten_year_treasury_pct" in realtime_macro:
@@ -189,6 +253,14 @@ class MacroContextAgent:
                     parts.append(f"Unemployment: {realtime_macro['unemployment_rate_pct']}%")
                 if "fear_greed_score" in realtime_macro:
                     parts.append(f"Fear&Greed: {realtime_macro['fear_greed_score']}/100 ({realtime_macro.get('fear_greed_rating', '')})")
+            if israeli_macro:
+                if "boi_interest_rate_pct" in israeli_macro:
+                    parts.append(f"BoI Rate: {israeli_macro['boi_interest_rate_pct']}%")
+                if "usd_ils_rate" in israeli_macro:
+                    parts.append(f"USD/ILS: {israeli_macro['usd_ils_rate']}")
+                if "il_cpi_yoy_pct" in israeli_macro:
+                    parts.append(f"IL CPI YoY: {israeli_macro['il_cpi_yoy_pct']}%")
+            if parts:
                 result["real_time_macro_summary"] = " | ".join(parts)
 
             logger.info(
@@ -210,35 +282,58 @@ class MacroContextAgent:
     def _v(value: Any, default: Any = "N/A") -> Any:
         return value if value is not None else default
 
-    def _build_prompt(self, data: MarketDataState, realtime_macro: Optional[Dict[str, Any]] = None) -> str:
+    def _build_prompt(self, data: MarketDataState, realtime_macro: Optional[Dict[str, Any]] = None,
+                      israeli_macro: Optional[Dict[str, Any]] = None) -> str:
         v = self._v
         description = data.get("company_description") or ""
         rt = realtime_macro or {}
+        il = israeli_macro or {}
         macro_data_section = ""
         if rt:
             fg = rt.get('fear_greed_score')
             fg_label = rt.get('fear_greed_rating', '')
             fg_str = f"{fg}/100 ({fg_label})" if fg is not None else "N/A"
             macro_data_section = f"""
-=== LIVE MACRO DATA (Current, from FRED + CNN) ===
+=== LIVE US MACRO DATA (Current, from FRED + CNN) ===
 Fed Funds Rate: {rt.get('fed_funds_rate_pct', 'N/A')}%
 10-Year Treasury Yield: {rt.get('ten_year_treasury_pct', 'N/A')}%
-CPI Inflation (YoY): {rt.get('cpi_yoy_pct', 'N/A')}%
+CPI Inflation YoY: {rt.get('cpi_yoy_pct', 'N/A')}%
 Unemployment Rate: {rt.get('unemployment_rate_pct', 'N/A')}%
 CNN Fear & Greed Index: {fg_str}  (0=Extreme Fear, 50=Neutral, 100=Extreme Greed)
 Use this LIVE data — do NOT rely on training knowledge for these indicators.
-Consider Fear&Greed when assessing contrarian vs momentum opportunities.
 """
+
+        israeli_section = ""
+        if il:
+            israeli_section = f"""
+=== LIVE ISRAELI MACRO DATA (Current, from FRED) ===
+Bank of Israel Benchmark Rate: {il.get('boi_interest_rate_pct', 'N/A')}%
+USD/ILS Exchange Rate: {il.get('usd_ils_rate', 'N/A')} (shekel per dollar)
+Israel CPI Inflation YoY: {il.get('il_cpi_yoy_pct', 'N/A')}%
+Use this LIVE data for Israeli macro context — consider geopolitical risks, BoI policy,
+shekel strength/weakness, and correlation with US rates.
+"""
+
+        country = data.get('country', 'US')
+        is_tase = country == 'IL' or str(data.get('exchange', '')).upper() == 'TASE'
+        market_context = (
+            "This is an ISRAELI company listed on the Tel Aviv Stock Exchange (TASE). "
+            "Analyze macro context from both the Israeli economy AND global/US market impact on Israel."
+            if is_tase else
+            "Analyze macro context from US and global markets."
+        )
+
         return f"""Provide macro and sector context for {data['symbol']} ({data.get('exchange', 'US')}).
 
+{market_context}
 Company overview: {description[:300] if description else 'N/A'}
 Sector: {v(data.get('sector'), 'Unknown')}
 Industry: {v(data.get('industry'), 'Unknown')}
-Country: {v(data.get('country'), 'US')}
-Market Cap: ${v(data.get('market_cap'), 0):,.0f}
+Country: {country}
+Market Cap: {v(data.get('market_cap'), 0):,.0f} {'ILS' if is_tase else 'USD'}
 Beta: {v(data.get('beta'), 'N/A')}
 Revenue Growth YoY: {v(data.get('revenue_growth'), 'N/A')}
-{macro_data_section}
+{macro_data_section}{israeli_section}
 
 Respond ONLY with valid JSON:
 {{
