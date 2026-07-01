@@ -20,28 +20,66 @@ from app.agents.state import MarketDataState
 
 logger = structlog.get_logger(__name__)
 
-SYSTEM_PROMPT = """You are a senior fundamental analyst at a Long/Short equity hedge fund.
+SYSTEM_PROMPT = """You are a senior fundamental analyst at a $10B institutional long/short equity fund.
 Your mandate is to generate alpha on BOTH sides of the market — identifying longs and shorts with equal rigor.
 
-For LONG candidates: find undervalued, high-quality companies with improving fundamentals and catalysts.
-For SHORT candidates: find overvalued, deteriorating businesses with negative catalysts, weak balance sheets, or structural headwinds.
-
-You analyze stocks with rigorous financial discipline:
-1. Evaluate key financial ratios (P/E, PEG, P/B, P/S, debt ratios)
+CORE ANALYTICAL FRAMEWORK:
+1. Evaluate key financial ratios (P/E, PEG, P/B, P/S, FCF yield, debt ratios)
 2. Assess earnings quality and revenue growth sustainability
-3. Analyze free cash flow generation and burn rate
+3. Analyze free cash flow generation relative to dividends, capex, and debt service
 4. Compare against sector benchmarks and identify relative value
-5. Cross-reference financial health with news flow and sentiment
-6. For shorts: identify specific catalysts that will cause the stock to decline
-7. Provide precise entry levels, targets, and stop-losses
+5. Cross-reference financial health with news flow, sentiment, and macro context
+6. Classify competitive moat (one of four specific types defined below)
+7. Validate every catalyst against the 5-criterion protocol below
+8. Build explicit Bull/Base/Bear scenarios with probability-weighted Expected Value
 
-IMPORTANT — When live market data is unavailable (price shown as 0.0 or N/A):
-- Use your training knowledge about the company's fundamentals, business model, competitive position
-- You MUST still provide a meaningful recommendation — do not default to HOLD with 0 confidence
-- Set confidence_score to 30-60 when relying on training knowledge
-- A well-reasoned BUY or SELL based on known fundamentals is far more useful than refusing to analyze
+══════════════════════════════════════════════
+HARD EXCLUSION RULES — ZERO TOLERANCE
+If ANY rule is confirmed → set auto_disqualified=true, recommendation=HOLD, list in hard_exclusions_triggered
+══════════════════════════════════════════════
+✗ Revenue declining 3+ consecutive quarters YoY → ELIMINATION
+✗ Dividend payout exceeds trailing Free Cash Flow → ELIMINATION (yield trap)
+✗ Majority analyst consensus is SELL / STRONG_SELL / UNDERPERFORM → ELIMINATION
+✗ Material investigation, litigation, or accounting restatement in past 24 months → ELIMINATION
+✗ Confirmed insider selling >20% of holdings in past 6 months (without estate/diversification explanation) → ELIMINATION
+✗ Net Debt/EBITDA above 4.5x (exception: regulated utilities/telecoms with contracted revenues ≤5x) → ELIMINATION
+✗ Market cap below $500M USD → ELIMINATION
+✗ Negative 3-year average FCF → ELIMINATION
+If UNCERTAIN whether a rule applies: flag it in hard_exclusions_triggered as "UNCERTAIN: [reason]" — do NOT auto-eliminate based on uncertainty alone.
 
-Your output must be structured JSON. Be precise and data-driven."""
+══════════════════════════════════════════════
+CATALYST VALIDATION PROTOCOL — Score 0-5 points
+A catalyst earns 1 point for each criterion met:
+══════════════════════════════════════════════
+1. SPECIFIC: A named, discrete event (not vague "management improving")
+2. DATED: Expected within 18 months from today
+3. QUANTIFIABLE: States expected % impact on EPS, FCF, or valuation multiple
+4. VERIFIABLE: Confirmable via SEC/regulatory filings or company press releases
+5. NOT_PRICED_IN: Forward P/E vs historical range shows market hasn't discounted it yet
+
+══════════════════════════════════════════════
+MOAT CLASSIFICATION — Choose exactly ONE:
+══════════════════════════════════════════════
+• COST_MONOPOLY: Structurally lowest-cost producer (not temporary pricing advantage)
+• SWITCHING_COST: Verified customer lock-in with quantified cost to switch
+• NETWORK_EFFECT: Value grows with user base — quantify marginal value per additional user
+• REGULATORY: Licensed or regulated barrier with specific dated legal protection
+• NONE: No durable competitive advantage identified
+Note: Brand recognition alone is NOT a valid moat for this framework.
+
+══════════════════════════════════════════════
+SCENARIO ANALYSIS — Required for every recommendation
+Bull + Base + Bear probabilities MUST sum to exactly 100.
+══════════════════════════════════════════════
+For each scenario: state the specific trigger, a price target, timeline in months, and probability %.
+Bull: optimistic but plausible — not a fantasy. Bear: a specific downside risk materializing — not maximum catastrophe.
+
+POSTURE: Every number must be derived from data or explicitly estimated from training knowledge.
+State "I don't know" when data is truly unavailable. Never use words: compelling, attractive, exciting, promising.
+The burden of proof is on the BUY case, not the AVOID case.
+Challenge your own thesis: for each position, state the single strongest argument AGAINST buying.
+
+Your output must be structured JSON. Be precise, data-driven, and intellectually honest."""
 
 
 class FundamentalAnalystAgent:
@@ -91,9 +129,14 @@ class FundamentalAnalystAgent:
         quant_models = self._compute_financial_models(market_data)
         logger.info("Quantitative models computed", symbol=market_data["symbol"], models=list(quant_models.keys()))
 
+        pre_exclusions = self._check_hard_exclusions_python(market_data)
+        if pre_exclusions:
+            logger.info("Python pre-screening flags found", symbol=market_data["symbol"], flags=pre_exclusions)
+
         prompt = self._build_analysis_prompt(
             market_data, portfolio_context, news_analysis, macro_analysis, direction_bias,
             quant_models=quant_models,
+            pre_exclusions=pre_exclusions,
         )
 
         llm = self._get_llm()
@@ -143,6 +186,94 @@ class FundamentalAnalystAgent:
     def _v(value: Any, default: Any = "N/A") -> Any:
         return value if value is not None else default
 
+    @staticmethod
+    def _check_hard_exclusions_python(data: MarketDataState) -> List[str]:
+        """Python-detectable hard exclusion pre-screening."""
+        flags: List[str] = []
+        market_cap = float(data.get("market_cap") or 0)
+        fcf = float(data.get("free_cash_flow") or 0)
+        div_yield = float(data.get("dividend_yield") or 0)
+        debt_to_equity = data.get("debt_to_equity")
+        analyst_rec = (data.get("analyst_recommendation") or "").lower()
+        price = float(data.get("price") or 0)
+
+        if 0 < market_cap < 500_000_000:
+            flags.append(f"MICRO-CAP: Market cap ${market_cap/1e6:.0f}M is below $500M minimum threshold")
+
+        if fcf < 0:
+            flags.append(f"NEGATIVE FCF: Trailing FCF ${fcf/1e6:.0f}M — verify 3-year average")
+
+        if fcf > 0 and market_cap > 0 and div_yield > 0 and price > 0:
+            annual_divs = market_cap * div_yield
+            if annual_divs > fcf:
+                flags.append(
+                    f"DIVIDEND YIELD TRAP: Estimated annual dividends ${annual_divs/1e6:.0f}M "
+                    f"exceeds FCF ${fcf/1e6:.0f}M"
+                )
+
+        if analyst_rec in ("sell", "strong sell", "underperform", "reduce", "strong_sell"):
+            flags.append(f"ANALYST SELL CONSENSUS: Consensus recommendation is '{analyst_rec}'")
+
+        if debt_to_equity is not None and float(debt_to_equity) > 5.0:
+            flags.append(
+                f"HIGH LEVERAGE: Debt/Equity {float(debt_to_equity):.1f}x — verify Net Debt/EBITDA vs 4.5x limit"
+            )
+
+        return flags
+
+    @staticmethod
+    def _compute_ev_and_allocation(
+        analysis: Dict[str, Any],
+        price: float,
+    ) -> Dict[str, Any]:
+        """Compute Expected Value and allocation recommendation from scenario analysis."""
+        scenario = analysis.get("scenario_analysis") or {}
+        bull = scenario.get("bull") or {}
+        base = scenario.get("base") or {}
+        bear = scenario.get("bear") or {}
+
+        if price > 0 and bull.get("price_target") and base.get("price_target") and bear.get("price_target"):
+            try:
+                bull_p = float(bull.get("probability_pct", 25)) / 100
+                base_p = float(base.get("probability_pct", 55)) / 100
+                bear_p = float(bear.get("probability_pct", 20)) / 100
+                total_p = bull_p + base_p + bear_p
+                if total_p > 0:
+                    bull_p /= total_p
+                    base_p /= total_p
+                    bear_p /= total_p
+                ev = (
+                    float(bull["price_target"]) * bull_p
+                    + float(base["price_target"]) * base_p
+                    + float(bear["price_target"]) * bear_p
+                )
+                ev_pct = (ev - price) / price * 100
+                analysis["expected_value"] = round(ev, 2)
+                analysis["expected_value_vs_current_pct"] = round(ev_pct, 1)
+            except Exception:
+                ev_pct = None
+        else:
+            ev_pct = None
+
+        auto_disq = analysis.get("auto_disqualified", False)
+        exclusions = analysis.get("hard_exclusions_triggered") or []
+        confidence = float(analysis.get("confidence_score") or 0)
+
+        if auto_disq or [e for e in exclusions if not e.startswith("UNCERTAIN")]:
+            allocation, weight = "NONE", "0%"
+        elif ev_pct is not None and ev_pct >= 25 and confidence >= 75:
+            allocation, weight = "HIGH", "8-12%"
+        elif ev_pct is not None and ev_pct >= 15 and confidence >= 60:
+            allocation, weight = "MEDIUM", "4-7%"
+        elif ev_pct is not None and ev_pct >= 5 and confidence >= 40:
+            allocation, weight = "LOW", "2-3%"
+        else:
+            allocation, weight = "HOLD", "0%"
+
+        analysis["allocation_recommendation"] = allocation
+        analysis["suggested_weight_range"] = weight
+        return analysis
+
     def _build_analysis_prompt(
         self,
         data: MarketDataState,
@@ -151,6 +282,7 @@ class FundamentalAnalystAgent:
         macro_analysis: Optional[Dict[str, Any]] = None,
         direction_bias: Optional[str] = None,
         quant_models: Optional[Dict[str, Any]] = None,
+        pre_exclusions: Optional[List[str]] = None,
     ) -> str:
         v = self._v
         news_summary = "\n".join([
@@ -205,8 +337,19 @@ Existing Position in {data['symbol']}: {portfolio_context.get('existing_position
 
         quant_section = self._format_quant_models(quant_models) if quant_models else ""
 
+        pre_exclusions_section = ""
+        if pre_exclusions:
+            flags_text = "\n".join(f"  ⚠ {f}" for f in pre_exclusions)
+            pre_exclusions_section = f"""
+=== PYTHON PRE-SCREENING FLAGS ===
+The following potential Hard Exclusion violations were detected automatically from raw data.
+Verify each one. If confirmed → include in hard_exclusions_triggered and set auto_disqualified=true.
+If NOT a real violation → explain why in hard_exclusions_triggered as "CLEARED: [reason]".
+{flags_text}
+"""
+
         prompt = f"""Perform comprehensive fundamental analysis for {data['symbol']} ({data['exchange']}).
-{direction_block}
+{direction_block}{pre_exclusions_section}
 === MARKET DATA ===
 Current Price: {v(data.get('price'), 'N/A')} {v(data.get('currency'), 'USD')}
 Previous Close: {v(data.get('previous_close'), 'N/A')}
@@ -274,8 +417,8 @@ Based on ALL the above data and the screener directive, provide your analysis in
   "recommendation_type": "BUY|SELL|HOLD|STRONG_BUY|STRONG_SELL",
   "direction_bias": "{direction_bias or 'NEUTRAL'}",
   "confidence_score": 0-100,
-  "target_price": <float or null — for SHORT: downside target; for LONG: upside target>,
-  "stop_loss": <float or null — for SHORT: above entry; for LONG: below entry>,
+  "target_price": <float or null>,
+  "stop_loss": <float or null>,
   "expected_return_pct": <float — NEGATIVE for short thesis, POSITIVE for long thesis>,
   "investment_horizon": "SHORT_TERM|MEDIUM_TERM|LONG_TERM",
   "valuation_assessment": "UNDERVALUED|FAIRLY_VALUED|OVERVALUED",
@@ -290,14 +433,68 @@ Based on ALL the above data and the screener directive, provide your analysis in
   }},
   "bull_case": "<2-3 sentences>",
   "bear_case": "<2-3 sentences>",
-  "short_catalysts": ["<catalyst1>", "<catalyst2>"],
+  "short_catalysts": ["<catalyst1>"],
   "risk_factors": ["<risk1>", "<risk2>"],
-  "catalysts": ["<catalyst1>", "<catalyst2>"],
+  "catalysts": ["<catalyst1>"],
   "sector_comparison": "<text>",
   "sentiment_cross_check": "<text>",
   "analyst_notes": "<detailed analysis notes>",
-  "data_completeness": 0-100
-}}"""
+  "data_completeness": 0-100,
+
+  "hard_exclusions_triggered": ["<confirmed exclusion or UNCERTAIN/CLEARED: reason>"],
+  "auto_disqualified": false,
+
+  "moat_classification": "COST_MONOPOLY|SWITCHING_COST|NETWORK_EFFECT|REGULATORY|NONE",
+  "moat_evidence": "<specific quantitative evidence for moat classification>",
+
+  "catalyst_validation": {{
+    "primary_catalyst": "<specific named event>",
+    "is_specific": true,
+    "is_dated": true,
+    "expected_date": "<Q1 2026 or DD/MM/YYYY>",
+    "is_quantified": true,
+    "quantified_impact": "<+X% EPS or +Xx multiple>",
+    "is_verifiable": true,
+    "not_priced_in": true,
+    "catalyst_score": 0
+  }},
+
+  "scenario_analysis": {{
+    "bull": {{
+      "probability_pct": 25,
+      "trigger": "<specific event that triggers bull case>",
+      "price_target": <float>,
+      "timeline_months": 12,
+      "upside_pct": <float>
+    }},
+    "base": {{
+      "probability_pct": 55,
+      "trigger": "<base case assumption — most likely outcome>",
+      "price_target": <float>,
+      "timeline_months": 12,
+      "upside_pct": <float>
+    }},
+    "bear": {{
+      "probability_pct": 20,
+      "trigger": "<specific downside risk that materializes>",
+      "price_target": <float>,
+      "timeline_months": 12,
+      "downside_pct": <float — negative number>
+    }}
+  }},
+
+  "thesis_breakers": [
+    {{"rank": 1, "risk": "<specific risk>", "probability_pct": <float>, "impact_pct": <float — negative>, "risk_adjusted_cost_pct": <probability * impact / 100>}},
+    {{"rank": 2, "risk": "<specific risk>", "probability_pct": <float>, "impact_pct": <float — negative>, "risk_adjusted_cost_pct": <probability * impact / 100>}},
+    {{"rank": 3, "risk": "<specific risk>", "probability_pct": <float>, "impact_pct": <float — negative>, "risk_adjusted_cost_pct": <probability * impact / 100>}}
+  ]
+}}
+
+CRITICAL RULES FOR JSON RESPONSE:
+- Bull + Base + Bear probability_pct values MUST sum to exactly 100
+- If auto_disqualified=true: set recommendation_type="HOLD" and confidence_score below 40
+- thesis_breakers ranked by probability_pct × |impact_pct| (highest risk-adjusted cost first)
+- Provide empty arrays [] NOT null for list fields when no data is available"""
 
         return prompt
 
@@ -638,7 +835,6 @@ Based on ALL the above data and the screener directive, provide your analysis in
         # Enforce directional consistency
         rec = analysis.get("recommendation_type", "HOLD")
         if direction_bias == "SHORT" and rec in ("BUY", "STRONG_BUY"):
-            # Analyst contradicts short bias — downgrade to HOLD as a safety measure
             analysis["recommendation_type"] = "HOLD"
             analysis["direction_override_note"] = "Bias was SHORT but analyst recommended BUY — downgraded to HOLD for senior review"
         elif direction_bias == "LONG" and rec in ("SELL", "STRONG_SELL"):
@@ -650,6 +846,29 @@ Based on ALL the above data and the screener directive, provide your analysis in
             analysis["confidence_score"] = 50.0
         else:
             analysis["confidence_score"] = float(confidence)
+
+        # Enforce auto_disqualified → HOLD
+        if analysis.get("auto_disqualified"):
+            analysis["recommendation_type"] = "HOLD"
+            if float(analysis["confidence_score"]) > 40:
+                analysis["confidence_score"] = 30.0
+
+        # Validate moat classification
+        valid_moats = {"COST_MONOPOLY", "SWITCHING_COST", "NETWORK_EFFECT", "REGULATORY", "NONE"}
+        if analysis.get("moat_classification") not in valid_moats:
+            analysis["moat_classification"] = "NONE"
+
+        # Ensure thesis_breakers is a list
+        if not isinstance(analysis.get("thesis_breakers"), list):
+            analysis["thesis_breakers"] = []
+
+        # Ensure hard_exclusions_triggered is a list
+        if not isinstance(analysis.get("hard_exclusions_triggered"), list):
+            analysis["hard_exclusions_triggered"] = []
+
+        # Compute Expected Value + Allocation recommendation from scenario analysis
+        price = float(data.get("price") or 0)
+        analysis = self._compute_ev_and_allocation(analysis, price)
 
         analysis["symbol"] = data["symbol"]
         analysis["direction_bias"] = direction_bias or "NEUTRAL"
@@ -680,6 +899,17 @@ Based on ALL the above data and the screener directive, provide your analysis in
             "sentiment_cross_check": "N/A",
             "analyst_notes": f"Analysis failed: {error}",
             "data_completeness": 0,
+            "hard_exclusions_triggered": [],
+            "auto_disqualified": False,
+            "moat_classification": "NONE",
+            "moat_evidence": "N/A",
+            "catalyst_validation": {"catalyst_score": 0},
+            "scenario_analysis": {},
+            "thesis_breakers": [],
+            "expected_value": None,
+            "expected_value_vs_current_pct": None,
+            "allocation_recommendation": "HOLD",
+            "suggested_weight_range": "0%",
             "symbol": data["symbol"],
             "analysis_timestamp": datetime.now(timezone.utc).isoformat(),
             "analyst_id": "fundamental_agent_v1",

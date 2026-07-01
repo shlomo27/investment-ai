@@ -19,26 +19,36 @@ from app.agents.state import MarketDataState
 
 logger = structlog.get_logger(__name__)
 
-SENIOR_SYSTEM_PROMPT = """You are הבכיר (The Senior), the chief investment committee authority at a Long/Short equity hedge fund.
+SENIOR_SYSTEM_PROMPT = """You are הבכיר (The Senior), the chief investment committee authority at a $10B institutional equity fund.
 
 Your role is the FINAL DECISION MAKER. You receive:
 1. The complete raw market data from הפקיד (The Clerk / Data Fetcher)
-2. The fundamental analysis from the Fundamental Analyst
+2. The fundamental analysis including scenario analysis, thesis breakers, and hard exclusion findings
 3. The pre-screener direction bias (LONG, SHORT, or NEUTRAL)
 
 Your responsibilities:
-1. CROSS-VALIDATE: Check if the analyst's conclusions are supported by the raw data
-2. DIRECTIONAL CHECK: For LONG — confirm the stock is genuinely undervalued with a catalyst. For SHORT — confirm the deterioration thesis is solid and there's a specific downside catalyst.
-3. SIGNAL AUDIT: Verify no critical news or sentiment signals were missed
-4. CONTRARIAN CHECK: Is the sentiment too euphoric (bubble/short squeeze risk) or too fearful (opportunity)?
-5. RISK ASSESSMENT: Size the position appropriately. Shorts carry unlimited theoretical loss risk.
-6. FINAL DECISION: APPROVE or REJECT with detailed reasoning
+1. HARD EXCLUSION ENFORCEMENT: If the analyst flagged auto_disqualified=true → REJECT immediately. No exceptions.
+2. CROSS-VALIDATE: Check if the analyst's conclusions are supported by the raw data
+3. CATALYST VALIDATION: Verify the primary catalyst meets the 5-criterion protocol (Specific/Dated/Quantifiable/Verifiable/Not Priced In)
+4. SCENARIO SANITY CHECK: Are the Bull/Base/Bear scenarios plausible? Are probabilities reasonable?
+5. EXPECTED VALUE VERIFICATION: Is the probability-weighted EV sufficiently above current price (minimum +15%)?
+6. THESIS BREAKER ASSESSMENT: Are the ranked risks adequately addressed in the thesis?
+7. SIGNAL AUDIT: Verify no critical news or sentiment signals were missed
+8. CONTRARIAN CHECK: Is the sentiment too euphoric (bubble/short squeeze risk) or too fearful (opportunity)?
+9. FINAL DECISION: APPROVE or REJECT with allocation confirmation
 
-For SHORT recommendations: you are especially rigorous. Verify:
-- Clear overvaluation vs peers
-- A specific catalyst for decline (earnings miss, margin compression, competition, etc.)
-- Stop-loss is defined and reasonable
-- Short interest isn't already extreme (squeeze risk)
+HARD GATES (automatic REJECT if ANY triggered):
+✗ Analyst set auto_disqualified=true → REJECT
+✗ Probability-weighted Expected Value < current price → REJECT
+✗ No validated catalyst (catalyst_score = 0) for BUY/SELL recommendation → REJECT
+✗ Bull + Base + Bear probabilities don't sum to ~100 → flag and require correction
+✗ Bear case downside > 50% with probability > 30% → REJECT unless thesis is exceptional
+
+For SHORT recommendations: especially rigorous. Verify:
+- Clear overvaluation vs peers (at least 2 metrics)
+- Specific dated negative catalyst
+- Stop-loss defined above entry
+- Short interest < 20% of float (avoid squeeze risk)
 
 You have VETO POWER. "When in doubt, HOLD" is your fallback.
 Output must be strict JSON."""
@@ -244,10 +254,69 @@ Key Macro Catalysts: {', '.join(macro_analysis.get('key_macro_catalysts') or [])
 Real-Time Macro: {macro_analysis.get('real_time_macro_summary', 'Not available')}
 """
 
+        # Format scenario analysis
+        scenario = analysis.get("scenario_analysis") or {}
+        bull_s = scenario.get("bull") or {}
+        base_s = scenario.get("base") or {}
+        bear_s = scenario.get("bear") or {}
+        scenario_text = ""
+        if bull_s and base_s and bear_s:
+            scenario_text = f"""
+=== SCENARIO ANALYSIS (Analyst) ===
+BULL  ({bull_s.get('probability_pct', '?')}%): {bull_s.get('trigger', 'N/A')} → ${bull_s.get('price_target', 'N/A')} (+{bull_s.get('upside_pct', 'N/A')}%) in {bull_s.get('timeline_months', '?')}M
+BASE  ({base_s.get('probability_pct', '?')}%): {base_s.get('trigger', 'N/A')} → ${base_s.get('price_target', 'N/A')} ({base_s.get('upside_pct', 'N/A')}%) in {base_s.get('timeline_months', '?')}M
+BEAR  ({bear_s.get('probability_pct', '?')}%): {bear_s.get('trigger', 'N/A')} → ${bear_s.get('price_target', 'N/A')} ({bear_s.get('downside_pct', 'N/A')}%) in {bear_s.get('timeline_months', '?')}M
+Probability-Weighted EV: ${analysis.get('expected_value', 'N/A')} ({analysis.get('expected_value_vs_current_pct', 'N/A')}% vs current)
+"""
+
+        # Format thesis breakers
+        breakers = analysis.get("thesis_breakers") or []
+        breakers_text = ""
+        if breakers:
+            breakers_text = "\n=== THESIS BREAKERS (Analyst Ranked) ===\n"
+            for b in breakers[:3]:
+                breakers_text += (
+                    f"#{b.get('rank', '?')}: {b.get('risk', 'N/A')} — "
+                    f"P={b.get('probability_pct', '?')}% × Impact={b.get('impact_pct', '?')}% → "
+                    f"Risk-Adj Cost: {b.get('risk_adjusted_cost_pct', '?')}%\n"
+                )
+
+        # Format hard exclusions
+        exclusions = analysis.get("hard_exclusions_triggered") or []
+        auto_disq = analysis.get("auto_disqualified", False)
+        exclusions_text = ""
+        if auto_disq or exclusions:
+            exclusions_text = f"\n=== ⚠ HARD EXCLUSION ALERT ===\nAUTO_DISQUALIFIED: {auto_disq}\n"
+            for excl in exclusions:
+                exclusions_text += f"  • {excl}\n"
+
+        # Format catalyst validation
+        cat_val = analysis.get("catalyst_validation") or {}
+        catalyst_text = ""
+        if cat_val:
+            catalyst_text = (
+                f"\n=== CATALYST VALIDATION ===\n"
+                f"Primary: {cat_val.get('primary_catalyst', 'N/A')}\n"
+                f"Score: {cat_val.get('catalyst_score', 0)}/5 "
+                f"[Specific:{cat_val.get('is_specific')} | Dated:{cat_val.get('is_dated')} | "
+                f"Quantified:{cat_val.get('is_quantified')} | Verifiable:{cat_val.get('is_verifiable')} | "
+                f"Not Priced In:{cat_val.get('not_priced_in')}]\n"
+                f"Expected Date: {cat_val.get('expected_date', 'N/A')} | "
+                f"Impact: {cat_val.get('quantified_impact', 'N/A')}\n"
+            )
+
+        # Moat info
+        moat_text = (
+            f"\nMoat: {analysis.get('moat_classification', 'N/A')} — "
+            f"{analysis.get('moat_evidence', 'N/A')}\n"
+            f"Allocation Recommended: {analysis.get('allocation_recommendation', 'N/A')} "
+            f"({analysis.get('suggested_weight_range', 'N/A')})\n"
+        )
+
         v = self._v
         prompt = f"""Review this investment recommendation for {raw['symbol']} ({raw['exchange']}).
 Screener Direction Bias: {direction_bias or 'NEUTRAL'}
-{direction_checklist}
+{direction_checklist}{exclusions_text}
 === ANALYST RECOMMENDATION ===
 Recommendation: {analyst_rec}
 Confidence: {analyst_conf}/100
@@ -255,6 +324,7 @@ Target Price: {target or 'Not set'}
 Stop Loss: {stop_loss or 'Not set'}
 Expected Return: {v(analysis.get('expected_return_pct'), 'N/A')}%
 Investment Horizon: {v(analysis.get('investment_horizon'), 'N/A')}
+{moat_text}
 Thesis: {v(analysis.get('thesis'), 'N/A')}
 
 Bull Case: {v(analysis.get('bull_case'), 'N/A')}
@@ -264,6 +334,7 @@ Risk Factors: {', '.join(analysis.get('risk_factors') or [])}
 Sentiment Cross-Check: {v(analysis.get('sentiment_cross_check'), 'N/A')}
 Analyst Notes: {v(analysis.get('analyst_notes'), 'N/A')}
 Direction Override Note: {v(analysis.get('direction_override_note'), 'None')}
+{scenario_text}{breakers_text}{catalyst_text}
 
 === RAW MARKET DATA ===
 Price: {v(raw.get('price'), 'N/A')} | 52W Range: {v(raw.get('fifty_two_week_low'), 'N/A')}–{v(raw.get('fifty_two_week_high'), 'N/A')}
@@ -331,13 +402,36 @@ Respond ONLY with valid JSON:
         else:
             decision["decision_confidence"] = float(conf)
 
-        # Auto-reject if approved with too-low confidence
-        if decision["approved"] and decision["decision_confidence"] < 30:
+        # Hard gate: auto_disqualified from fundamental agent → immediate reject
+        if analysis.get("auto_disqualified"):
+            decision["approved"] = False
+            decision["final_recommendation"] = "HOLD"
+            exclusions = analysis.get("hard_exclusions_triggered") or []
+            decision["rejection_reasoning"] = (
+                "HARD EXCLUSION TRIGGERED: Fundamental analyst flagged auto_disqualified=true. "
+                f"Exclusions: {'; '.join(exclusions)}. "
+                "Senior committee cannot approve a disqualified stock."
+            )
+            decision["decision_confidence"] = 0.0
+
+        # Hard gate: approved with too-low confidence
+        elif decision["approved"] and decision["decision_confidence"] < 30:
             decision["approved"] = False
             decision["rejection_reasoning"] = (
                 (decision.get("rejection_reasoning") or "") +
-                " Auto-rejected: confidence score below threshold."
+                " Auto-rejected: confidence score below 30 threshold."
             )
+
+        # Pass through scenario analysis and allocation info from fundamental analyst
+        decision["expected_value"] = analysis.get("expected_value")
+        decision["expected_value_vs_current_pct"] = analysis.get("expected_value_vs_current_pct")
+        decision["allocation_recommendation"] = analysis.get("allocation_recommendation", "HOLD")
+        decision["suggested_weight_range"] = analysis.get("suggested_weight_range", "0%")
+        decision["moat_classification"] = analysis.get("moat_classification", "NONE")
+        decision["catalyst_score"] = (analysis.get("catalyst_validation") or {}).get("catalyst_score", 0)
+        decision["thesis_breakers"] = analysis.get("thesis_breakers") or []
+        decision["scenario_analysis"] = analysis.get("scenario_analysis") or {}
+        decision["hard_exclusions_triggered"] = analysis.get("hard_exclusions_triggered") or []
 
         # For SHORT direction: final recommendation must be SELL or STRONG_SELL
         if direction_bias == "SHORT" and decision.get("approved"):
@@ -384,9 +478,17 @@ Respond ONLY with valid JSON:
             "senior_notes": f"Review failed with error: {error}",
             "data_quality_sufficient": False,
             "recommended_position_size_pct": 0.0,
+            "expected_value": None,
+            "expected_value_vs_current_pct": None,
+            "allocation_recommendation": "HOLD",
+            "suggested_weight_range": "0%",
+            "moat_classification": "NONE",
+            "catalyst_score": 0,
+            "thesis_breakers": [],
+            "scenario_analysis": {},
+            "hard_exclusions_triggered": [],
             "symbol": raw["symbol"],
             "analyst_recommendation": None,
-            "direction_bias": "NEUTRAL",
             "review_agent": "senior_committee_v1",
             "review_timestamp": datetime.now(timezone.utc).isoformat(),
             "error": error,
