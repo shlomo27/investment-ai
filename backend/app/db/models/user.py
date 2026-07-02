@@ -14,6 +14,14 @@ class RiskProfile(str, enum.Enum):
     HYBRID = "HYBRID"
 
 
+class AlertFrequency(str, enum.Enum):
+    """How often external alerts (push/SMS/email) reach the user.
+    In-app inbox always receives everything in real time."""
+    REALTIME = "REALTIME"            # every alert immediately
+    EVERY_4_HOURS = "EVERY_4_HOURS"  # one digest summary per 4h window
+    DAILY = "DAILY"                  # one digest summary per day
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -48,6 +56,9 @@ class User(Base):
     notification_email: Mapped[bool] = mapped_column(Boolean, default=True)
     notification_sms: Mapped[bool] = mapped_column(Boolean, default=True)
     notification_push: Mapped[bool] = mapped_column(Boolean, default=True)
+    # External alert cadence (REALTIME | EVERY_4_HOURS | DAILY); inbox unaffected
+    alert_frequency: Mapped[str] = mapped_column(String(20), nullable=False, default="REALTIME")
+    last_digest_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

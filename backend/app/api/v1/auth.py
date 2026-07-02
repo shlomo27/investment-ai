@@ -68,6 +68,13 @@ class ProfileUpdateRequest(BaseModel):
     investment_horizon_months: Optional[int] = None
     allows_short: Optional[bool] = None
     allows_volatile: Optional[bool] = None
+    alert_frequency: Optional[str] = None  # REALTIME | EVERY_4_HOURS | DAILY
+
+    @validator("alert_frequency")
+    def _validate_alert_frequency(cls, v):
+        if v is not None and v not in ("REALTIME", "EVERY_4_HOURS", "DAILY"):
+            raise ValueError("alert_frequency must be REALTIME, EVERY_4_HOURS or DAILY")
+        return v
 
 
 class OnboardingRequest(BaseModel):
@@ -105,6 +112,7 @@ class UserResponse(BaseModel):
     created_at: datetime
     age_group: Optional[str] = None
     investment_horizon_months: Optional[int] = None
+    alert_frequency: str = "REALTIME"
     totp_enabled: bool = False
 
     class Config:
@@ -279,6 +287,8 @@ async def update_profile(
         current_user.allows_short = request.allows_short
     if request.allows_volatile is not None:
         current_user.allows_volatile = request.allows_volatile
+    if request.alert_frequency is not None:
+        current_user.alert_frequency = request.alert_frequency
 
     await db.flush()
     logger.info("Profile updated", user_id=current_user.id)

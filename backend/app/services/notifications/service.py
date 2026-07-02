@@ -74,8 +74,17 @@ class NotificationService:
 
             channels_sent: List[str] = []
 
+            # Digest mode: the inbox row above is created in real time, but
+            # external channels wait for the periodic digest (job_send_digests).
+            realtime = getattr(user, "alert_frequency", "REALTIME") in (None, "", "REALTIME")
+            if not realtime:
+                logger.debug(
+                    "External send deferred to digest",
+                    user_id=user_id, frequency=user.alert_frequency,
+                )
+
             # Send push notification
-            if user.notification_push:
+            if realtime and user.notification_push:
                 if user.push_token:
                     success = await self._send_push(
                         push_token=user.push_token,
@@ -88,7 +97,7 @@ class NotificationService:
                     logger.info("Push skipped — user has no push_token registered", user_id=user_id)
 
             # Send SMS
-            if user.notification_sms:
+            if realtime and user.notification_sms:
                 if user.phone:
                     success = await self._send_sms(
                         phone=user.phone,
@@ -100,7 +109,7 @@ class NotificationService:
                     logger.info("SMS skipped — user has no phone number", user_id=user_id)
 
             # Send email
-            if user.notification_email:
+            if realtime and user.notification_email:
                 if user.email:
                     success = await self._send_email(
                         email=user.email,
@@ -303,6 +312,31 @@ class NotificationService:
         except Exception as e:
             logger.warning("Email notification failed", error=str(e))
             return False
+
+    async def send_digest(self, user: User, pending_count: int) -> List[str]:
+        """
+        Send ONE generic digest message via the user's enabled external channels.
+        No inbox row is created — the individual notifications are already there.
+        The message stays generic (count only), same privacy rule as always.
+        """
+        if user.preferred_language == "he":
+            title = "סיכום עדכונים"
+            body = f"יש לך {pending_count} עדכוני השקעות חדשים. היכנס למערכת לצפייה בפרטים."
+        else:
+            title = "Updates Digest"
+            body = f"You have {pending_count} new investment updates. Log in to view details."
+
+        channels_sent: List[str] = []
+        if user.notification_push and user.push_token:
+            if await self._send_push(push_token=user.push_token, title=title, body=body):
+                channels_sent.append("push")
+        if user.notification_sms and user.phone:
+            if await self._send_sms(phone=user.phone, message=body):
+                channels_sent.append("sms")
+        if user.notification_email and user.email:
+            if await self._send_email(email=user.email, name=user.full_name, subject=title, body=body):
+                channels_sent.append("email")
+        return channels_sent
 
     async def send_system_notification(
         self,

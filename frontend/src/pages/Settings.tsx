@@ -25,6 +25,9 @@ const Settings: React.FC = () => {
   const [notifPush, setNotifPush] = useState(user?.notification_push ?? false);
   const [ageGroup, setAgeGroup] = useState<string>((user as any)?.age_group ?? "");
   const [horizonMonths, setHorizonMonths] = useState<number>((user as any)?.investment_horizon_months ?? 12);
+  const [alertFreq, setAlertFreq] = useState<"REALTIME" | "EVERY_4_HOURS" | "DAILY">(user?.alert_frequency ?? "REALTIME");
+  const [allowsShort, setAllowsShort] = useState<boolean>(user?.allows_short ?? false);
+  const [allowsVolatile, setAllowsVolatile] = useState<boolean>(user?.allows_volatile ?? false);
 
   const [saved, setSaved] = useState(false);
   const [pushStatus, setPushStatus] = useState<"idle" | "requesting" | "done" | "denied">("idle");
@@ -61,6 +64,9 @@ const Settings: React.FC = () => {
         notification_push: notifPush,
         age_group: ageGroup || undefined,
         investment_horizon_months: horizonMonths,
+        alert_frequency: alertFreq,
+        allows_short: allowsShort,
+        allows_volatile: allowsVolatile,
       } as any)
     );
     setSaved(true);
@@ -247,6 +253,35 @@ const Settings: React.FC = () => {
           </div>
         ))}
 
+        {/* Alert frequency */}
+        <div className="pt-2 border-t border-gray-800">
+          <label className="text-xs text-gray-500 block mb-2">
+            {isHe ? "תדירות התרעות חיצוניות (Push/SMS/אימייל)" : "External alert frequency (Push/SMS/Email)"}
+          </label>
+          <div className="flex gap-2">
+            {([
+              { key: "REALTIME" as const,      he: "בזמן אמת",       en: "Real-time" },
+              { key: "EVERY_4_HOURS" as const, he: "כל 4 שעות",      en: "Every 4h" },
+              { key: "DAILY" as const,         he: "פעם ביום",        en: "Daily" },
+            ]).map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setAlertFreq(f.key)}
+                className={`flex-1 py-2 rounded-xl text-sm border transition-colors ${
+                  alertFreq === f.key ? "bg-blue-600/20 border-blue-500 text-blue-300" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
+                }`}
+              >
+                {isHe ? f.he : f.en}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-600 mt-2">
+            {isHe
+              ? "תיבת הדואר באפליקציה תמיד מתעדכנת בזמן אמת — ההגדרה משפיעה רק על הודעות חיצוניות."
+              : "The in-app inbox always updates in real time — this only affects external messages."}
+          </p>
+        </div>
+
         {/* Push activation helper */}
         {!notifPush && (
           <button
@@ -260,6 +295,35 @@ const Settings: React.FC = () => {
              : (isHe ? "🔔 הפעל התרעות Push" : "🔔 Enable Push Notifications")}
           </button>
         )}
+      </div>
+
+      {/* ── Content Preferences ──────────────────────────────────────────── */}
+      <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800 space-y-3">
+        <h2 className="font-semibold text-sm text-gray-400 uppercase tracking-wider">
+          {isHe ? "העדפות תוכן" : "Content Preferences"}
+        </h2>
+        <p className="text-xs text-gray-500">
+          {isHe
+            ? "בחר אילו סוגי סיגנלים יוצגו לך ברשימת ההמלצות"
+            : "Choose which signal types appear in your recommendations feed"}
+        </p>
+        {[
+          { icon: "📉", he: "הצג סיגנלים לשורט (מכירה בחסר)", en: "Show short-side signals", val: allowsShort, set: setAllowsShort },
+          { icon: "⚡", he: "הצג מניות בתנודתיות גבוהה",       en: "Show high-volatility stocks", val: allowsVolatile, set: setAllowsVolatile },
+        ].map((item) => (
+          <div key={item.he} className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span>{item.icon}</span>
+              <span className="text-sm text-gray-300">{isHe ? item.he : item.en}</span>
+            </div>
+            <button
+              onClick={() => item.set(!item.val)}
+              className={`relative w-11 h-6 rounded-full transition-colors ${item.val ? "bg-blue-600" : "bg-gray-700"}`}
+            >
+              <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${item.val ? "translate-x-5" : "translate-x-0.5"}`} />
+            </button>
+          </div>
+        ))}
       </div>
 
       {/* ── Two-Factor Authentication ────────────────────────────────────── */}

@@ -12,6 +12,7 @@ Schedule (Asia/Jerusalem timezone):
   Daily     08:00  — pre_screener          (momentum-score universe → refresh active pool: top 80 LONG + 20 SHORT)
   Every 30min      — ta_scan               (TA for all master-list stocks — free, no Claude)
   Every 30min      — news_watcher          (news+social for master-list stocks → alerts to holders)
+  Every 30min      — digest_sender         (batched external alerts for digest-mode users)
   Wednesday 09:00  — weekly_full_scan      (full Claude AI on ~100 active pool stocks — keeps recs fresh)
   Daily     12:00  — quarterly_scan_batch  (50 stocks/day when quarterly scan is active)
 
@@ -300,6 +301,15 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+    # Digest sender — every 30 min, batches external alerts for digest-mode users
+    scheduler.add_job(
+        job_send_digests,
+        "interval",
+        minutes=30,
+        id="scheduled_digest_sender",
+        replace_existing=True,
+    )
+
     # Performance outcome tracking — daily 02:00 IL (off-hours, low impact)
     scheduler.add_job(
         job_track_outcomes,
@@ -326,6 +336,59 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
     )
 
     return scheduler
+
+
+async def job_send_digests():
+    """
+    Every 30 min — for users in digest mode (EVERY_4_HOURS / DAILY), send one
+    generic external summary if new notifications accumulated since the last
+    digest and the window has elapsed. Inbox rows are always real-time; this
+    only batches the external push/SMS/email pings.
+    """
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import select, func
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.user import User
+    from app.db.models.notification import Notification
+    from app.services.notifications.service import get_notification_service
+
+    WINDOWS = {"EVERY_4_HOURS": timedelta(hours=4), "DAILY": timedelta(hours=24)}
+    now = datetime.now(timezone.utc)
+    svc = get_notification_service()
+    sent = 0
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = await db.execute(
+                select(User).where(User.is_active == True, User.alert_frequency.in_(list(WINDOWS)))
+            )
+            users = rows.scalars().all()
+
+            for user in users:
+                window = WINDOWS[user.alert_frequency]
+                since = user.last_digest_sent_at or (now - window)
+                if user.last_digest_sent_at and now - user.last_digest_sent_at < window:
+                    continue
+
+                count_row = await db.execute(
+                    select(func.count(Notification.id)).where(
+                        Notification.user_id == user.id,
+                        Notification.sent_at > since,
+                    )
+                )
+                pending = count_row.scalar() or 0
+                if pending == 0:
+                    continue
+
+                channels = await svc.send_digest(user, pending)
+                user.last_digest_sent_at = now
+                sent += 1
+                logger.info(f"[digest] user={user.id} pending={pending} channels={channels}")
+
+            await db.commit()
+        if sent:
+            logger.info(f"[digest] done: {sent} digests sent")
+    except Exception as exc:
+        logger.error(f"[digest] failed: {exc}")
 
 
 async def job_track_outcomes():

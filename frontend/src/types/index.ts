@@ -100,6 +100,7 @@ export interface User {
   notification_email: boolean;
   notification_sms: boolean;
   notification_push: boolean;
+  alert_frequency?: "REALTIME" | "EVERY_4_HOURS" | "DAILY";
   totp_enabled: boolean;
   created_at: string;
 }

@@ -17,7 +17,7 @@ from app.core.security import get_current_active_user
 from app.db.models.user import User
 from app.db.models.recommendation import Recommendation, RecommendationStatus, RecommendationType
 from app.db.models.notification import Notification, NotificationType
-from app.db.models.asset import Asset
+from app.db.models.asset import Asset, RiskLevel
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
@@ -101,6 +101,21 @@ async def get_recommendations(
     symbols = [r.symbol for r in recommendations]
     assets_result = await db.execute(select(Asset).where(Asset.symbol.in_(symbols)))
     assets = {a.symbol: a for a in assets_result.scalars().all()}
+
+    # User-selected content preferences (self-service display filters the user
+    # controls in Settings — NOT personalized advice): hide short-side signals
+    # and/or high-volatility stocks unless the user opted in to see them.
+    _short_types = (RecommendationType.SELL, RecommendationType.STRONG_SELL)
+    _volatile_levels = (RiskLevel.HIGH, RiskLevel.VERY_HIGH)
+    filtered = []
+    for rec in recommendations:
+        if not current_user.allows_short and rec.recommendation_type in _short_types:
+            continue
+        asset = assets.get(rec.symbol)
+        if not current_user.allows_volatile and asset and asset.risk_level in _volatile_levels:
+            continue
+        filtered.append(rec)
+    recommendations = filtered
 
     response = []
     for rec in recommendations:
