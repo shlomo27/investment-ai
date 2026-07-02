@@ -1,9 +1,10 @@
 """
 In-process APScheduler — replaces Celery Beat for Railway deployments.
 
-Runs inside the uvicorn process. Uses a PostgreSQL-backed job store so that
-across the 4 uvicorn workers only ONE worker actually executes each job
-(SQLAlchemy job store uses DB-level locking for coordination).
+Runs inside the uvicorn process. Only ONE of the 4 uvicorn workers starts the
+scheduler — the worker that wins a PostgreSQL advisory lock in main.py's
+lifespan (APScheduler 3.x has no cross-process coordination of its own; the
+job store only persists jobs, it does not prevent duplicate fires).
 
 Schedule (Asia/Jerusalem timezone):
   Sunday    07:00  — load_universe         (refresh S&P500+S&P400+TA-125 from Wikipedia)
@@ -151,9 +152,11 @@ async def job_run_prescreener():
     from app.workers.pre_screener import run_pre_screener
     logger.info("[scheduler] pre_screener started")
     try:
+        # No explicit transaction wrapper: run_pre_screener manages its own
+        # commits so the session doesn't idle in a transaction during the
+        # minutes-long download phase.
         async with AsyncSessionLocal() as db:
-            async with db.begin():
-                result = await run_pre_screener(db)
+            result = await run_pre_screener(db)
         logger.info(f"[scheduler] pre_screener done: {result}")
     except Exception as exc:
         logger.error(f"[scheduler] pre_screener failed: {exc}")
@@ -218,8 +221,8 @@ async def job_run_full_scan():
 def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
     """
     Build an AsyncIOScheduler with a PostgreSQL job store.
-    The SQLAlchemy job store uses DB-level row locking so that across
-    multiple uvicorn workers, each job runs exactly once.
+    NOTE: must only be started in ONE worker process — the caller (main.py
+    lifespan) enforces this with a PostgreSQL advisory lock.
     """
     jobstore = SQLAlchemyJobStore(url=sync_db_url)
 

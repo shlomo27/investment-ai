@@ -36,8 +36,10 @@ const RecommendationCard: React.FC<Props> = ({
   const recColor = isBuy ? "text-green-400 border-green-700/50" : isSell ? "text-red-400 border-red-700/50" : "text-yellow-400 border-yellow-700/50";
   const recBg = isBuy ? "bg-green-900/10" : isSell ? "bg-red-900/10" : "bg-yellow-900/10";
 
+  // TASE prices are shown in ₪, US-listed stocks in $
+  const currency = rec.symbol.endsWith(".TA") ? "₪" : "$";
   const fmt = (v?: number) =>
-    v !== undefined ? `₪${v.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "N/A";
+    v !== undefined ? `${currency}${v.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "N/A";
 
   return (
     <div className={`bg-gray-900 rounded-2xl border ${recColor} ${recBg} overflow-hidden`}>

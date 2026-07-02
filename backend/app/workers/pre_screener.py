@@ -160,6 +160,10 @@ async def run_pre_screener(db) -> dict:
     logger.info("[pre_screener] starting")
     rows = await db.execute(select(Asset.symbol).where(Asset.in_universe == True))
     all_symbols = [r[0] for r in rows.all()]
+    # Release the read transaction before the long download phase — otherwise the
+    # session sits idle-in-transaction for minutes and managed Postgres
+    # (idle_in_transaction_session_timeout) may kill it mid-run.
+    await db.commit()
     if not all_symbols:
         return {"universe_size": 0, "passed_filter": 0, "selected": 0, "long": 0, "short": 0}
 
@@ -192,19 +196,28 @@ async def run_pre_screener(db) -> dict:
     passed = [m for m in metrics if m.passes_filter]
     logger.info(f"[pre_screener] {len(passed)}/{len(metrics)} passed filters")
 
-    # Fallback: if Yahoo Finance is blocked (0 data), pick first TOP_N symbols
-    # so the system can still operate. Claude does the real analysis in full_scan.
+    # Fallback when fewer than TOP_N pass the volume/price filters.
+    # Rescue only symbols that actually returned price data — a symbol with no
+    # data (delisted or bogus ticker) must never be activated into the pool,
+    # where it would burn a full Claude analysis in the weekly scan.
     if len(passed) < TOP_N:
-        logger.warning(
-            f"[pre_screener] only {len(passed)} passed filter (Yahoo Finance may be blocked). "
-            f"Filling to {TOP_N} with remaining symbols."
-        )
         existing = {m.symbol for m in passed}
-        fallback = [StockMetrics(symbol=s, passes_filter=True, score=0.0)
-                    for s in all_symbols if s not in existing]
-        import random
-        random.shuffle(fallback)
-        passed = passed + fallback
+        rescued = [m for m in metrics if m.symbol not in existing and m.price is not None]
+        for m in rescued:
+            m.passes_filter = True
+        passed = passed + rescued
+        logger.warning(
+            f"[pre_screener] only {len(existing)} passed filters — rescued {len(rescued)} "
+            f"symbols with price data (total {len(passed)})"
+        )
+        if not passed:
+            # Yahoo fully blocked: keep the system alive with arbitrary symbols;
+            # Claude does the real analysis in full_scan.
+            logger.warning("[pre_screener] no price data at all — falling back to arbitrary symbols")
+            fallback = [StockMetrics(symbol=s, passes_filter=True, score=0.0) for s in all_symbols]
+            import random
+            random.shuffle(fallback)
+            passed = fallback[:TOP_N]
 
     _score_all(metrics)
     ranked = sorted(passed, key=lambda m: m.score, reverse=True)
@@ -214,6 +227,7 @@ async def run_pre_screener(db) -> dict:
         logger.info(f"[pre_screener] top {len(top)} | score range {top[-1].score:.1f}–{top[0].score:.1f}")
 
     await _update_db(db, ranked, all_symbols)
+    await db.commit()
 
     return {
         "universe_size":  len(all_symbols),

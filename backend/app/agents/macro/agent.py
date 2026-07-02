@@ -18,8 +18,14 @@ from app.agents.state import MarketDataState
 logger = structlog.get_logger(__name__)
 
 
-async def _fetch_fred_series(client: httpx.AsyncClient, series_id: str) -> Optional[float]:
-    """Fetch latest value from FRED public CSV endpoint."""
+async def _fetch_fred_series(
+    client: httpx.AsyncClient, series_id: str, max_age_days: Optional[int] = None
+) -> Optional[float]:
+    """
+    Fetch latest value from FRED public CSV endpoint.
+    If max_age_days is set, a last observation older than that returns None —
+    prevents a discontinued series from being presented as "live" data.
+    """
     try:
         resp = await client.get(
             f"https://fred.stlouisfed.org/graph/fredgraph.csv",
@@ -32,6 +38,13 @@ async def _fetch_fred_series(client: httpx.AsyncClient, series_id: str) -> Optio
         for line in reversed(lines):
             parts = line.split(",")
             if len(parts) == 2 and parts[1].strip() not in (".", ""):
+                if max_age_days is not None:
+                    try:
+                        obs_date = datetime.strptime(parts[0].strip(), "%Y-%m-%d")
+                        if (datetime.now() - obs_date).days > max_age_days:
+                            return None  # stale/discontinued series — not "live"
+                    except ValueError:
+                        pass
                 return float(parts[1].strip())
     except Exception:
         pass
@@ -113,24 +126,35 @@ async def fetch_realtime_macro() -> Dict[str, Any]:
 
 async def fetch_israeli_macro() -> Dict[str, Any]:
     """
-    Fetch Israeli macro indicators from FRED (free, no key required).
+    Fetch Israeli macro indicators.
     Self-contained — opens its own httpx client, matching fetch_realtime_macro().
-    FRED series:
-      INTDSRILM193N    — Bank of Israel benchmark interest rate
-      DEXILAS          — USD/ILS spot exchange rate (daily)
-      ISRPCPIALLAINMEI — Israel CPI all items (YoY computed)
+    Sources:
+      IRSTCB01ILM156N — Bank of Israel policy rate (FRED/OECD, monthly;
+                        falls back to legacy INTDSRILM193N)
+      ILS=X           — USD/ILS spot rate from Yahoo Finance (FRED's DEX*
+                        dataset does not cover Israel)
+      ISRCPIALLMINMEI — Israel CPI all items, MONTHLY index (YoY = t / t-12)
+    Every FRED value is staleness-guarded so a discontinued series is omitted
+    rather than presented as live data.
     """
     result: Dict[str, Any] = {}
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            boi_rate, usd_ils = await asyncio.gather(
-                _fetch_fred_series(client, "INTDSRILM193N"),
-                _fetch_fred_series(client, "DEXILAS"),
+            boi_rate, boi_legacy = await asyncio.gather(
+                _fetch_fred_series(client, "IRSTCB01ILM156N", max_age_days=120),
+                _fetch_fred_series(client, "INTDSRILM193N", max_age_days=120),
                 return_exceptions=True,
             )
-        il_cpi = await asyncio.to_thread(_fetch_fred_cpi_series_sync, "ISRPCPIALLAINMEI")
-        if isinstance(boi_rate, float):
-            result["boi_interest_rate_pct"] = round(boi_rate, 2)
+        il_cpi, usd_ils = await asyncio.gather(
+            asyncio.to_thread(_fetch_fred_cpi_series_sync, "ISRCPIALLMINMEI"),
+            asyncio.to_thread(_fetch_usd_ils_yahoo),
+            return_exceptions=True,
+        )
+        rate = boi_rate if isinstance(boi_rate, float) else (
+            boi_legacy if isinstance(boi_legacy, float) else None
+        )
+        if rate is not None:
+            result["boi_interest_rate_pct"] = round(rate, 2)
         if isinstance(usd_ils, float):
             result["usd_ils_rate"] = round(usd_ils, 4)
         if isinstance(il_cpi, float):
@@ -140,8 +164,27 @@ async def fetch_israeli_macro() -> Dict[str, Any]:
     return result
 
 
-def _fetch_fred_cpi_series_sync(series_id: str) -> Optional[float]:
-    """Synchronous CPI YoY computation — run in thread pool."""
+def _fetch_usd_ils_yahoo() -> Optional[float]:
+    """USD/ILS spot from Yahoo Finance (sync — run in thread pool)."""
+    try:
+        import yfinance as yf
+        df = yf.download("ILS=X", period="5d", interval="1d", progress=False)
+        if df is not None and not df.empty:
+            closes = df["Close"].dropna()
+            if len(closes):
+                val = closes.iloc[-1]
+                # yfinance may return a 1-column frame per ticker
+                return float(val.iloc[0]) if hasattr(val, "iloc") else float(val)
+    except Exception:
+        pass
+    return None
+
+
+def _fetch_fred_cpi_series_sync(series_id: str, max_age_days: int = 200) -> Optional[float]:
+    """
+    Synchronous CPI YoY computation from a MONTHLY index series — run in thread
+    pool. Returns None if the series is stale (discontinued) or too short.
+    """
     import requests as _req
     try:
         resp = _req.get(
@@ -152,16 +195,23 @@ def _fetch_fred_cpi_series_sync(series_id: str) -> Optional[float]:
         if resp.status_code != 200:
             return None
         lines = [l for l in resp.text.strip().split("\n") if l and not l.startswith("DATE")]
-        valid = []
+        valid: list[tuple[str, float]] = []
         for line in lines:
             parts = line.split(",")
             if len(parts) == 2 and parts[1].strip() not in (".", ""):
                 try:
-                    valid.append(float(parts[1].strip()))
+                    valid.append((parts[0].strip(), float(parts[1].strip())))
                 except ValueError:
                     pass
-        if len(valid) >= 13:
-            return (valid[-1] - valid[-13]) / valid[-13] * 100
+        if len(valid) < 13:
+            return None
+        try:
+            last_obs = datetime.strptime(valid[-1][0], "%Y-%m-%d")
+            if (datetime.now() - last_obs).days > max_age_days:
+                return None  # stale series — don't present as live
+        except ValueError:
+            pass
+        return (valid[-1][1] - valid[-13][1]) / valid[-13][1] * 100
     except Exception:
         pass
     return None

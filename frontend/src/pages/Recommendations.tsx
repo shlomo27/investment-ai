@@ -7,6 +7,7 @@ import {
   markNotificationRead,
   acknowledgeRecommendation,
 } from "../store/slices/notificationsSlice";
+import { fetchPortfolioSummary } from "../store/slices/portfolioSlice";
 import { recommendationsApi, ordersApi } from "../api/client";
 import { Recommendation, OrderType, RecommendationType, TechnicalAnalysis } from "../types";
 import ConfirmTradeModal from "../components/Trading/ConfirmTradeModal";
@@ -46,6 +47,7 @@ const Recommendations: React.FC = () => {
   useEffect(() => {
     dispatch(fetchInbox({ unreadOnly: false }));
     dispatch(fetchRecommendations({}));
+    dispatch(fetchPortfolioSummary()); // needed for suggested investment amounts
   }, [dispatch]);
 
   const handleReadNotification = (id: number) => {
