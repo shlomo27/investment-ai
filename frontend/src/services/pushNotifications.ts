@@ -51,10 +51,16 @@ async function registerSW(): Promise<ServiceWorkerRegistration | null> {
  * Returns null if permission denied or Firebase is not configured.
  */
 export async function requestPushPermission(): Promise<string | null> {
-  if (!isConfigured()) return null;
+  if (!isConfigured()) {
+    console.warn('[push] Firebase config missing — VITE_FIREBASE_* vars were not baked into this build');
+    return null;
+  }
 
   const permission = await Notification.requestPermission();
-  if (permission !== 'granted') return null;
+  if (permission !== 'granted') {
+    console.warn('[push] Notification permission not granted:', permission);
+    return null;
+  }
 
   try {
     const { initializeApp, getApps } = await import('firebase/app');
@@ -68,8 +74,10 @@ export async function requestPushPermission(): Promise<string | null> {
       vapidKey: VAPID_KEY,
       serviceWorkerRegistration: swReg ?? undefined,
     });
+    if (!token) console.warn('[push] getToken returned empty token');
     return token || null;
-  } catch {
+  } catch (err) {
+    console.warn('[push] Failed to obtain FCM token:', err);
     return null;
   }
 }
