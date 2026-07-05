@@ -1009,6 +1009,30 @@ const FundDashboard: React.FC = () => {
                           {" — "}{simStep[step].news_articles_total} {isHe ? "כתבות" : "articles"}
                         </p>
                       )}
+                      {simStep[step].data_sources && (
+                        <div className="mt-1 space-y-1">
+                          <p className="text-xs text-gray-400 font-medium">{isHe ? "מקורות נתונים:" : "Data sources:"}</p>
+                          {Object.entries(simStep[step].data_sources as Record<string, { ok: boolean; detail: string }>).map(([src, res]) => {
+                            const srcLabels: Record<string, string> = {
+                              price_fundamentals: isHe ? "מחיר + פונדמנטלס (Yahoo/TASE)" : "Price + fundamentals",
+                              social_sentiment: isHe ? "סנטימנט רשתות" : "Social sentiment",
+                              news: isHe ? "חדשות" : "News",
+                              insider_activity: isHe ? "עסקאות בעלי עניין" : "Insider activity",
+                              sec_filings: isHe ? "דוחות SEC" : "SEC filings",
+                            };
+                            return (
+                              <div key={src} className="flex items-center gap-2 text-xs px-2 py-0.5 rounded bg-gray-800/40 text-gray-300">
+                                <span>{res.ok ? "✅" : "⚠️"}</span>
+                                <span className="whitespace-nowrap">{srcLabels[src] || src}</span>
+                                <span className="text-gray-500 truncate">{res.detail}</span>
+                              </div>
+                            );
+                          })}
+                          {simStep[step].fetch_errors?.length > 0 && (
+                            <p className="text-xs text-red-400/80">⚠ {simStep[step].fetch_errors.join(" | ")}</p>
+                          )}
+                        </div>
+                      )}
                       <p className="text-xs text-gray-500">
                         {simStep[step].workflow_status === "saved"
                           ? (isHe ? `נשמרה המלצה חדשה (#${simStep[step].recommendation_id})` : `New recommendation saved (#${simStep[step].recommendation_id})`)

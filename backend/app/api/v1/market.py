@@ -607,11 +607,40 @@ async def simulate_ai_engines_check(
     claude_ok = bool(fundamental.get("confidence_score") is not None and senior)
 
     # News source breakdown — proves which of the configured feeds delivered
-    news_items = (state.get("data_fetcher_output") or {}).get("news_items") or []
+    raw = state.get("data_fetcher_output") or {}
+    news_items = raw.get("news_items") or []
     news_sources: Dict[str, int] = {}
     for item in news_items:
         src = (item.get("source") or "unknown") if isinstance(item, dict) else "unknown"
         news_sources[src] = news_sources.get(src, 0) + 1
+
+    # Full data-source coverage report — every feed the DataFetcher pulls
+    sentiment = raw.get("social_sentiment") or {}
+    data_sources = {
+        "price_fundamentals": {
+            "ok": bool(raw.get("price")),
+            "detail": (
+                f"price={raw.get('price')}, market_cap={'✓' if raw.get('market_cap') else '✗'}, "
+                f"pe={'✓' if raw.get('pe_ratio') is not None else '✗'}"
+            ),
+        },
+        "social_sentiment": {
+            "ok": bool(sentiment.get("mentions")),
+            "detail": f"score={sentiment.get('score', 0)}, mentions={sentiment.get('mentions', 0)}",
+        },
+        "news": {
+            "ok": len(news_items) > 0,
+            "detail": f"{len(news_items)} articles / {len(news_sources)} feeds",
+        },
+        "insider_activity": {
+            "ok": raw.get("insider_activity") is not None,
+            "detail": "OK" if raw.get("insider_activity") is not None else "no data",
+        },
+        "sec_filings": {
+            "ok": raw.get("sec_filings") is not None,
+            "detail": "OK" if raw.get("sec_filings") is not None else "no data",
+        },
+    }
 
     return {
         "symbol": sym,
@@ -620,6 +649,8 @@ async def simulate_ai_engines_check(
         "error": state.get("error"),
         "news_articles_total": len(news_items),
         "news_sources": news_sources,
+        "data_sources": data_sources,
+        "fetch_errors": raw.get("fetch_errors") or [],
         "engines": {
             "claude": {
                 "ok": claude_ok,
