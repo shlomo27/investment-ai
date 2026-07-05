@@ -236,12 +236,16 @@ class MacroContextAgent:
         self._llm = None
 
     def _get_llm(self):
-        api_key = settings.GEMINI_API_KEY or settings.GOOGLE_AI_API_KEY
+        # Sanitize env-sourced values: stray whitespace/quotes (easy to pick up
+        # when pasting into Railway) make Gemini reject the model name with
+        # "unexpected model name format".
+        api_key = (settings.GEMINI_API_KEY or settings.GOOGLE_AI_API_KEY or "").strip()
+        model = (settings.GEMINI_MODEL or "gemini-2.5-flash").strip().strip('"').strip("'")
         if not api_key:
             return None
         if self._llm is None:
             self._llm = ChatGoogleGenerativeAI(
-                model=settings.GEMINI_MODEL,
+                model=model,
                 google_api_key=api_key,
                 max_output_tokens=1500,
                 temperature=0.1,

@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # Google Gemini (Macro Context)
     GEMINI_API_KEY: str = ""
     GOOGLE_AI_API_KEY: str = ""  # alias accepted from Railway
-    GEMINI_MODEL: str = "gemini-1.5-flash"
+    GEMINI_MODEL: str = "gemini-2.5-flash"  # 1.5 was retired by Google mid-2025
 
     # Twitter/X API v2
     TWITTER_BEARER_TOKEN: str = ""
