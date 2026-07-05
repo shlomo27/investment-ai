@@ -183,7 +183,7 @@ class DataFetcherAgent:
         # Primary: Yahoo Finance
         result = await self.yahoo_service.get_stock_info(symbol)
         if result and result.get("price", 0) > 0:
-            return result
+            return await self._fill_fundamental_gaps(symbol, result)
 
         logger.warning("Yahoo Finance returned no price — trying Alpaca snapshot", symbol=symbol)
 
@@ -324,6 +324,46 @@ Respond in JSON format:
             "fifty_two_week_high": 0.0,
             "fifty_two_week_low": 0.0,
         }
+
+    # Fields worth back-filling from Finnhub when Yahoo returns them empty.
+    # Scale-free ratios are used as-is; percent-style fields are normalized to
+    # fractions to match Yahoo's convention (Finnhub reports e.g. roe=18.6 = 18.6%).
+    _GAP_FIELDS = (
+        "pe_ratio", "price_to_book", "price_to_sales", "beta", "current_ratio",
+        "profit_margin", "roe", "roa", "revenue_growth", "dividend_yield",
+    )
+    _PERCENT_STYLE_FIELDS = {"profit_margin", "roe", "roa", "revenue_growth", "dividend_yield"}
+
+    async def _fill_fundamental_gaps(self, symbol: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Yahoo sometimes returns partial fundamentals (e.g. no P/E when trailing
+        earnings are negative, or plain data gaps). Fill ONLY the missing fields
+        from Finnhub so the fundamental agent gets the fullest possible picture.
+        """
+        missing = [f for f in self._GAP_FIELDS if data.get(f) is None]
+        if not missing:
+            return data
+        fin = get_finnhub_service()
+        if not fin.is_configured():
+            return data
+        try:
+            extra = await fin.get_basic_financials(symbol)
+        except Exception:
+            return data
+        if not extra:
+            return data
+        filled = []
+        for f in missing:
+            value = extra.get(f)
+            if value is None:
+                continue
+            if f in self._PERCENT_STYLE_FIELDS and abs(value) > 1.5:
+                value = value / 100.0  # percent → fraction, Yahoo convention
+            data[f] = value
+            filled.append(f)
+        if filled:
+            logger.info("Filled fundamental gaps from Finnhub", symbol=symbol, fields=filled)
+        return data
 
     def _empty_sentiment(self) -> SocialSentiment:
         return {
