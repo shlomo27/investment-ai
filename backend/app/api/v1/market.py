@@ -567,6 +567,65 @@ async def simulate_ta_scan(
     return {"started": True, "message": "TA scan running in background — check notifications inbox in ~1 min"}
 
 
+@router.post("/simulate/ai-engines-check")
+async def simulate_ai_engines_check(
+    symbol: str = "AAPL",
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Admin: run ONE full real analysis and report which AI engine actually ran.
+    Verifies the whole pipeline: Claude (data+fundamental+senior),
+    OpenAI/GPT (news), Gemini (macro). Costs ~$0.10-0.25 per run.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    from app.agents.workflow import run_investment_workflow
+    from app.db.models.asset import Asset
+
+    sym = symbol.upper().strip()
+    asset_row = await db.execute(select(Asset).where(Asset.symbol == sym))
+    asset = asset_row.scalar_one_or_none()
+    exchange = asset.exchange.value if asset else ("TASE" if sym.endswith(".TA") else "NASDAQ")
+
+    state = await run_investment_workflow(symbol=sym, exchange=exchange,
+                                          trigger_type="MANUAL",
+                                          trigger_details="ai-engines-check simulation")
+
+    def _engine(analysis, label_field=None):
+        analysis = analysis or {}
+        reason = analysis.get("skipped_reason")
+        if reason:
+            return {"ok": False, "detail": reason}
+        if not analysis:
+            return {"ok": False, "detail": "no output"}
+        return {"ok": True, "detail": str(analysis.get(label_field, "OK"))[:120] if label_field else "OK"}
+
+    fundamental = state.get("fundamental_analysis") or {}
+    senior = state.get("senior_decision") or {}
+    claude_ok = bool(fundamental.get("confidence_score") is not None and senior)
+
+    return {
+        "symbol": sym,
+        "workflow_status": state.get("workflow_status"),
+        "recommendation_id": state.get("recommendation_id"),
+        "error": state.get("error"),
+        "engines": {
+            "claude": {
+                "ok": claude_ok,
+                "detail": (
+                    f"fundamental+senior OK — {senior.get('final_recommendation', '?')} "
+                    f"({senior.get('decision_confidence', '?')}%)"
+                    if claude_ok else "fundamental/senior missing — check ANTHROPIC_API_KEY"
+                ),
+            },
+            "openai_news": _engine(state.get("news_analysis"), "overall_sentiment"),
+            "gemini_macro": _engine(state.get("macro_analysis"), "sector_outlook"),
+        },
+    }
+
+
 @router.post("/simulate/test-notification")
 async def simulate_test_notification(
     current_user: User = Depends(get_current_active_user),

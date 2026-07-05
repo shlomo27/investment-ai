@@ -964,6 +964,15 @@ const FundDashboard: React.FC = () => {
               desc: isHe ? "שולח התראה ישירה לכל הערוצים (Push + SMS + Email + תיבת דואר)" : "Sends alert to all channels (Push + SMS + Email + Inbox)",
               action: async () => marketApi.simulateTestNotification(),
             },
+            {
+              step: 6,
+              icon: "🧠",
+              title: isHe ? "בדיקת 3 מנועי ה-AI" : "AI Engines Check",
+              desc: isHe
+                ? `ניתוח אמיתי מלא של ${simSymbol} — מוודא ש-Claude, GPT (חדשות) ו-Gemini (מאקרו) כולם פועלים. לוקח 1-3 דקות ועולה ~10-25 סנט`
+                : `Real full analysis of ${simSymbol} — verifies Claude, GPT (news) and Gemini (macro) all fire. Takes 1-3 min, costs ~$0.10-0.25`,
+              action: async () => marketApi.simulateAiEnginesCheck(simSymbol),
+            },
           ].map(({ step, icon, title, desc, action, removeAction }: any) => (
             <div key={step} className="flex items-start gap-4 bg-gray-800/40 rounded-xl p-4 border border-gray-700/40">
               <div className="flex flex-col items-center gap-1 shrink-0">
@@ -976,7 +985,29 @@ const FundDashboard: React.FC = () => {
                 <p className="text-sm font-medium text-white">{title}</p>
                 <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
                 {simStep[step] && (
-                  step === 5 && simStep[step].diagnostics ? (
+                  step === 6 && simStep[step].engines ? (
+                    <div className="mt-2 space-y-1.5">
+                      {Object.entries(simStep[step].engines as Record<string, { ok: boolean; detail: string }>).map(([engine, res]) => {
+                        const labels: Record<string, string> = {
+                          claude: isHe ? "Claude — פונדמנטלי + ועדה" : "Claude — fundamental + senior",
+                          openai_news: isHe ? "GPT — ניתוח חדשות" : "GPT — news analysis",
+                          gemini_macro: isHe ? "Gemini — מאקרו" : "Gemini — macro",
+                        };
+                        return (
+                          <div key={engine} className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${res.ok ? "bg-green-900/20 text-green-300" : "bg-red-900/20 text-red-300"}`}>
+                            <span>{res.ok ? "✅" : "❌"}</span>
+                            <span className="font-medium whitespace-nowrap">{labels[engine] || engine}</span>
+                            <span className="text-gray-400 truncate">{res.detail}</span>
+                          </div>
+                        );
+                      })}
+                      <p className="text-xs text-gray-500">
+                        {simStep[step].workflow_status === "saved"
+                          ? (isHe ? `נשמרה המלצה חדשה (#${simStep[step].recommendation_id})` : `New recommendation saved (#${simStep[step].recommendation_id})`)
+                          : (isHe ? `סטטוס: ${simStep[step].workflow_status || "?"}${simStep[step].error ? " — " + simStep[step].error : ""}` : `Status: ${simStep[step].workflow_status || "?"}`)}
+                      </p>
+                    </div>
+                  ) : step === 5 && simStep[step].diagnostics ? (
                     <div className="mt-2 space-y-1.5">
                       {/* Channel status */}
                       {["push", "sms", "email", "telegram"].map((ch) => {

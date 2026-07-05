@@ -444,6 +444,15 @@ export const marketApi = {
     return response.data;
   },
 
+  // Full real one-stock analysis to verify all 3 AI engines fire (takes 1-3 min)
+  simulateAiEnginesCheck: async (symbol: string): Promise<any> => {
+    const response = await api.post("/market/simulate/ai-engines-check", null, {
+      params: { symbol },
+      timeout: 300000,
+    });
+    return response.data;
+  },
+
   simulateCreatePosition: async (symbol: string, quantity = 10, price = 100): Promise<any> => {
     const response = await api.post("/market/simulate/create-test-position", null, {
       params: { symbol, quantity, price },
