@@ -606,11 +606,20 @@ async def simulate_ai_engines_check(
     senior = state.get("senior_decision") or {}
     claude_ok = bool(fundamental.get("confidence_score") is not None and senior)
 
+    # News source breakdown — proves which of the configured feeds delivered
+    news_items = (state.get("data_fetcher_output") or {}).get("news_items") or []
+    news_sources: Dict[str, int] = {}
+    for item in news_items:
+        src = (item.get("source") or "unknown") if isinstance(item, dict) else "unknown"
+        news_sources[src] = news_sources.get(src, 0) + 1
+
     return {
         "symbol": sym,
         "workflow_status": state.get("workflow_status"),
         "recommendation_id": state.get("recommendation_id"),
         "error": state.get("error"),
+        "news_articles_total": len(news_items),
+        "news_sources": news_sources,
         "engines": {
             "claude": {
                 "ok": claude_ok,

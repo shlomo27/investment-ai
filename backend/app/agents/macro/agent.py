@@ -236,11 +236,13 @@ class MacroContextAgent:
         self._llm = None
 
     def _get_llm(self):
-        # Sanitize env-sourced values: stray whitespace/quotes (easy to pick up
-        # when pasting into Railway) make Gemini reject the model name with
-        # "unexpected model name format".
+        # Sanitize env-sourced values: pasted env vars can carry stray quotes,
+        # whitespace or INVISIBLE unicode (RTL/zero-width marks from copying out
+        # of chat/docs) — Gemini then rejects the model name with
+        # "unexpected model name format". Keep only legal model-name chars.
+        import re as _re
         api_key = (settings.GEMINI_API_KEY or settings.GOOGLE_AI_API_KEY or "").strip()
-        model = (settings.GEMINI_MODEL or "gemini-2.5-flash").strip().strip('"').strip("'")
+        model = _re.sub(r"[^A-Za-z0-9._\-/]", "", settings.GEMINI_MODEL or "") or "gemini-2.5-flash"
         if not api_key:
             return None
         if self._llm is None:

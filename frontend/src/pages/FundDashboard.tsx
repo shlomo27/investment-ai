@@ -1001,6 +1001,14 @@ const FundDashboard: React.FC = () => {
                           </div>
                         );
                       })}
+                      {simStep[step].news_sources && Object.keys(simStep[step].news_sources).length > 0 && (
+                        <p className="text-xs text-cyan-400/80">
+                          📰 {isHe ? "מקורות חדשות:" : "News sources:"}{" "}
+                          {Object.entries(simStep[step].news_sources as Record<string, number>)
+                            .map(([src, n]) => `${src} (${n})`).join(" · ")}
+                          {" — "}{simStep[step].news_articles_total} {isHe ? "כתבות" : "articles"}
+                        </p>
+                      )}
                       <p className="text-xs text-gray-500">
                         {simStep[step].workflow_status === "saved"
                           ? (isHe ? `נשמרה המלצה חדשה (#${simStep[step].recommendation_id})` : `New recommendation saved (#${simStep[step].recommendation_id})`)
