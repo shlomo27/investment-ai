@@ -334,8 +334,10 @@ Respond in JSON format:
             "key_themes": [],
             "twitter_score": 0.0,
             "reddit_score": 0.0,
+            "stocktwits_score": 0.0,
             "tweet_count": 0,
             "reddit_post_count": 0,
+            "stocktwits_post_count": 0,
         }
 
 

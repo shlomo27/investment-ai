@@ -7,6 +7,8 @@ import asyncio
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
+
+import httpx
 import structlog
 
 from app.core.config import settings
@@ -90,25 +92,32 @@ class SentimentService:
         tasks = [
             self._get_twitter_sentiment(symbol),
             self._get_reddit_sentiment(symbol),
+            self._get_stocktwits_sentiment(symbol),
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        twitter_result = results[0] if not isinstance(results[0], Exception) else {"score": 0.0, "count": 0, "posts": [], "themes": []}
-        reddit_result = results[1] if not isinstance(results[1], Exception) else {"score": 0.0, "count": 0, "posts": [], "themes": []}
+        _empty = {"score": 0.0, "count": 0, "posts": [], "themes": []}
+        twitter_result = results[0] if not isinstance(results[0], Exception) else dict(_empty)
+        reddit_result = results[1] if not isinstance(results[1], Exception) else dict(_empty)
+        stocktwits_result = results[2] if not isinstance(results[2], Exception) else dict(_empty)
 
         twitter_score = twitter_result.get("score", 0.0)
         twitter_count = twitter_result.get("count", 0)
         reddit_score = reddit_result.get("score", 0.0)
         reddit_count = reddit_result.get("count", 0)
+        stocktwits_score = stocktwits_result.get("score", 0.0)
+        stocktwits_count = stocktwits_result.get("count", 0)
 
-        total_count = twitter_count + reddit_count
+        total_count = twitter_count + reddit_count + stocktwits_count
 
-        # Weighted composite score (Twitter has higher volume, Reddit has deeper analysis)
+        # Weighted composite score: Reddit has deeper analysis, Stocktwits is
+        # finance-native with explicit bull/bear author labels, Twitter has volume.
         if total_count > 0:
             composite_score = (
-                (twitter_score * twitter_count * 0.4 + reddit_score * reddit_count * 0.6)
-                / max(total_count, 1)
-            )
+                twitter_score * twitter_count * 0.3
+                + reddit_score * reddit_count * 0.35
+                + stocktwits_score * stocktwits_count * 0.35
+            ) / max(total_count, 1)
         else:
             composite_score = 0.0
 
@@ -119,11 +128,17 @@ class SentimentService:
         is_trending = total_count > 100
 
         # Combine top posts
-        all_posts = twitter_result.get("posts", [])[:3] + reddit_result.get("posts", [])[:3]
+        all_posts = (
+            twitter_result.get("posts", [])[:2]
+            + reddit_result.get("posts", [])[:2]
+            + stocktwits_result.get("posts", [])[:2]
+        )
 
         # Combine themes
         all_themes = list(set(
-            twitter_result.get("themes", []) + reddit_result.get("themes", [])
+            twitter_result.get("themes", [])
+            + reddit_result.get("themes", [])
+            + stocktwits_result.get("themes", [])
         ))[:10]
 
         return SocialSentiment(
@@ -134,9 +149,67 @@ class SentimentService:
             key_themes=all_themes,
             twitter_score=round(twitter_score, 4),
             reddit_score=round(reddit_score, 4),
+            stocktwits_score=round(stocktwits_score, 4),
             tweet_count=twitter_count,
             reddit_post_count=reddit_count,
+            stocktwits_post_count=stocktwits_count,
         )
+
+    async def _get_stocktwits_sentiment(self, symbol: str) -> Dict[str, Any]:
+        """
+        Fetch sentiment from Stocktwits — a finance-native social network.
+        Free public endpoint, no API key required. Messages carry explicit
+        Bullish/Bearish labels set by their authors, which beats text scoring.
+        TASE symbols (.TA) are not covered — returns empty for them.
+        """
+        empty = {"score": 0.0, "count": 0, "posts": [], "themes": []}
+        if symbol.endswith(".TA"):
+            return empty
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+                resp = await client.get(
+                    f"https://api.stocktwits.com/api/2/streams/symbol/{symbol}.json",
+                    headers={"User-Agent": "Mozilla/5.0 (compatible; InvestmentAI/1.0)"},
+                )
+                if resp.status_code != 200:
+                    logger.debug("Stocktwits non-200", symbol=symbol, status=resp.status_code)
+                    return empty
+                messages = (resp.json() or {}).get("messages") or []
+
+            bullish = bearish = 0
+            posts = []
+            for msg in messages:
+                label = (((msg.get("entities") or {}).get("sentiment") or {}) or {}).get("basic", "")
+                body = msg.get("body", "")
+                if label == "Bullish":
+                    bullish += 1
+                elif label == "Bearish":
+                    bearish += 1
+                if len(posts) < 3 and body:
+                    posts.append({
+                        "platform": "stocktwits",
+                        "text": body[:200],
+                        "score": 1.0 if label == "Bullish" else -1.0 if label == "Bearish" else _score_text(body),
+                    })
+
+            labeled = bullish + bearish
+            # Prefer explicit author labels; fall back to keyword scoring
+            if labeled > 0:
+                score = (bullish - bearish) / labeled
+            elif messages:
+                score = sum(_score_text(m.get("body", "")) for m in messages) / len(messages)
+            else:
+                return empty
+
+            return {
+                "score": round(max(-1.0, min(1.0, score)), 4),
+                "count": len(messages),
+                "posts": posts,
+                "themes": [],
+            }
+        except Exception as e:
+            logger.debug("Stocktwits fetch failed", symbol=symbol, error=str(e))
+            return empty
 
     async def _get_twitter_sentiment(self, symbol: str) -> Dict[str, Any]:
         """Fetch and score tweets about the symbol."""

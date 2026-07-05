@@ -360,8 +360,10 @@ export interface SentimentData {
   key_themes: string[];
   twitter_score: number;
   reddit_score: number;
+  stocktwits_score?: number;
   tweet_count: number;
   reddit_post_count: number;
+  stocktwits_post_count?: number;
 }
 
 export interface AnalysisModule {

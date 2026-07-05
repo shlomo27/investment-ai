@@ -249,7 +249,10 @@ class MacroContextAgent:
             self._llm = ChatGoogleGenerativeAI(
                 model=model,
                 google_api_key=api_key,
-                max_output_tokens=1500,
+                # Gemini 2.5+ are "thinking" models — internal reasoning consumes
+                # output tokens BEFORE the answer. A tight cap truncates the JSON
+                # mid-string ("Unterminated string" parse errors).
+                max_output_tokens=8192,
                 temperature=0.1,
             )
         return self._llm
