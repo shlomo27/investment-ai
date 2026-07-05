@@ -626,7 +626,10 @@ async def simulate_ai_engines_check(
         },
         "social_sentiment": {
             "ok": bool(sentiment.get("mentions")),
-            "detail": f"score={sentiment.get('score', 0)}, mentions={sentiment.get('mentions', 0)}",
+            "detail": (
+                f"score={sentiment.get('score', 0)}, mentions={sentiment.get('mentions', 0)} "
+                f"(twitter={sentiment.get('tweet_count', 0)}, reddit={sentiment.get('reddit_post_count', 0)})"
+            ),
         },
         "news": {
             "ok": len(news_items) > 0,
