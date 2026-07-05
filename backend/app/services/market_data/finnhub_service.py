@@ -97,20 +97,31 @@ class FinnhubService:
                 if resp.status_code != 200:
                     return None
                 m = resp.json().get("metric", {})
+
+                def _first(*keys):
+                    """Finnhub reports the same metric under different names
+                    depending on plan/stock — take the first that exists."""
+                    for k in keys:
+                        v = m.get(k)
+                        if v is not None:
+                            return v
+                    return None
+
                 return {
-                    "pe_ratio": m.get("peBasicExclExtraTTM"),
-                    "price_to_book": m.get("pbQuarterly"),
-                    "price_to_sales": m.get("psTTM"),
-                    "revenue_growth": m.get("revenueGrowthTTMYoy"),
-                    "profit_margin": m.get("netProfitMarginTTM"),
-                    "roe": m.get("roeTTM"),
-                    "roa": m.get("roaTTM"),
+                    "pe_ratio": _first("peBasicExclExtraTTM", "peTTM", "peExclExtraTTM",
+                                       "peInclExtraTTM", "peNormalizedAnnual", "peAnnual"),
+                    "price_to_book": _first("pbQuarterly", "pbAnnual", "ptbvQuarterly"),
+                    "price_to_sales": _first("psTTM", "psAnnual"),
+                    "revenue_growth": _first("revenueGrowthTTMYoy", "revenueGrowthQuarterlyYoy"),
+                    "profit_margin": _first("netProfitMarginTTM", "netProfitMarginAnnual"),
+                    "roe": _first("roeTTM", "roeRfy"),
+                    "roa": _first("roaTTM", "roaRfy"),
                     "beta": m.get("beta"),
                     "fifty_two_week_high": m.get("52WeekHigh"),
                     "fifty_two_week_low": m.get("52WeekLow"),
-                    "dividend_yield": m.get("dividendYieldIndicatedAnnual"),
+                    "dividend_yield": _first("dividendYieldIndicatedAnnual", "currentDividendYieldTTM"),
                     "debt_to_equity": m.get("totalDebt/totalEquityAnnual"),
-                    "current_ratio": m.get("currentRatioAnnual"),
+                    "current_ratio": _first("currentRatioAnnual", "currentRatioQuarterly"),
                 }
         except Exception as e:
             logger.debug("Finnhub financials failed", symbol=symbol, error=str(e))
