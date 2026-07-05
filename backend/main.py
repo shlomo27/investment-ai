@@ -169,6 +169,10 @@ async def lifespan(app: FastAPI):
                 "In-process scheduler started (this worker holds the scheduler lock)",
                 jobs=["load_universe Sun 07:00 IL", "prescreener daily 08:00 IL", "full_scan Wed 09:00 IL"],
             )
+            # One-shot maintenance: collapse duplicate live recommendations
+            # (leftovers from pre-fix parallel schedulers). Idempotent.
+            from app.workers.in_process_scheduler import dedupe_live_recommendations
+            await dedupe_live_recommendations()
         else:
             await sched_lock_conn.close()
             sched_lock_conn = None

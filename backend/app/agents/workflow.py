@@ -218,6 +218,28 @@ async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowSt
             except ValueError:
                 rec_type = RecommendationType.HOLD
 
+            # Supersede any previous live recommendation for this symbol so the
+            # feed always holds exactly ONE active recommendation per stock —
+            # a rerun (weekly scan, duplicate job, manual trigger) refreshes
+            # instead of piling up duplicates.
+            from sqlalchemy import update as sa_update
+            superseded = await session.execute(
+                sa_update(Recommendation)
+                .where(
+                    Recommendation.symbol == state["asset_symbol"],
+                    Recommendation.status.in_([
+                        RecommendationStatus.APPROVED,
+                        RecommendationStatus.PRESENTED_TO_USER,
+                    ]),
+                )
+                .values(status=RecommendationStatus.DISMISSED)
+            )
+            if superseded.rowcount:
+                logger.info(
+                    "Superseded stale recommendations",
+                    symbol=state["asset_symbol"], count=superseded.rowcount,
+                )
+
             recommendation = Recommendation(
                 asset_id=asset.id,
                 symbol=state["asset_symbol"],

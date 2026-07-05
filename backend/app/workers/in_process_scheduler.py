@@ -338,6 +338,47 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
     return scheduler
 
 
+async def dedupe_live_recommendations() -> int:
+    """
+    One-shot maintenance (called at startup by the scheduler-lock winner):
+    keep only the NEWEST live (APPROVED/PRESENTED) recommendation per symbol,
+    dismiss the rest. Cleans up duplicates created by pre-fix parallel
+    schedulers. Idempotent — safe to run on every boot.
+    """
+    from sqlalchemy import select, update
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.recommendation import Recommendation, RecommendationStatus
+
+    live = [RecommendationStatus.APPROVED, RecommendationStatus.PRESENTED_TO_USER]
+    dismissed = 0
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = await db.execute(
+                select(Recommendation.id, Recommendation.symbol)
+                .where(Recommendation.status.in_(live))
+                .order_by(Recommendation.symbol, Recommendation.created_at.desc())
+            )
+            keep_seen: set[str] = set()
+            to_dismiss: list[int] = []
+            for rec_id, symbol in rows.all():
+                if symbol in keep_seen:
+                    to_dismiss.append(rec_id)
+                else:
+                    keep_seen.add(symbol)
+            if to_dismiss:
+                await db.execute(
+                    update(Recommendation)
+                    .where(Recommendation.id.in_(to_dismiss))
+                    .values(status=RecommendationStatus.DISMISSED)
+                )
+                await db.commit()
+                dismissed = len(to_dismiss)
+                logger.info(f"[maintenance] dismissed {dismissed} duplicate live recommendations")
+    except Exception as exc:
+        logger.error(f"[maintenance] recommendation dedup failed: {exc}")
+    return dismissed
+
+
 async def job_send_digests():
     """
     Every 30 min — for users in digest mode (EVERY_4_HOURS / DAILY), send one
