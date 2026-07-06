@@ -616,12 +616,29 @@ async def simulate_ai_engines_check(
 
     # Full data-source coverage report — every feed the DataFetcher pulls
     sentiment = raw.get("social_sentiment") or {}
+    # Probe Finnhub directly so we can tell "stock has no P/E" from
+    # "Finnhub key missing/not returning it".
+    from app.services.market_data.finnhub_service import get_finnhub_service
+    fin = get_finnhub_service()
+    finnhub_pe = None
+    finnhub_configured = fin.is_configured()
+    if finnhub_configured and not sym.endswith(".TA"):
+        try:
+            fin_metrics = await fin.get_basic_financials(sym)
+            finnhub_pe = (fin_metrics or {}).get("pe_ratio")
+        except Exception:
+            pass
+
+    pe = raw.get("pe_ratio")
+    fwd_pe = raw.get("forward_pe")
     data_sources = {
         "price_fundamentals": {
             "ok": bool(raw.get("price")),
             "detail": (
                 f"price={raw.get('price')}, market_cap={'✓' if raw.get('market_cap') else '✗'}, "
-                f"pe={'✓' if raw.get('pe_ratio') is not None else '✗'}"
+                f"P/E={pe if pe is not None else '—'}, fwdP/E={fwd_pe if fwd_pe is not None else '—'} "
+                f"| Finnhub: {'configured' if finnhub_configured else 'NOT configured'}, "
+                f"P/E={finnhub_pe if finnhub_pe is not None else '—'}"
             ),
         },
         "social_sentiment": {
