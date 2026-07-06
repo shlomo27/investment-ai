@@ -283,13 +283,31 @@ class MacroContextAgent:
         prompt = self._build_prompt(market_data, realtime_macro, israeli_macro if is_israeli else None)
 
         try:
-            response = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: llm.invoke([
+            def _invoke():
+                return llm.invoke([
                     SystemMessage(content=SYSTEM_PROMPT),
                     HumanMessage(content=prompt),
                 ])
-            )
+
+            # Retry on transient rate-limit (429 / quota). Gemini's free tier
+            # caps requests per minute; a burst of scans can trip it briefly.
+            response = None
+            last_err = None
+            for attempt in range(3):
+                try:
+                    response = await asyncio.get_event_loop().run_in_executor(None, _invoke)
+                    break
+                except Exception as inv_err:
+                    msg = str(inv_err)
+                    last_err = inv_err
+                    if ("429" in msg or "quota" in msg.lower() or "resource" in msg.lower()) and attempt < 2:
+                        wait_s = 16 * (attempt + 1)
+                        logger.warning("Gemini rate-limited, retrying", symbol=symbol, attempt=attempt + 1, wait=wait_s)
+                        await asyncio.sleep(wait_s)
+                        continue
+                    raise
+            if response is None:
+                raise last_err or RuntimeError("Gemini invoke failed")
             content = response.content
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
