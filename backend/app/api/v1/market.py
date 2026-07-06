@@ -567,32 +567,50 @@ async def simulate_ta_scan(
     return {"started": True, "message": "TA scan running in background — check notifications inbox in ~1 min"}
 
 
-@router.post("/simulate/ai-engines-check")
-async def simulate_ai_engines_check(
-    symbol: str = "AAPL",
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Admin: run ONE full real analysis and report which AI engine actually ran.
-    Verifies the whole pipeline: Claude (data+fundamental+senior),
-    OpenAI/GPT (news), Gemini (macro). Costs ~$0.10-0.25 per run.
-    """
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
+_AI_CHECK_KEY = "investment_ai:ai_engines_check"
 
+
+async def _ai_check_state_get() -> dict:
+    try:
+        import redis.asyncio as aioredis
+        from app.core.config import settings
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        raw = await r.get(_AI_CHECK_KEY)
+        await r.aclose()
+        return _json.loads(raw) if raw else {}
+    except Exception:
+        return {}
+
+
+async def _ai_check_state_set(state: dict) -> None:
+    try:
+        import redis.asyncio as aioredis
+        from app.core.config import settings
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        await r.set(_AI_CHECK_KEY, _json.dumps(state), ex=3600)
+        await r.aclose()
+    except Exception:
+        pass
+
+
+async def _run_ai_engines_check(sym: str) -> None:
+    """Background task: run one full analysis and store the per-engine report."""
     from app.agents.workflow import run_investment_workflow
-    from app.db.models.asset import Asset
+    try:
+        exchange = "TASE" if sym.endswith(".TA") else "NASDAQ"
+        state = await run_investment_workflow(
+            symbol=sym, exchange=exchange, trigger_type="MANUAL",
+            trigger_details="ai-engines-check simulation",
+        )
+        result = await _build_ai_check_report(sym, state)
+        result["running"] = False
+        await _ai_check_state_set(result)
+    except Exception as exc:
+        logger.error(f"[ai-engines-check] failed: {exc}")
+        await _ai_check_state_set({"running": False, "symbol": sym, "error": str(exc)})
 
-    sym = symbol.upper().strip()
-    asset_row = await db.execute(select(Asset).where(Asset.symbol == sym))
-    asset = asset_row.scalar_one_or_none()
-    exchange = asset.exchange.value if asset else ("TASE" if sym.endswith(".TA") else "NASDAQ")
 
-    state = await run_investment_workflow(symbol=sym, exchange=exchange,
-                                          trigger_type="MANUAL",
-                                          trigger_details="ai-engines-check simulation")
-
+async def _build_ai_check_report(sym: str, state: dict) -> dict:
     def _engine(analysis, label_field=None):
         analysis = analysis or {}
         reason = analysis.get("skipped_reason")
@@ -685,6 +703,39 @@ async def simulate_ai_engines_check(
             "gemini_macro": _engine(state.get("macro_analysis"), "sector_outlook"),
         },
     }
+
+
+@router.post("/simulate/ai-engines-check")
+async def simulate_ai_engines_check(
+    symbol: str = "AAPL",
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Admin: START a full real analysis in the background and report which AI
+    engine actually ran. Returns immediately; poll /simulate/ai-engines-status
+    for the result. Runs in background so mobile/long connections don't drop
+    (the analysis takes 1-3 min). Costs ~$0.10-0.25 per run.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    sym = symbol.upper().strip()
+    current = await _ai_check_state_get()
+    if current.get("running"):
+        return {"started": False, "already_running": True, "symbol": current.get("symbol")}
+
+    await _ai_check_state_set({"running": True, "symbol": sym})
+    asyncio.create_task(_run_ai_engines_check(sym))
+    return {"started": True, "symbol": sym,
+            "message": "Analysis running in background (1-3 min) — poll ai-engines-status"}
+
+
+@router.get("/simulate/ai-engines-status")
+async def simulate_ai_engines_status(current_user: User = Depends(get_current_active_user)):
+    """Poll the latest AI-engines-check result (shared via Redis across workers)."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return await _ai_check_state_get()
 
 
 @router.post("/simulate/test-notification")

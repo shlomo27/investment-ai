@@ -444,13 +444,20 @@ export const marketApi = {
     return response.data;
   },
 
-  // Full real one-stock analysis to verify all 3 AI engines fire (takes 1-3 min)
+  // Full real one-stock analysis to verify all 3 AI engines fire (1-3 min).
+  // Runs in the background on the server and polls for the result, so it
+  // survives mobile connections that can't hold a long request open.
   simulateAiEnginesCheck: async (symbol: string): Promise<any> => {
-    const response = await api.post("/market/simulate/ai-engines-check", null, {
-      params: { symbol },
-      timeout: 300000,
-    });
-    return response.data;
+    await api.post("/market/simulate/ai-engines-check", null, { params: { symbol } });
+    const deadline = Date.now() + 5 * 60 * 1000; // 5-min safety cap
+    // small helper — avoids pulling in extra deps
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    while (Date.now() < deadline) {
+      await wait(5000);
+      const { data } = await api.get("/market/simulate/ai-engines-status");
+      if (data && data.running === false) return data;
+    }
+    throw new Error("AI engines check timed out (still running after 5 min)");
   },
 
   simulateCreatePosition: async (symbol: string, quantity = 10, price = 100): Promise<any> => {
