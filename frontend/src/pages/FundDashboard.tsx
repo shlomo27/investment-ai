@@ -1017,6 +1017,7 @@ const FundDashboard: React.FC = () => {
                               price_fundamentals: isHe ? "מחיר + פונדמנטלס (Yahoo/TASE)" : "Price + fundamentals",
                               social_sentiment: isHe ? "סנטימנט רשתות" : "Social sentiment",
                               news: isHe ? "חדשות" : "News",
+                              grok_x: isHe ? "Grok — סריקת X/טוויטר" : "Grok — X/Twitter scan",
                               insider_activity: isHe ? "עסקאות בעלי עניין" : "Insider activity",
                               sec_filings: isHe ? "דוחות SEC" : "SEC filings",
                             };

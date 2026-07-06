@@ -610,6 +610,30 @@ async def _run_ai_engines_check(sym: str) -> None:
         await _ai_check_state_set({"running": False, "symbol": sym, "error": str(exc)})
 
 
+async def _probe_grok(sym: str) -> dict:
+    """Directly call the Grok X-sentiment source and surface its raw result,
+    including any error (auth / model-not-found / no posts), so step-6 tells us
+    exactly why grok/X is 0 instead of swallowing it."""
+    from app.core.config import settings
+    from app.services.market_data.sentiment_service import SentimentService
+    if not (settings.XAI_API_KEY or "").strip():
+        return {"ok": False, "detail": "XAI_API_KEY not set in this service"}
+    if sym.endswith(".TA"):
+        return {"ok": False, "detail": "skipped for TASE symbols"}
+    try:
+        res = await SentimentService()._get_grok_x_sentiment(sym)
+    except Exception as e:
+        return {"ok": False, "detail": f"call raised: {str(e)[:140]}"}
+    if res.get("error"):
+        return {"ok": False, "detail": f"model='{settings.XAI_MODEL}' → {res['error']}"}
+    cnt = res.get("count", 0)
+    return {
+        "ok": cnt > 0,
+        "detail": (f"model='{settings.XAI_MODEL}', posts={cnt}, score={res.get('score')}"
+                   if cnt else f"model='{settings.XAI_MODEL}' returned 0 posts (no X activity or search off)"),
+    }
+
+
 async def _build_ai_check_report(sym: str, state: dict) -> dict:
     def _engine(analysis, label_field=None):
         analysis = analysis or {}
@@ -667,6 +691,7 @@ async def _build_ai_check_report(sym: str, state: dict) -> dict:
                 f"stocktwits={sentiment.get('stocktwits_post_count', 0)}, grok/X={sentiment.get('grok_x_post_count', 0)})"
             ),
         },
+        "grok_x": await _probe_grok(sym),
         "news": {
             "ok": len(news_items) > 0,
             "detail": f"{len(news_items)} articles / {len(news_sources)} feeds",
