@@ -22,9 +22,11 @@ class SocialSentiment(TypedDict):
     twitter_score: float
     reddit_score: float
     stocktwits_score: float
+    grok_x_score: float
     tweet_count: int
     reddit_post_count: int
     stocktwits_post_count: int
+    grok_x_post_count: int
 
 
 class TechnicalIndicators(TypedDict):

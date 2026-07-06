@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     GOOGLE_AI_API_KEY: str = ""  # alias accepted from Railway
     GEMINI_MODEL: str = "gemini-2.5-flash"  # 1.5 was retired by Google mid-2025
 
+    # xAI Grok (X/Twitter sentiment via live search — only model grounded on X)
+    XAI_API_KEY: str = ""
+    XAI_MODEL: str = "grok-4-fast"
+
     # Twitter/X API v2
     TWITTER_BEARER_TOKEN: str = ""
     TWITTER_API_KEY: str = ""

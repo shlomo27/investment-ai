@@ -361,9 +361,11 @@ export interface SentimentData {
   twitter_score: number;
   reddit_score: number;
   stocktwits_score?: number;
+  grok_x_score?: number;
   tweet_count: number;
   reddit_post_count: number;
   stocktwits_post_count?: number;
+  grok_x_post_count?: number;
 }
 
 export interface AnalysisModule {

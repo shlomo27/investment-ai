@@ -664,7 +664,7 @@ async def _build_ai_check_report(sym: str, state: dict) -> dict:
             "detail": (
                 f"score={sentiment.get('score', 0)}, mentions={sentiment.get('mentions', 0)} "
                 f"(twitter={sentiment.get('tweet_count', 0)}, reddit={sentiment.get('reddit_post_count', 0)}, "
-                f"stocktwits={sentiment.get('stocktwits_post_count', 0)})"
+                f"stocktwits={sentiment.get('stocktwits_post_count', 0)}, grok/X={sentiment.get('grok_x_post_count', 0)})"
             ),
         },
         "news": {

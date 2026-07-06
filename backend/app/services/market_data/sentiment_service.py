@@ -4,6 +4,7 @@ Aggregates sentiment from Twitter/X and Reddit.
 Calculates a composite sentiment score from -1 (very bearish) to +1 (very bullish).
 """
 import asyncio
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -93,6 +94,7 @@ class SentimentService:
             self._get_twitter_sentiment(symbol),
             self._get_reddit_sentiment(symbol),
             self._get_stocktwits_sentiment(symbol),
+            self._get_grok_x_sentiment(symbol),
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -100,6 +102,7 @@ class SentimentService:
         twitter_result = results[0] if not isinstance(results[0], Exception) else dict(_empty)
         reddit_result = results[1] if not isinstance(results[1], Exception) else dict(_empty)
         stocktwits_result = results[2] if not isinstance(results[2], Exception) else dict(_empty)
+        grok_result = results[3] if not isinstance(results[3], Exception) else dict(_empty)
 
         twitter_score = twitter_result.get("score", 0.0)
         twitter_count = twitter_result.get("count", 0)
@@ -107,16 +110,22 @@ class SentimentService:
         reddit_count = reddit_result.get("count", 0)
         stocktwits_score = stocktwits_result.get("score", 0.0)
         stocktwits_count = stocktwits_result.get("count", 0)
+        grok_score = grok_result.get("score", 0.0)
+        # Grok reports an estimated X post volume; cap it so a huge estimate
+        # can't swamp the mention total / composite weighting.
+        grok_count = min(int(grok_result.get("count", 0) or 0), 100)
 
-        total_count = twitter_count + reddit_count + stocktwits_count
+        total_count = twitter_count + reddit_count + stocktwits_count + grok_count
 
-        # Weighted composite score: Reddit has deeper analysis, Stocktwits is
-        # finance-native with explicit bull/bear author labels, Twitter has volume.
+        # Weighted composite: Grok reads live X with real reasoning (highest),
+        # Stocktwits is finance-native with explicit bull/bear labels, Reddit has
+        # depth, Twitter (legacy direct API) is usually off.
         if total_count > 0:
             composite_score = (
-                twitter_score * twitter_count * 0.3
-                + reddit_score * reddit_count * 0.35
-                + stocktwits_score * stocktwits_count * 0.35
+                twitter_score * twitter_count * 0.20
+                + reddit_score * reddit_count * 0.25
+                + stocktwits_score * stocktwits_count * 0.25
+                + grok_score * grok_count * 0.30
             ) / max(total_count, 1)
         else:
             composite_score = 0.0
@@ -132,6 +141,7 @@ class SentimentService:
             twitter_result.get("posts", [])[:2]
             + reddit_result.get("posts", [])[:2]
             + stocktwits_result.get("posts", [])[:2]
+            + grok_result.get("posts", [])[:2]
         )
 
         # Combine themes
@@ -139,21 +149,87 @@ class SentimentService:
             twitter_result.get("themes", [])
             + reddit_result.get("themes", [])
             + stocktwits_result.get("themes", [])
+            + grok_result.get("themes", [])
         ))[:10]
 
         return SocialSentiment(
             score=round(composite_score, 4),
             mentions=total_count,
             trending=is_trending,
-            top_posts=all_posts[:6],
+            top_posts=all_posts[:8],
             key_themes=all_themes,
             twitter_score=round(twitter_score, 4),
             reddit_score=round(reddit_score, 4),
             stocktwits_score=round(stocktwits_score, 4),
+            grok_x_score=round(grok_score, 4),
             tweet_count=twitter_count,
             reddit_post_count=reddit_count,
             stocktwits_post_count=stocktwits_count,
+            grok_x_post_count=grok_count,
         )
+
+    async def _get_grok_x_sentiment(self, symbol: str) -> Dict[str, Any]:
+        """
+        Sentiment from X (Twitter) via xAI Grok's live search — Grok is the only
+        frontier model grounded on real-time X posts, so this replaces the paid
+        X API. Grok reads recent posts and returns a reasoned sentiment read.
+        Graceful: returns empty (with error detail) if XAI_API_KEY is unset or
+        the call fails. .TA symbols are skipped (little Hebrew X coverage).
+        """
+        empty = {"score": 0.0, "count": 0, "posts": [], "themes": []}
+        api_key = (settings.XAI_API_KEY or "").strip()
+        if not api_key:
+            return empty
+        if symbol.endswith(".TA"):
+            return empty
+        model = re.sub(r"[^A-Za-z0-9._\-/]", "", settings.XAI_MODEL or "") or "grok-4-fast"
+        prompt = (
+            f"Search X (Twitter) for recent posts about the stock ${symbol} from the last 3 days. "
+            "Assess the aggregate sentiment of traders and investors based on real posts. "
+            "Respond with ONLY strict JSON, no prose:\n"
+            '{"score": <float from -1 (very bearish) to 1 (very bullish)>, '
+            '"post_count": <int estimate of relevant posts found>, '
+            '"summary": "<one concise sentence>", '
+            '"themes": ["<short theme>", "<short theme>"]}'
+        )
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+                resp = await client.post(
+                    "https://api.x.ai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.2,
+                        # xAI live search grounded on X
+                        "search_parameters": {"mode": "on", "sources": [{"type": "x"}]},
+                    },
+                )
+                if resp.status_code != 200:
+                    logger.debug("Grok non-200", symbol=symbol, status=resp.status_code, body=resp.text[:200])
+                    return {**empty, "error": f"xAI {resp.status_code}: {resp.text[:120]}"}
+                content = resp.json()["choices"][0]["message"]["content"]
+
+            if "```" in content:
+                content = content.split("```")[1]
+                if content.lstrip().lower().startswith("json"):
+                    content = content.lstrip()[4:]
+            data = json.loads(content.strip())
+
+            score = float(data.get("score", 0.0))
+            count = int(data.get("post_count", 0) or 0)
+            summary = str(data.get("summary", ""))[:200]
+            themes = [str(t)[:40] for t in (data.get("themes") or [])][:5]
+            posts = [{"platform": "x_grok", "text": summary, "score": score}] if summary else []
+            return {
+                "score": round(max(-1.0, min(1.0, score)), 4),
+                "count": count,
+                "posts": posts,
+                "themes": themes,
+            }
+        except Exception as e:
+            logger.debug("Grok X sentiment failed", symbol=symbol, error=str(e))
+            return {**empty, "error": str(e)[:120]}
 
     async def _get_stocktwits_sentiment(self, symbol: str) -> Dict[str, Any]:
         """

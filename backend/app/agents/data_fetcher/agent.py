@@ -375,9 +375,11 @@ Respond in JSON format:
             "twitter_score": 0.0,
             "reddit_score": 0.0,
             "stocktwits_score": 0.0,
+            "grok_x_score": 0.0,
             "tweet_count": 0,
             "reddit_post_count": 0,
             "stocktwits_post_count": 0,
+            "grok_x_post_count": 0,
         }
 
 
