@@ -168,6 +168,29 @@ class SentimentService:
             grok_x_post_count=grok_count,
         )
 
+    @staticmethod
+    def _extract_responses_text(payload: Dict[str, Any]) -> str:
+        """Pull the final assistant text out of an xAI /v1/responses payload.
+        Tolerates the convenience `output_text` field or the nested
+        output[].content[].text structure."""
+        if not isinstance(payload, dict):
+            return ""
+        # Convenience field (present on many responses)
+        txt = payload.get("output_text")
+        if isinstance(txt, str) and txt.strip():
+            return txt
+        parts: List[str] = []
+        for item in payload.get("output", []) or []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "message":
+                for c in item.get("content", []) or []:
+                    if isinstance(c, dict) and c.get("type") in ("output_text", "text"):
+                        t = c.get("text")
+                        if isinstance(t, str):
+                            parts.append(t)
+        return "\n".join(parts)
+
     async def _get_grok_x_sentiment(self, symbol: str) -> Dict[str, Any]:
         """
         Sentiment from X (Twitter) via xAI Grok's live search — Grok is the only
@@ -183,9 +206,10 @@ class SentimentService:
         if symbol.endswith(".TA"):
             return empty
         model = re.sub(r"[^A-Za-z0-9._\-/]", "", settings.XAI_MODEL or "") or "grok-4-fast"
+        from_date = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
         prompt = (
-            f"Search X (Twitter) for recent posts about the stock ${symbol} from the last 3 days. "
-            "Assess the aggregate sentiment of traders and investors based on real posts. "
+            f"Search X (Twitter) for recent posts about the stock ${symbol}. "
+            "Assess the aggregate sentiment of traders and investors based on the real posts you find. "
             "Respond with ONLY strict JSON, no prose:\n"
             '{"score": <float from -1 (very bearish) to 1 (very bullish)>, '
             '"post_count": <int estimate of relevant posts found>, '
@@ -193,27 +217,34 @@ class SentimentService:
             '"themes": ["<short theme>", "<short theme>"]}'
         )
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(45.0)) as client:
+                # New Agent Tools API (/v1/responses) — the old search_parameters
+                # live-search was deprecated (HTTP 410). Grok invokes x_search
+                # server-side and returns a final message.
                 resp = await client.post(
-                    "https://api.x.ai/v1/chat/completions",
+                    "https://api.x.ai/v1/responses",
                     headers={"Authorization": f"Bearer {api_key}"},
                     json={
                         "model": model,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "temperature": 0.2,
-                        # xAI live search grounded on X
-                        "search_parameters": {"mode": "on", "sources": [{"type": "x"}]},
+                        "input": [{"role": "user", "content": prompt}],
+                        "tools": [{"type": "x_search", "from_date": from_date}],
                     },
                 )
                 if resp.status_code != 200:
                     logger.debug("Grok non-200", symbol=symbol, status=resp.status_code, body=resp.text[:200])
-                    return {**empty, "error": f"xAI {resp.status_code}: {resp.text[:120]}"}
-                content = resp.json()["choices"][0]["message"]["content"]
+                    return {**empty, "error": f"xAI {resp.status_code}: {resp.text[:140]}"}
+                content = self._extract_responses_text(resp.json())
 
+            if not content:
+                return {**empty, "error": "empty response from xAI"}
             if "```" in content:
                 content = content.split("```")[1]
                 if content.lstrip().lower().startswith("json"):
                     content = content.lstrip()[4:]
+            # Grok may wrap JSON in surrounding text — grab the first {...} block
+            start, end = content.find("{"), content.rfind("}")
+            if start != -1 and end != -1:
+                content = content[start:end + 1]
             data = json.loads(content.strip())
 
             score = float(data.get("score", 0.0))
