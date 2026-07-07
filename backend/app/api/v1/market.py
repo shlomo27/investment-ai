@@ -634,6 +634,22 @@ async def _probe_grok(sym: str) -> dict:
     }
 
 
+def _claude_detail(claude_ok: bool, senior: dict) -> str:
+    """Human-readable Claude line. Distinguishes a full senior decision (with a
+    confidence %) from an early rejection (fundamental confidence too low — no
+    committee deliberation, so no confidence number)."""
+    if not claude_ok:
+        return "fundamental/senior missing — check ANTHROPIC_API_KEY"
+    rec = senior.get("final_recommendation", "?")
+    conf = senior.get("decision_confidence")
+    if conf is not None:
+        return f"fundamental+senior OK — {rec} ({conf}%)"
+    reason = senior.get("rejection_reasoning")
+    if reason:
+        return f"OK — {rec} (early-rejected: {str(reason)[:80]})"
+    return f"fundamental+senior OK — {rec}"
+
+
 async def _build_ai_check_report(sym: str, state: dict) -> dict:
     def _engine(analysis, label_field=None):
         analysis = analysis or {}
@@ -718,11 +734,7 @@ async def _build_ai_check_report(sym: str, state: dict) -> dict:
         "engines": {
             "claude": {
                 "ok": claude_ok,
-                "detail": (
-                    f"fundamental+senior OK — {senior.get('final_recommendation', '?')} "
-                    f"({senior.get('decision_confidence', '?')}%)"
-                    if claude_ok else "fundamental/senior missing — check ANTHROPIC_API_KEY"
-                ),
+                "detail": _claude_detail(claude_ok, senior),
             },
             "openai_news": _engine(state.get("news_analysis"), "overall_sentiment"),
             "gemini_macro": _engine(state.get("macro_analysis"), "sector_outlook"),
