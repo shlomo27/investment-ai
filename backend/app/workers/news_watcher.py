@@ -145,13 +145,34 @@ async def _run_news_watch() -> dict:
             except Exception as ta_exc:
                 logger.warning(f"[news_watcher] TA failed for {symbol}: {ta_exc}")
 
+            # Real-time X (Twitter) buzz via Grok — only fires here because news
+            # already broke on this held stock, so the cost stays bounded. A
+            # viral X moment can independently move price, so strong buzz can
+            # raise an alert even when the news read was lukewarm.
+            x_score, x_posts, x_summary = 0.0, 0, ""
+            try:
+                from app.services.market_data.sentiment_service import SentimentService
+                x = await SentimentService()._get_grok_x_sentiment(symbol)
+                x_score = float(x.get("score", 0.0) or 0.0)
+                x_posts = int(x.get("count", 0) or 0)
+                x_posts_list = x.get("posts") or []
+                x_summary = x_posts_list[0].get("text", "") if x_posts_list else ""
+            except Exception as x_exc:
+                logger.debug(f"[news_watcher] Grok X failed for {symbol}: {x_exc}")
+
+            strong_x = x_posts >= 15 and abs(x_score) >= 0.4
+            x_flag = ""
+            if strong_x:
+                x_flag = " 🔥X" if x_score > 0 else " 🧊X"
+
             emoji, decision = _COMBINED.get((news_action, ta_signal), ("📊", "עקוב"))
 
-            if news_action == "WAIT" and ta_signal == "WAIT" and confidence == "LOW":
+            # Skip only when news, TA AND X buzz are all weak
+            if news_action == "WAIT" and ta_signal == "WAIT" and confidence == "LOW" and not strong_x:
                 continue
 
             sources_str = ", ".join(list({a["source"] for a in new_articles})[:3])
-            title  = f"{emoji} {symbol}: {decision} | {sources_str}"
+            title  = f"{emoji} {symbol}: {decision} | {sources_str}{x_flag}"
             detail = {
                 "type":            "NEWS_PLUS_TA",
                 "symbol":          symbol,
@@ -161,6 +182,9 @@ async def _run_news_watch() -> dict:
                 "news_confidence": confidence,
                 "ta_signal":       ta_signal,
                 "ta_score":        ta_score,
+                "x_buzz_score":    round(x_score, 3),
+                "x_buzz_posts":    x_posts,
+                "x_buzz_summary":  x_summary,
                 "combined":        decision,
                 "sources":         list({a["source"] for a in new_articles}),
                 "articles":        [{"title": a["title"], "source": a["source"], "url": a.get("url","")} for a in new_articles[:3]],
