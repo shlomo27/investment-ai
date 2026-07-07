@@ -662,7 +662,13 @@ async def _build_ai_check_report(sym: str, state: dict) -> dict:
 
     fundamental = state.get("fundamental_analysis") or {}
     senior = state.get("senior_decision") or {}
-    claude_ok = bool(fundamental.get("confidence_score") is not None and senior)
+    # Detect the fundamental fallback (Claude call failed / JSON truncated):
+    # it returns confidence 0.0 with a system-error thesis + "Analysis failed:"
+    # in analyst_notes. That must read as a FAILURE, not a green "OK".
+    fund_notes = str(fundamental.get("analyst_notes") or "")
+    fund_thesis = str(fundamental.get("thesis") or "")
+    claude_failed = fund_notes.startswith("Analysis failed") or "system error" in fund_thesis.lower()
+    claude_ok = bool(fundamental.get("confidence_score") is not None and senior) and not claude_failed
 
     # News source breakdown — proves which of the configured feeds delivered
     raw = state.get("data_fetcher_output") or {}
@@ -734,7 +740,8 @@ async def _build_ai_check_report(sym: str, state: dict) -> dict:
         "engines": {
             "claude": {
                 "ok": claude_ok,
-                "detail": _claude_detail(claude_ok, senior),
+                "detail": (f"fundamental agent FAILED → {fund_notes[:110]}"
+                           if claude_failed else _claude_detail(claude_ok, senior)),
             },
             "openai_news": _engine(state.get("news_analysis"), "overall_sentiment"),
             "gemini_macro": _engine(state.get("macro_analysis"), "sector_outlook"),

@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # Anthropic / Claude
     ANTHROPIC_API_KEY: str = ""
     CLAUDE_MODEL: str = "claude-sonnet-4-6"
-    CLAUDE_MAX_TOKENS: int = 4096
+    CLAUDE_MAX_TOKENS: int = 8192  # fundamental JSON (scenarios+thesis_breakers+moat) truncated at 4096
 
     # OpenAI / GPT (News Analyst)
     OPENAI_API_KEY: str = ""
