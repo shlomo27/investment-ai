@@ -782,6 +782,44 @@ async def simulate_ai_engines_status(current_user: User = Depends(get_current_ac
     return await _ai_check_state_get()
 
 
+@router.get("/telegram/discover-chats")
+async def telegram_discover_chats(current_user: User = Depends(get_current_active_user)):
+    """
+    Admin: list every chat/channel our bot can currently see (via getUpdates),
+    so you can copy the admin channel's chat_id without fiddling with URLs.
+    Post a message in the target channel first, then call this.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    import httpx as _httpx
+    from app.core.config import settings
+    token = (settings.TELEGRAM_BOT_TOKEN or "").strip()
+    if not token or token.startswith("your_"):
+        return {"error": "TELEGRAM_BOT_TOKEN not configured"}
+    chats = {}
+    try:
+        async with _httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(f"https://api.telegram.org/bot{token}/getUpdates")
+            data = resp.json()
+        for upd in data.get("result", []):
+            msg = upd.get("channel_post") or upd.get("message") or upd.get("my_chat_member") or {}
+            chat = msg.get("chat") or {}
+            cid = chat.get("id")
+            if cid is not None:
+                chats[str(cid)] = {
+                    "chat_id": cid,
+                    "title": chat.get("title") or chat.get("username") or chat.get("first_name") or "?",
+                    "type": chat.get("type"),
+                }
+    except Exception as e:
+        return {"error": str(e)[:200]}
+    return {
+        "found": list(chats.values()),
+        "hint": "Copy the chat_id whose title is your admin channel into TELEGRAM_ADMIN_CHAT_ID in Railway.",
+        "note": "If empty: post a fresh message in the channel and call again (Telegram only keeps recent updates).",
+    }
+
+
 @router.post("/simulate/test-admin-alert")
 async def simulate_test_admin_alert(current_user: User = Depends(get_current_active_user)):
     """Admin: send a test message to the ADMIN telegram channel + report today's est. spend."""
