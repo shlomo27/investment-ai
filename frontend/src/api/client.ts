@@ -444,6 +444,11 @@ export const marketApi = {
     return response.data;
   },
 
+  simulateTestAdminAlert: async (): Promise<any> => {
+    const response = await api.post("/market/simulate/test-admin-alert");
+    return response.data;
+  },
+
   // Full real one-stock analysis to verify all 3 AI engines fire (1-3 min).
   // Runs in the background on the server and polls for the result, so it
   // survives mobile connections that can't hold a long request open.

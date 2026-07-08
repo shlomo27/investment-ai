@@ -973,6 +973,15 @@ const FundDashboard: React.FC = () => {
                 : `Real full analysis of ${simSymbol} — verifies Claude, GPT (news) and Gemini (macro) all fire. Takes 1-3 min, costs ~$0.10-0.25`,
               action: async () => marketApi.simulateAiEnginesCheck(simSymbol),
             },
+            {
+              step: 7,
+              icon: "🛠️",
+              title: isHe ? "בדיקת ערוץ אדמין + תקציב" : "Admin Channel + Budget Check",
+              desc: isHe
+                ? "שולח הודעת בדיקה לערוץ האדמין ומציג את ההוצאה היומית המוערכת והתקרה"
+                : "Sends a test message to the admin channel and shows today's estimated spend + cap",
+              action: async () => marketApi.simulateTestAdminAlert(),
+            },
           ].map(({ step, icon, title, desc, action, removeAction }: any) => (
             <div key={step} className="flex items-start gap-4 bg-gray-800/40 rounded-xl p-4 border border-gray-700/40">
               <div className="flex flex-col items-center gap-1 shrink-0">
