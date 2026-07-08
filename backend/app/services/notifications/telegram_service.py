@@ -25,8 +25,10 @@ class TelegramService:
             and not self._bot_token.startswith("your_")
         )
 
-    async def send_message(self, text: str, parse_mode: str = "HTML") -> bool:
-        if not self.is_configured():
+    async def send_message(self, text: str, parse_mode: str = "HTML",
+                           chat_id: Optional[str] = None) -> bool:
+        target = chat_id or self._chat_id
+        if not (self._bot_token and not self._bot_token.startswith("your_") and target):
             logger.debug("Telegram skipped — not configured")
             return False
         try:
@@ -34,7 +36,7 @@ class TelegramService:
                 resp = await client.post(
                     f"{self.BASE_URL}/bot{self._bot_token}/sendMessage",
                     json={
-                        "chat_id": self._chat_id,
+                        "chat_id": target,
                         "text": text,
                         "parse_mode": parse_mode,
                     },
@@ -47,6 +49,12 @@ class TelegramService:
         except Exception as e:
             logger.warning("Telegram notification failed", error=str(e))
             return False
+
+    async def send_admin_alert(self, text: str) -> bool:
+        """Send an operational alert to the ADMIN channel (not the public one).
+        Falls back to the public channel if no admin chat id is configured."""
+        admin_chat = settings.TELEGRAM_ADMIN_CHAT_ID or self._chat_id
+        return await self.send_message(text, chat_id=admin_chat)
 
     async def send_investment_alert(
         self,

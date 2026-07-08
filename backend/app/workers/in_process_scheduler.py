@@ -180,11 +180,25 @@ async def job_run_full_scan():
             logger.warning("[scheduler] full_scan: no active pool stocks — run prescreener first")
             return
 
+        from app.workers.cost_guard import budget_exceeded, record_analysis_cost, get_today_spend
+        from app.services.notifications.telegram_service import get_telegram_service
+
         logger.info(f"[scheduler] full_scan: scanning {len(assets)} stocks")
         BATCH = 3
         approved = rejected = errors = 0
+        stopped_on_budget = False
 
         for i in range(0, len(assets), BATCH):
+            if await budget_exceeded():
+                spend = await get_today_spend()
+                stopped_on_budget = True
+                logger.warning(f"[scheduler] full_scan halted — daily budget hit (~${spend:.2f})")
+                await get_telegram_service().send_admin_alert(
+                    f"💰 <b>עצירת תקציב</b>\nהסריקה נעצרה — הגעת לתקרת ההוצאה היומית (~${spend:.2f}).\n"
+                    f"נסרקו {approved + rejected + errors}/{len(assets)} מניות."
+                )
+                break
+
             batch = assets[i: i + BATCH]
             results = await asyncio.gather(
                 *[
@@ -207,12 +221,24 @@ async def job_run_full_scan():
                         approved += 1
                     else:
                         rejected += 1
+            await record_analysis_cost(len(batch))
             await asyncio.sleep(2)  # brief pause between batches
 
         logger.info(
-            f"[scheduler] full_scan done: scanned={len(assets)}, "
+            f"[scheduler] full_scan done: scanned={approved + rejected + errors}, "
             f"approved={approved}, rejected={rejected}, errors={errors}"
         )
+
+        # Engine-down heuristic: a healthy scan produces a mix; if nearly
+        # everything errored or fell through, a provider is likely down/out of
+        # credit — alert admin instead of failing silently.
+        total = approved + rejected + errors
+        if not stopped_on_budget and total >= 10 and (errors + rejected) / total >= 0.9 and approved == 0:
+            await get_telegram_service().send_admin_alert(
+                f"⚠️ <b>אזהרת מנוע</b>\nסריקה שבועית הסתיימה עם 0 המלצות — "
+                f"{errors} שגיאות, {rejected} נדחו מתוך {total}.\n"
+                f"ייתכן שמנוע AI נפל או שנגמר קרדיט. בדוק לוגים + יתרות."
+            )
     except Exception as exc:
         logger.error(f"[scheduler] full_scan failed: {exc}")
 

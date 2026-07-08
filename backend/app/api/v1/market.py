@@ -782,6 +782,25 @@ async def simulate_ai_engines_status(current_user: User = Depends(get_current_ac
     return await _ai_check_state_get()
 
 
+@router.post("/simulate/test-admin-alert")
+async def simulate_test_admin_alert(current_user: User = Depends(get_current_active_user)):
+    """Admin: send a test message to the ADMIN telegram channel + report today's est. spend."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.services.notifications.telegram_service import get_telegram_service
+    from app.workers.cost_guard import get_today_spend
+    from app.core.config import settings
+    sent = await get_telegram_service().send_admin_alert(
+        "🛠️ <b>בדיקת ערוץ אדמין</b>\nהתראות תפעוליות (כשל מנוע / תקרת הוצאה) יגיעו לכאן."
+    )
+    return {
+        "admin_alert_sent": sent,
+        "admin_chat_configured": bool(settings.TELEGRAM_ADMIN_CHAT_ID),
+        "daily_budget_usd": settings.DAILY_CLAUDE_BUDGET_USD,
+        "today_est_spend_usd": round(await get_today_spend(), 2),
+    }
+
+
 @router.post("/simulate/test-notification")
 async def simulate_test_notification(
     current_user: User = Depends(get_current_active_user),

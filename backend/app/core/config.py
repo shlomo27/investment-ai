@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     # Telegram Bot — instant push notifications to a chat/channel
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
+    TELEGRAM_ADMIN_CHAT_ID: str = ""  # separate channel for ops alerts (engine failures, spend cap)
+
+    # Operational guardrails
+    DAILY_CLAUDE_BUDGET_USD: float = 0.0   # 0 = disabled; when >0, scans stop for the day once hit
+    EST_COST_PER_FULL_ANALYSIS_USD: float = 0.20  # Claude+GPT+Grok per one full stock analysis
 
     # Twilio (SMS)
     TWILIO_ACCOUNT_SID: str = ""

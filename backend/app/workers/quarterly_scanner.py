@@ -125,10 +125,20 @@ async def job_quarterly_scan_batch() -> dict:
         quarter = (await redis_client.get(REDIS_PREFIX + "quarter") or b"").decode()
         logger.info(f"[quarterly_scanner] batch for {quarter}")
 
+        from app.workers.cost_guard import budget_exceeded, record_analysis_cost, get_today_spend
+
         approved = rejected = errors = 0
         processed = []
 
         for _ in range(BATCH_PER_DAY):
+            if await budget_exceeded():
+                spend = await get_today_spend()
+                logger.warning(f"[quarterly_scanner] halted — daily budget hit (~${spend:.2f})")
+                from app.services.notifications.telegram_service import get_telegram_service
+                await get_telegram_service().send_admin_alert(
+                    f"💰 <b>עצירת תקציב</b>\nהסריקה הרבעונית נעצרה להיום — תקרת הוצאה (~${spend:.2f})."
+                )
+                break
             sym_bytes = await redis_client.rpop(REDIS_PREFIX + "todo")
             if not sym_bytes:
                 break
@@ -147,6 +157,7 @@ async def job_quarterly_scan_batch() -> dict:
             except Exception as exc:
                 errors += 1
                 logger.warning(f"[quarterly_scanner] {symbol}: {exc}")
+            await record_analysis_cost(1)
             await redis_client.sadd(REDIS_PREFIX + "done", symbol)
             await redis_client.expire(REDIS_PREFIX + "done", TTL_SECONDS)
             processed.append(symbol)
