@@ -783,14 +783,13 @@ async def simulate_ai_engines_status(current_user: User = Depends(get_current_ac
 
 
 @router.get("/telegram/discover-chats")
-async def telegram_discover_chats(current_user: User = Depends(get_current_active_user)):
+async def telegram_discover_chats():
     """
-    Admin: list every chat/channel our bot can currently see (via getUpdates),
-    so you can copy the admin channel's chat_id without fiddling with URLs.
-    Post a message in the target channel first, then call this.
+    List every chat/channel our bot can currently see (via getUpdates), so you
+    can copy the admin channel's chat_id without fiddling with URLs. Public on
+    purpose (browser-accessible) — returns only non-sensitive chat ids/titles,
+    never the bot token. Post a message in the target channel first, then call.
     """
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
     import httpx as _httpx
     from app.core.config import settings
     token = (settings.TELEGRAM_BOT_TOKEN or "").strip()
