@@ -141,58 +141,73 @@ async def lifespan(app: FastAPI):
     # ONE worker may run the scheduler: APScheduler 3.x has no cross-process
     # coordination, so multiple schedulers sharing the same job store would
     # fire every job once per worker (4x Claude cost, duplicate notifications).
-    # A session-scoped PostgreSQL advisory lock elects a single winner; the
-    # lock auto-releases if that worker's connection dies, and a respawned
-    # worker re-runs lifespan and can take it over.
-    scheduler = None
-    sched_lock_conn = None
-    try:
+    #
+    # A session-scoped PostgreSQL advisory lock elects a single winner. The
+    # keeper task RETRIES every 60s: during rolling deploys the OLD container
+    # still holds the lock when the new workers boot, so a one-shot try left
+    # the new container with NO scheduler at all (missed the weekly scan).
+    # With the retry loop, whichever worker grabs the lock first — possibly
+    # minutes later, after the old container dies — starts the scheduler.
+    sched_state: dict = {"scheduler": None, "conn": None, "task": None}
+
+    async def _scheduler_keeper():
         from sqlalchemy import text
         from app.core.database import engine
-        from app.workers.in_process_scheduler import create_scheduler
+        from app.workers.in_process_scheduler import create_scheduler, dedupe_live_recommendations
 
         SCHEDULER_LOCK_KEY = 931_702  # arbitrary app-wide constant
-        sched_lock_conn = await engine.connect()
-        got_lock = (
-            await sched_lock_conn.execute(
-                text("SELECT pg_try_advisory_lock(:k)"), {"k": SCHEDULER_LOCK_KEY}
-            )
-        ).scalar()
-
-        if got_lock:
-            sync_db_url = settings.DATABASE_URL.replace(
-                "postgresql+asyncpg://", "postgresql+psycopg2://"
-            )
-            scheduler = create_scheduler(sync_db_url)
-            scheduler.start()
-            logger.info(
-                "In-process scheduler started (this worker holds the scheduler lock)",
-                jobs=["load_universe Sun 07:00 IL", "prescreener daily 08:00 IL", "full_scan Wed 09:00 IL"],
-            )
-            # One-shot maintenance: collapse duplicate live recommendations
-            # (leftovers from pre-fix parallel schedulers). Idempotent.
-            from app.workers.in_process_scheduler import dedupe_live_recommendations
-            await dedupe_live_recommendations()
-        else:
-            await sched_lock_conn.close()
-            sched_lock_conn = None
-            logger.info("Scheduler skipped in this worker — another worker holds the lock")
-    except Exception as exc:
-        if sched_lock_conn is not None:
+        logged_waiting = False
+        while True:
+            conn = None
             try:
-                await sched_lock_conn.close()
-            except Exception:
-                pass
-            sched_lock_conn = None
-        logger.warning("In-process scheduler failed to start — manual scans still available", error=str(exc))
+                conn = await engine.connect()
+                got_lock = (
+                    await conn.execute(
+                        text("SELECT pg_try_advisory_lock(:k)"), {"k": SCHEDULER_LOCK_KEY}
+                    )
+                ).scalar()
+                if got_lock:
+                    sched_state["conn"] = conn  # hold connection = hold lock
+                    sync_db_url = settings.DATABASE_URL.replace(
+                        "postgresql+asyncpg://", "postgresql+psycopg2://"
+                    )
+                    scheduler = create_scheduler(sync_db_url)
+                    scheduler.start()
+                    sched_state["scheduler"] = scheduler
+                    logger.info(
+                        "In-process scheduler started (this worker holds the scheduler lock)",
+                        jobs=["load_universe Sun 07:00 IL", "prescreener daily 08:00 IL", "full_scan Wed 09:00 IL"],
+                    )
+                    # One-shot maintenance: collapse duplicate live recommendations.
+                    await dedupe_live_recommendations()
+                    return
+                await conn.close()
+                if not logged_waiting:
+                    logger.info("Scheduler lock held elsewhere — will keep retrying every 60s")
+                    logged_waiting = True
+            except Exception as exc:
+                if conn is not None:
+                    try:
+                        await conn.close()
+                    except Exception:
+                        pass
+                logger.warning("Scheduler keeper iteration failed — retrying", error=str(exc))
+            await asyncio.sleep(60)
+
+    sched_state["task"] = asyncio.create_task(_scheduler_keeper())
 
     yield
 
+    task = sched_state.get("task")
+    if task and not task.done():
+        task.cancel()
+    scheduler = sched_state.get("scheduler")
     if scheduler and scheduler.running:
         scheduler.shutdown(wait=False)
-    if sched_lock_conn is not None:
+    conn = sched_state.get("conn")
+    if conn is not None:
         try:
-            await sched_lock_conn.close()  # releases the advisory lock
+            await conn.close()  # releases the advisory lock
         except Exception:
             pass
     logger.info("Investment AI Platform shutting down...")
