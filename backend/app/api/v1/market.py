@@ -1217,7 +1217,14 @@ async def publish_master_list(
     sell_rows = sell_result.all()
 
     entries = []
+    seen_symbols: set = set()
     for rec, asset_name, sector in (buy_rows + sell_rows):
+        # One entry per symbol — rows are confidence-sorted, so the first
+        # occurrence is the best; older duplicate recommendations can't
+        # multiply into the published list.
+        if rec.symbol in seen_symbols:
+            continue
+        seen_symbols.add(rec.symbol)
         thesis = rec.fundamental_analysis.get("thesis") if rec.fundamental_analysis else None
         entry = MasterListEntry(
             symbol=rec.symbol,
