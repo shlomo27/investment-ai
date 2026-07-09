@@ -230,6 +230,7 @@ async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowSt
                     Recommendation.status.in_([
                         RecommendationStatus.APPROVED,
                         RecommendationStatus.PRESENTED_TO_USER,
+                        RecommendationStatus.ACTIONED,  # superseded by fresher analysis
                     ]),
                 )
                 .values(status=RecommendationStatus.DISMISSED)

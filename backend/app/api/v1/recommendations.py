@@ -83,6 +83,9 @@ async def get_recommendations(
         Recommendation.status.in_([
             RecommendationStatus.APPROVED,
             RecommendationStatus.PRESENTED_TO_USER,
+            # ACTIONED = the user recorded a trade on it — they HOLD the stock,
+            # so its analysis must stay reachable in the feed.
+            RecommendationStatus.ACTIONED,
         ])
     )
 

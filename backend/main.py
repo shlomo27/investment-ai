@@ -155,6 +155,7 @@ async def lifespan(app: FastAPI):
         from app.core.database import engine
         from app.workers.in_process_scheduler import (
             create_scheduler, dedupe_live_recommendations, remove_stale_jobs,
+            restore_actioned_recommendations,
         )
 
         SCHEDULER_LOCK_KEY = 931_702  # arbitrary app-wide constant
@@ -194,7 +195,9 @@ async def lifespan(app: FastAPI):
                             )
                         except Exception:
                             pass
-                    # One-shot maintenance: collapse duplicate live recommendations.
+                    # One-shot maintenance: restore bought-then-hidden recs,
+                    # then collapse duplicate live recommendations.
+                    await restore_actioned_recommendations()
                     await dedupe_live_recommendations()
                     return
                 await conn.close()

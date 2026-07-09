@@ -420,7 +420,11 @@ async def dedupe_live_recommendations() -> int:
     from app.core.database import AsyncSessionLocal
     from app.db.models.recommendation import Recommendation, RecommendationStatus
 
-    live = [RecommendationStatus.APPROVED, RecommendationStatus.PRESENTED_TO_USER]
+    live = [
+        RecommendationStatus.APPROVED,
+        RecommendationStatus.PRESENTED_TO_USER,
+        RecommendationStatus.ACTIONED,
+    ]
     dismissed = 0
     try:
         async with AsyncSessionLocal() as db:
@@ -448,6 +452,48 @@ async def dedupe_live_recommendations() -> int:
     except Exception as exc:
         logger.error(f"[maintenance] recommendation dedup failed: {exc}")
     return dismissed
+
+
+async def restore_actioned_recommendations() -> int:
+    """
+    One-shot repair (startup): the old UI auto-dismissed a recommendation the
+    moment the user recorded a BUY on it — hiding the analysis for a stock
+    they now hold. Restore such recs to ACTIONED so they reappear in the feed.
+    Identified precisely: DISMISSED recs referenced by an EXECUTED BUY order.
+    """
+    from sqlalchemy import select, update
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.recommendation import Recommendation, RecommendationStatus
+    from app.db.models.order import Order, OrderType, OrderStatus
+
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = await db.execute(
+                select(Order.recommendation_id).where(
+                    Order.recommendation_id.is_not(None),
+                    Order.order_type == OrderType.BUY,
+                    Order.status == OrderStatus.EXECUTED,
+                ).distinct()
+            )
+            rec_ids = [r[0] for r in rows.all()]
+            if not rec_ids:
+                return 0
+            result = await db.execute(
+                update(Recommendation)
+                .where(
+                    Recommendation.id.in_(rec_ids),
+                    Recommendation.status == RecommendationStatus.DISMISSED,
+                )
+                .values(status=RecommendationStatus.ACTIONED)
+            )
+            await db.commit()
+            restored = result.rowcount or 0
+            if restored:
+                logger.info(f"[maintenance] restored {restored} bought-then-hidden recommendations to ACTIONED")
+            return restored
+    except Exception as exc:
+        logger.error(f"[maintenance] restore_actioned failed: {exc}")
+        return 0
 
 
 async def job_send_digests():

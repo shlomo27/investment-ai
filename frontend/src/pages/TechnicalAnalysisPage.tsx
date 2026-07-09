@@ -256,9 +256,9 @@ const TechnicalAnalysisPage: React.FC = () => {
     if (!rec || !tradeModal) return;
     try {
       await ordersApi.createOrder({ symbol: rec.symbol, order_type: tradeModal.type, quantity, price, recommendation_id: rec.id });
-      await recommendationsApi.acknowledgeRecommendation(rec.id);
+      // Keep the recommendation live — holders need continued access to it
       setTradeModal(null);
-      navigate("/orders");
+      navigate("/portfolio");
     } catch (e: any) {
       alert(e.response?.data?.detail || "Order failed");
     }

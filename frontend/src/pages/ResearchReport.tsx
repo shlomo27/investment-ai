@@ -685,9 +685,10 @@ const ResearchReport: React.FC = () => {
         price,
         recommendation_id: rec.id,
       });
-      await recommendationsApi.acknowledgeRecommendation(rec.id);
+      // Keep the recommendation live — the user now HOLDS this stock and
+      // needs the research to stay reachable.
       setTradeModal(null);
-      navigate("/orders");
+      navigate("/portfolio");
     } catch (e: any) {
       alert(e.response?.data?.detail || "Order failed");
     }

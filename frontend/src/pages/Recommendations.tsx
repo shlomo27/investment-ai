@@ -87,7 +87,9 @@ const Recommendations: React.FC = () => {
         price,
         recommendation_id: tradeModal.rec.id,
       });
-      dispatch(acknowledgeRecommendation(tradeModal.rec.id));
+      // NOTE: deliberately NOT acknowledging — a holder needs continued access
+      // to the recommendation's analysis in the signals feed. Explicit
+      // "Dismiss" remains available on the card.
       setTradeModal(null);
     } catch (e: any) {
       alert(e.response?.data?.detail || "Order failed");
