@@ -68,12 +68,21 @@ const ConfirmTradeModal: React.FC<Props> = ({
         onClick={(e) => e.stopPropagation()}
         dir={isHe ? "rtl" : "ltr"}
       >
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-2">
           <h2 className="text-xl font-bold">
-            {isHe ? "אישור עסקה" : "Confirm Trade"}
+            {isHe
+              ? (isBuy ? "עדכון תיק — סימון החזקה" : "עדכון תיק — סימון מכירה")
+              : (isBuy ? "Portfolio Update — Add Holding" : "Portfolio Update — Record Sale")}
           </h2>
           <button onClick={onCancel} className="text-gray-400 hover:text-white">✕</button>
         </div>
+
+        {/* Advisory-only clarification */}
+        <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+          {isHe
+            ? "המערכת אינה מבצעת מסחר. את הפעולה עצמה בצע אצל הברוקר שלך — וכאן סמן אותה, כדי שהמערכת תעקוב אחרי הפוזיציה ותשלח לך התראות (סיגנלים, חדשות, סטופ-לוס)."
+            : "This system does not execute trades. Trade with your broker, then record it here so the system can monitor the position and alert you (signals, news, stop-loss)."}
+        </p>
 
         {/* Trade Summary */}
         <div className={`p-4 rounded-xl mb-4 ${isBuy ? "bg-green-900/20 border border-green-700/50" : "bg-red-900/20 border border-red-700/50"}`}>
@@ -119,7 +128,9 @@ const ConfirmTradeModal: React.FC<Props> = ({
         {/* Quantity Input */}
         <div className="mb-4">
           <label className="block text-sm text-gray-400 mb-2">
-            {isHe ? "כמות" : "Quantity"}
+            {isHe
+              ? (isBuy ? "כמה יחידות רכשת אצל הברוקר?" : "כמה יחידות מכרת?")
+              : (isBuy ? "How many units did you buy at your broker?" : "How many units did you sell?")}
           </label>
           <input
             type="number"
@@ -133,7 +144,7 @@ const ConfirmTradeModal: React.FC<Props> = ({
 
         {/* Total */}
         <div className="flex justify-between py-3 border-t border-b border-gray-800 mb-4">
-          <span className="font-bold">{isHe ? "סה\"כ" : "Total Amount"}</span>
+          <span className="font-bold">{isHe ? "שווי ההחזקה" : "Position Value"}</span>
           <span className={`text-xl font-bold ${isBuy ? "text-green-400" : "text-red-400"}`}>
             ₪{total.toLocaleString("en", { minimumFractionDigits: 2 })}
           </span>
@@ -164,10 +175,10 @@ const ConfirmTradeModal: React.FC<Props> = ({
             }`}
           >
             {isSubmitting
-              ? (isHe ? "מבצע..." : "Processing...")
+              ? (isHe ? "מעדכן..." : "Updating...")
               : isBuy
-              ? (isHe ? "אישור רכישה" : "Confirm Buy")
-              : (isHe ? "אישור מכירה" : "Confirm Sell")}
+              ? (isHe ? "הוסף לתיק המעקב" : "Add to Tracked Portfolio")
+              : (isHe ? "עדכן מכירה בתיק" : "Record Sale in Portfolio")}
           </button>
         </div>
       </div>

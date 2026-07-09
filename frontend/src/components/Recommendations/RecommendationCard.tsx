@@ -251,7 +251,7 @@ const RecommendationCard: React.FC<Props> = ({
             onClick={onBuy}
             className="bg-green-600 hover:bg-green-700 text-white rounded-lg px-4 py-1.5 text-sm font-medium"
           >
-            {isHe ? "קנה" : "Buy"}
+            {isHe ? "מחזיק? הוסף לתיק" : "Add to Portfolio"}
           </button>
         ) : null}
         {isSell && (

@@ -798,14 +798,14 @@ const ResearchReport: React.FC = () => {
               onClick={() => setTradeModal({ type: OrderType.BUY })}
               className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl py-3 font-medium"
             >
-              {isHe ? "פתח פוזיציית LONG" : "Open LONG Position"}
+              {isHe ? "רכשת אצל הברוקר? הוסף לתיק" : "Bought at your broker? Add to portfolio"}
             </button>
           ) : (
             <button
               onClick={() => setTradeModal({ type: OrderType.SELL })}
               className="flex-1 bg-red-600 hover:bg-red-700 text-white rounded-xl py-3 font-medium"
             >
-              {isHe ? "פתח פוזיציית SHORT" : "Open SHORT Position"}
+              {isHe ? "פתחת שורט אצל הברוקר? עדכן בתיק" : "Shorted at your broker? Record it"}
             </button>
           )}
           <Link

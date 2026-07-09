@@ -618,7 +618,7 @@ const TechnicalAnalysisPage: React.FC = () => {
             isShort ? "bg-red-600 hover:bg-red-700 text-white" : "bg-green-600 hover:bg-green-700 text-white"
           }`}
         >
-          {isShort ? "▼ OPEN SHORT" : "▲ OPEN LONG"} · {rec.symbol}
+          {isShort ? "▼ ADD SHORT TO PORTFOLIO" : "▲ ADD TO PORTFOLIO"} · {rec.symbol}
         </button>
         <Link
           to={`/research/${rec.id}`}
