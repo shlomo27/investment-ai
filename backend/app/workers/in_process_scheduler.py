@@ -66,13 +66,24 @@ async def job_daily_ta_scan():
             rows = await db.execute(
                 select(MasterListEntry.symbol).where(MasterListEntry.is_active == True).distinct()
             )
-            symbols = [r[0] for r in rows.all()]
+            master_symbols = {r[0] for r in rows.all()}
+            # Also cover every stock users actually HOLD — a position bought
+            # from a past master list must stay monitored even after the list
+            # rotates. TA is free (no LLM), so the wider set costs nothing.
+            held_rows = await db.execute(
+                select(Portfolio.symbol).where(Portfolio.quantity > 0).distinct()
+            )
+            held_symbols = {r[0] for r in held_rows.all()}
 
+        symbols = sorted(master_symbols | held_symbols)
         if not symbols:
             logger.info("[ta_scan] no active master list symbols — skipping")
             return
 
-        logger.info(f"[ta_scan] scanning {len(symbols)} master list stocks")
+        logger.info(
+            f"[ta_scan] scanning {len(symbols)} stocks "
+            f"(master={len(master_symbols)}, held-only={len(held_symbols - master_symbols)})"
+        )
         alerted = success = errors = 0
 
         for symbol in symbols:

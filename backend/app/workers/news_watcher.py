@@ -103,17 +103,28 @@ async def _run_news_watch() -> dict:
     notifier = NotificationService()
     bearer = getattr(settings, "TWITTER_BEARER_TOKEN", "")
 
+    from app.db.models.portfolio import Portfolio
+
     async with AsyncSessionLocal() as db:
         rows = await db.execute(
             select(MasterListEntry.symbol).where(MasterListEntry.is_active==True).distinct()
         )
-        symbols = [r[0] for r in rows.all()]
+        master_symbols = {r[0] for r in rows.all()}
+        # Held positions stay news-monitored even after the master list rotates
+        held_rows = await db.execute(
+            select(Portfolio.symbol).where(Portfolio.quantity > 0).distinct()
+        )
+        held_symbols = {r[0] for r in held_rows.all()}
 
+    symbols = sorted(master_symbols | held_symbols)
     if not symbols:
         logger.info("[news_watcher] No active master list symbols — skipping")
         return {"symbols_checked": 0}
 
-    logger.info(f"[news_watcher] Watching {len(symbols)} symbols")
+    logger.info(
+        f"[news_watcher] Watching {len(symbols)} symbols "
+        f"(master={len(master_symbols)}, held-only={len(held_symbols - master_symbols)})"
+    )
     symbols_alerted = 0
 
     for symbol in symbols:
