@@ -948,19 +948,32 @@ const ResearchReport: React.FC = () => {
             </div>
           )}
 
-          {/* Hard Exclusions Alert */}
-          {fa.hard_exclusions_triggered && fa.hard_exclusions_triggered.length > 0 && (
-            <div className="bg-red-950/30 border border-red-700/40 rounded-xl p-4">
-              <p className="text-xs font-bold text-red-400 mb-2">⚠️ {isHe ? "חריגות קריטיות" : "Hard Exclusion Flags"}</p>
-              <ul className="space-y-1">
-                {fa.hard_exclusions_triggered.map((flag: string, i: number) => (
-                  <li key={i} className="text-xs text-red-300 flex items-start gap-1.5">
-                    <span className="mt-0.5 shrink-0">✗</span>{flag}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {/* Hard-exclusion rule checks — CONFIRMED / UNCERTAIN / CLEARED */}
+          {fa.hard_exclusions_triggered && fa.hard_exclusions_triggered.length > 0 && (() => {
+            const items = (fa.hard_exclusions_triggered as string[]).map((flag) => {
+              const up = flag.toUpperCase();
+              if (up.startsWith("CLEARED")) return { flag, icon: "✓", cls: "text-green-400" };
+              if (up.startsWith("UNCERTAIN")) return { flag, icon: "⚠", cls: "text-yellow-300" };
+              return { flag, icon: "✗", cls: "text-red-300" };
+            });
+            const hasConfirmed = items.some((it) => it.icon === "✗");
+            return (
+              <div className={`rounded-xl p-4 border ${hasConfirmed ? "bg-red-950/30 border-red-700/40" : "bg-gray-800/40 border-gray-700/40"}`}>
+                <p className={`text-xs font-bold mb-2 ${hasConfirmed ? "text-red-400" : "text-gray-300"}`}>
+                  {hasConfirmed
+                    ? `⚠️ ${isHe ? "חריגות קריטיות" : "Hard Exclusion Flags"}`
+                    : `🛡️ ${isHe ? "בדיקת כללי פסילה (✓ עבר · ⚠ לא ניתן לאמת)" : "Exclusion Rule Checks (✓ passed · ⚠ unverifiable)"}`}
+                </p>
+                <ul className="space-y-1">
+                  {items.map((it, i) => (
+                    <li key={i} className={`text-xs flex items-start gap-1.5 ${it.cls}`}>
+                      <span className="mt-0.5 shrink-0">{it.icon}</span>{it.flag}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
 
           {/* Moat + Catalyst Validation */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

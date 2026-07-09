@@ -331,36 +331,53 @@ Respond in JSON format:
     _GAP_FIELDS = (
         "pe_ratio", "price_to_book", "price_to_sales", "beta", "current_ratio",
         "profit_margin", "roe", "roa", "revenue_growth", "dividend_yield",
+        "debt_to_equity",
     )
     _PERCENT_STYLE_FIELDS = {"profit_margin", "roe", "roa", "revenue_growth", "dividend_yield"}
 
     async def _fill_fundamental_gaps(self, symbol: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Yahoo sometimes returns partial fundamentals (e.g. no P/E when trailing
-        earnings are negative, or plain data gaps). Fill ONLY the missing fields
-        from Finnhub so the fundamental agent gets the fullest possible picture.
+        Yahoo sometimes returns partial fundamentals (throttling, or no P/E on
+        negative earnings). Fill ONLY the missing fields from Finnhub so the
+        fundamental agent gets the fullest possible picture — missing market
+        cap / debt data otherwise triggers UNCERTAIN hard-exclusion flags.
         """
         missing = [f for f in self._GAP_FIELDS if data.get(f) is None]
-        if not missing:
+        market_cap_missing = not data.get("market_cap")  # None or 0
+        if not missing and not market_cap_missing:
             return data
         fin = get_finnhub_service()
         if not fin.is_configured():
             return data
-        try:
-            extra = await fin.get_basic_financials(symbol)
-        except Exception:
-            return data
-        if not extra:
-            return data
         filled = []
-        for f in missing:
-            value = extra.get(f)
-            if value is None:
-                continue
-            if f in self._PERCENT_STYLE_FIELDS and abs(value) > 1.5:
-                value = value / 100.0  # percent → fraction, Yahoo convention
-            data[f] = value
-            filled.append(f)
+
+        if missing:
+            try:
+                extra = await fin.get_basic_financials(symbol)
+            except Exception:
+                extra = None
+            for f in missing:
+                value = (extra or {}).get(f)
+                if value is None:
+                    continue
+                if f in self._PERCENT_STYLE_FIELDS and abs(value) > 1.5:
+                    value = value / 100.0  # percent → fraction, Yahoo convention
+                elif f == "debt_to_equity" and 0 < value < 15:
+                    value = value * 100.0  # Finnhub ratio → Yahoo's percent-style D/E
+                data[f] = value
+                filled.append(f)
+
+        # Market cap: Yahoo throttling often zeroes it, which makes the analyst
+        # flag a bogus "Market Cap ~$0" exclusion. Finnhub profile has it.
+        if market_cap_missing:
+            try:
+                profile = await fin.get_profile(symbol)
+            except Exception:
+                profile = None
+            if profile and profile.get("market_cap"):
+                data["market_cap"] = profile["market_cap"]
+                filled.append("market_cap")
+
         if filled:
             logger.info("Filled fundamental gaps from Finnhub", symbol=symbol, fields=filled)
         return data
