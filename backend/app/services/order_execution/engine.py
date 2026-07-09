@@ -101,15 +101,12 @@ class OrderExecutionEngine:
 
             total_amount = quantity * price
 
-            # Validate based on order type
-            if order_type == OrderType.BUY:
-                if not await self.validate_sufficient_funds(user_id, total_amount, db):
-                    return OrderResult(
-                        success=False,
-                        order_id=None,
-                        message=f"Insufficient funds. Required: ${total_amount:.2f}, Available: ${user.cash_balance:.2f}",
-                    )
-            elif order_type == OrderType.SELL:
+            # PORTFOLIO-TRACKING MODEL: the platform never executes trades —
+            # users record what they actually traded at their broker. There is
+            # no internal cash wallet to validate, so BUY records are always
+            # accepted. SELL still requires a tracked position to keep the
+            # portfolio coherent.
+            if order_type == OrderType.SELL:
                 portfolio = await self._get_portfolio_position(user_id, symbol, db)
                 if not portfolio or portfolio.quantity < quantity:
                     available = portfolio.quantity if portfolio else 0
@@ -181,21 +178,13 @@ class OrderExecutionEngine:
             if not user:
                 return OrderResult(success=False, order_id=order_id, message="User not found")
 
-            # Apply small slippage for realism (0.05%)
-            slippage_factor = 1.0005 if order.order_type == OrderType.BUY else 0.9995
-            executed_price = order.price_at_order * slippage_factor
+            # Tracking model: the user reports the REAL trade they made at
+            # their broker — record it verbatim (no simulated slippage, no
+            # internal cash wallet to debit/credit).
+            executed_price = order.price_at_order
             executed_total = order.quantity * executed_price
 
             if order.order_type == OrderType.BUY:
-                # Deduct cash
-                if user.cash_balance < executed_total:
-                    order.status = OrderStatus.REJECTED
-                    order.rejection_reason = "Insufficient funds at execution time"
-                    await db.flush()
-                    return OrderResult(success=False, order_id=order_id, message="Insufficient funds")
-
-                user.cash_balance -= executed_total
-
                 # Update portfolio position
                 await self._update_portfolio_buy(
                     user_id=order.user_id,
@@ -214,10 +203,7 @@ class OrderExecutionEngine:
                     await db.flush()
                     return OrderResult(success=False, order_id=order_id, message="Insufficient shares")
 
-                # Add cash from sale
-                user.cash_balance += executed_total
-
-                # Update portfolio position
+                # Update portfolio position (no internal cash ledger)
                 await self._update_portfolio_sell(
                     portfolio=portfolio,
                     quantity=order.quantity,
