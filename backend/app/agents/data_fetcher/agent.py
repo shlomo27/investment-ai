@@ -335,51 +335,74 @@ Respond in JSON format:
     )
     _PERCENT_STYLE_FIELDS = {"profit_margin", "roe", "roa", "revenue_growth", "dividend_yield"}
 
+    # Fields critical enough to justify the FMP last-resort call (5 API calls
+    # per symbol on a 250/day free tier — fire sparingly). These are the fields
+    # whose absence triggers bogus UNCERTAIN hard-exclusion flags.
+    _FMP_CRITICAL_FIELDS = ("free_cash_flow", "market_cap", "debt_to_equity", "volume", "avg_volume_30d")
+
     async def _fill_fundamental_gaps(self, symbol: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Yahoo sometimes returns partial fundamentals (throttling, or no P/E on
-        negative earnings). Fill ONLY the missing fields from Finnhub so the
-        fundamental agent gets the fullest possible picture — missing market
-        cap / debt data otherwise triggers UNCERTAIN hard-exclusion flags.
+        negative earnings). Three-layer chain: Yahoo → Finnhub (cheap, covers
+        ratios + market cap) → FMP (last resort, covers FCF/volume/debt).
+        Only ever fills fields that are still missing.
         """
         missing = [f for f in self._GAP_FIELDS if data.get(f) is None]
         market_cap_missing = not data.get("market_cap")  # None or 0
-        if not missing and not market_cap_missing:
-            return data
-        fin = get_finnhub_service()
-        if not fin.is_configured():
+        fmp_needed = any(not data.get(f) for f in self._FMP_CRITICAL_FIELDS)
+        if not missing and not market_cap_missing and not fmp_needed:
             return data
         filled = []
 
-        if missing:
-            try:
-                extra = await fin.get_basic_financials(symbol)
-            except Exception:
-                extra = None
-            for f in missing:
-                value = (extra or {}).get(f)
-                if value is None:
-                    continue
-                if f in self._PERCENT_STYLE_FIELDS and abs(value) > 1.5:
-                    value = value / 100.0  # percent → fraction, Yahoo convention
-                elif f == "debt_to_equity" and 0 < value < 15:
-                    value = value * 100.0  # Finnhub ratio → Yahoo's percent-style D/E
-                data[f] = value
-                filled.append(f)
+        # ── Layer 2: Finnhub ──────────────────────────────────────────────────
+        fin = get_finnhub_service()
+        if fin.is_configured():
+            if missing:
+                try:
+                    extra = await fin.get_basic_financials(symbol)
+                except Exception:
+                    extra = None
+                for f in missing:
+                    value = (extra or {}).get(f)
+                    if value is None:
+                        continue
+                    if f in self._PERCENT_STYLE_FIELDS and abs(value) > 1.5:
+                        value = value / 100.0  # percent → fraction, Yahoo convention
+                    elif f == "debt_to_equity" and 0 < value < 15:
+                        value = value * 100.0  # Finnhub ratio → Yahoo's percent-style D/E
+                    data[f] = value
+                    filled.append(f)
 
-        # Market cap: Yahoo throttling often zeroes it, which makes the analyst
-        # flag a bogus "Market Cap ~$0" exclusion. Finnhub profile has it.
-        if market_cap_missing:
+            # Market cap: Yahoo throttling often zeroes it, which makes the
+            # analyst flag a bogus "Market Cap ~$0" exclusion.
+            if market_cap_missing:
+                try:
+                    profile = await fin.get_profile(symbol)
+                except Exception:
+                    profile = None
+                if profile and profile.get("market_cap"):
+                    data["market_cap"] = profile["market_cap"]
+                    filled.append("market_cap")
+
+        # ── Layer 3: FMP (last resort, quota-limited) ────────────────────────
+        still_critical = [f for f in self._FMP_CRITICAL_FIELDS if not data.get(f)]
+        if still_critical:
             try:
-                profile = await fin.get_profile(symbol)
+                fmp = await get_fmp_service().get_stock_info(symbol)
             except Exception:
-                profile = None
-            if profile and profile.get("market_cap"):
-                data["market_cap"] = profile["market_cap"]
-                filled.append("market_cap")
+                fmp = None
+            if fmp:
+                for f in still_critical:
+                    value = fmp.get(f)
+                    if not value:
+                        continue
+                    if f == "debt_to_equity" and 0 < value < 15:
+                        value = value * 100.0  # ratio → Yahoo's percent-style D/E
+                    data[f] = value
+                    filled.append(f"{f}(fmp)")
 
         if filled:
-            logger.info("Filled fundamental gaps from Finnhub", symbol=symbol, fields=filled)
+            logger.info("Filled fundamental gaps", symbol=symbol, fields=filled)
         return data
 
     def _empty_sentiment(self) -> SocialSentiment:
