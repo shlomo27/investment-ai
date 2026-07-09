@@ -153,7 +153,9 @@ async def lifespan(app: FastAPI):
     async def _scheduler_keeper():
         from sqlalchemy import text
         from app.core.database import engine
-        from app.workers.in_process_scheduler import create_scheduler, dedupe_live_recommendations
+        from app.workers.in_process_scheduler import (
+            create_scheduler, dedupe_live_recommendations, remove_stale_jobs,
+        )
 
         SCHEDULER_LOCK_KEY = 931_702  # arbitrary app-wide constant
         logged_waiting = False
@@ -178,6 +180,20 @@ async def lifespan(app: FastAPI):
                         "In-process scheduler started (this worker holds the scheduler lock)",
                         jobs=["load_universe Sun 07:00 IL", "prescreener daily 08:00 IL", "full_scan Wed 09:00 IL"],
                     )
+                    # Purge ghost jobs persisted by older code versions — the
+                    # Postgres job store outlives deploys, so renamed/removed
+                    # jobs would keep firing forever (stale daily full scan!).
+                    removed = remove_stale_jobs(scheduler)
+                    if removed:
+                        try:
+                            from app.services.notifications.telegram_service import get_telegram_service
+                            await get_telegram_service().send_admin_alert(
+                                "🧹 <b>נוקו עבודות-רפאים מהמתזמן</b>\n"
+                                f"עבודות ישנות שהוסרו: {', '.join(removed)}\n"
+                                "אלה גרמו לסריקות לא מתוכננות."
+                            )
+                        except Exception:
+                            pass
                     # One-shot maintenance: collapse duplicate live recommendations.
                     await dedupe_live_recommendations()
                     return

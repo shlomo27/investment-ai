@@ -375,6 +375,40 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
     return scheduler
 
 
+# Every job id the CURRENT code registers. Anything else found in the
+# PostgreSQL job store is a leftover from an older code version — the store
+# survives deploys, so renamed/removed jobs keep firing forever otherwise
+# (a stale daily-09:00 full scan haunted us exactly this way).
+KNOWN_JOB_IDS = {
+    "scheduled_load_universe",
+    "scheduled_prescreener",
+    "scheduled_weekly_full_scan",
+    "scheduled_earnings_watcher",
+    "scheduled_ta_scan",
+    "scheduled_news_watcher",
+    "scheduled_quarterly_scan_batch",
+    "scheduled_digest_sender",
+    "scheduled_track_outcomes",
+    "scheduled_price_alerts",
+    "scheduled_portfolio_snapshot",
+}
+
+
+def remove_stale_jobs(scheduler: AsyncIOScheduler) -> list[str]:
+    """Purge job-store entries that the current code no longer defines.
+    Call right after scheduler.start(). Returns the removed job ids."""
+    removed: list[str] = []
+    try:
+        for job in scheduler.get_jobs():
+            if job.id not in KNOWN_JOB_IDS:
+                scheduler.remove_job(job.id)
+                removed.append(job.id)
+                logger.warning(f"[scheduler] removed STALE job from store: {job.id} (trigger={job.trigger})")
+    except Exception as exc:
+        logger.error(f"[scheduler] stale-job cleanup failed: {exc}")
+    return removed
+
+
 async def dedupe_live_recommendations() -> int:
     """
     One-shot maintenance (called at startup by the scheduler-lock winner):
