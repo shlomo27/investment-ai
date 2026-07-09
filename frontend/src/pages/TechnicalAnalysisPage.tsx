@@ -248,7 +248,13 @@ const TechnicalAnalysisPage: React.FC = () => {
       const hasNoData = ta && (!ta.analysis_breakdown || ta.analysis_breakdown.length === 0) && ta.technical_score === 50;
       const isStaticOnly = ta && (ta as any).data_source === "info_derived";
       const missingChart = ta && (!(ta as any).price_history || (ta as any).price_history.length === 0);
-      if (!ta || hasFailed || hasNoData || isStaticOnly || missingChart) runAnalysis(data);
+      // Stale: technical state moves fast — auto-refresh if the stored
+      // snapshot is older than 30 minutes (matches the background scan cadence)
+      const STALE_MS = 30 * 60 * 1000;
+      const isStale = ta?.analysis_timestamp
+        ? Date.now() - new Date(ta.analysis_timestamp).getTime() > STALE_MS
+        : false;
+      if (!ta || hasFailed || hasNoData || isStaticOnly || missingChart || isStale) runAnalysis(data);
     }).catch(() => navigate("/recommendations"));
   }, [id]);
 
