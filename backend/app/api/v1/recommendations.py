@@ -338,14 +338,22 @@ async def request_technical_analysis(
         fallback_price=float(rec.current_price_at_recommendation) if rec.current_price_at_recommendation else None,
     )
 
-    if technical_result.get("technical_analysis"):
-        rec.technical_analysis = technical_result["technical_analysis"]
+    ta = technical_result.get("technical_analysis")
+    if ta:
+        rec.technical_analysis = ta
         await db.flush()
         await db.commit()
+        # Feed the shared alerting core: if this on-demand analysis caught a
+        # signal flip the 30-min sampler missed, holders still get notified.
+        try:
+            from app.workers.in_process_scheduler import process_signal_transition
+            await process_signal_transition(rec.symbol, ta)
+        except Exception as alert_exc:
+            logger.warning("on-demand signal alert failed", symbol=rec.symbol, error=str(alert_exc))
 
     return {
         "message": "Technical analysis completed",
-        "technical_analysis": technical_result.get("technical_analysis"),
+        "technical_analysis": ta,
     }
 
 

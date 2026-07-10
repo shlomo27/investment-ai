@@ -32,6 +32,94 @@ from apscheduler.triggers.cron import CronTrigger
 logger = logging.getLogger(__name__)
 
 
+# ─── Technical-signal alerting core ──────────────────────────────────────────
+
+ACTIONABLE = {"BUY_NOW", "STRONG_BUY", "SELL_NOW", "STRONG_SELL"}
+SIGNAL_COOLDOWN_SEC = 4 * 3600
+SIGNAL_LABELS = {
+    "BUY_NOW":     "📈 קנה",
+    "STRONG_BUY":  "🚀 קנה חזק",
+    "SELL_NOW":    "📉 מכור",
+    "STRONG_SELL": "⚠️ מכור חזק",
+}
+
+
+async def process_signal_transition(symbol: str, ta: dict, redis_client=None) -> bool:
+    """
+    Shared alerting core for technical signals — fed by BOTH the 30-min scan
+    and on-demand analyses (page opens/refreshes). A 30-min sampler can miss a
+    short-lived flip that a user-triggered analysis catches on screen; routing
+    every analysis through here means whatever the system SEES, holders HEAR.
+
+    Tracks the previous signal per symbol, alerts holders on upgrades to an
+    actionable signal AND on downgrades from one (momentum fading), applies
+    the 4h same-signal cooldown. Returns True if an alert was sent.
+    """
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.portfolio import Portfolio
+    from app.db.models.notification import NotificationType
+    from app.services.notifications.service import NotificationService
+    from sqlalchemy import select
+    import redis.asyncio as aioredis
+
+    signal = (ta or {}).get("timing_signal", "WAIT")
+    own_client = redis_client is None
+    r = redis_client or aioredis.from_url(settings.REDIS_URL)
+    try:
+        last_signal_key = f"investment_ai:ta_last_signal:{symbol}"
+        prev_raw = await r.get(last_signal_key)
+        prev_signal = prev_raw.decode() if prev_raw else None
+        await r.set(last_signal_key, signal, ex=7 * 24 * 3600)
+
+        downgraded = prev_signal in ACTIONABLE and signal not in ACTIONABLE
+        if signal not in ACTIONABLE and not downgraded:
+            return False
+
+        cooldown_key = f"investment_ai:ta_alert:{symbol}"
+        last = await r.get(cooldown_key)
+        if last and last.decode() == signal:
+            return False
+
+        async with AsyncSessionLocal() as db:
+            holders = await db.execute(
+                select(Portfolio.user_id).where(Portfolio.symbol == symbol, Portfolio.quantity > 0).distinct()
+            )
+            user_ids = [row[0] for row in holders.all()]
+
+        await r.set(cooldown_key, signal, ex=SIGNAL_COOLDOWN_SEC)
+        if not user_ids:
+            return False
+
+        score = ta.get("technical_score", 0)
+        price = ta.get("current_price")
+        price_str = f" | מחיר: ${price:.2f}" if price else ""
+        if downgraded:
+            prev_label = SIGNAL_LABELS.get(prev_signal, prev_signal)
+            title = (f"⬇️ {symbol}: הסיגנל נחלש — {prev_label} ← המתנה"
+                     f"{price_str} (ניתוח טכני, ציון {score:.0f}/100)")
+        else:
+            label = SIGNAL_LABELS.get(signal, signal)
+            title = f"{label} — {symbol}{price_str} (ניתוח טכני, ציון {score:.0f}/100)"
+
+        svc = NotificationService()
+        async with AsyncSessionLocal() as db:
+            for uid in user_ids:
+                await svc.send_notification(
+                    user_id=uid, recommendation_id=None,
+                    internal_detail={"symbol": symbol, "signal": signal,
+                                     "previous_signal": prev_signal,
+                                     "technical_score": score,
+                                     "current_price": price, "trigger": "TA_SCAN"},
+                    db=db, notification_type=NotificationType.ALERT, title=title,
+                )
+        logger.info(f"[ta_signal] {symbol}: {prev_signal or '—'}→{signal} (score={score}) → {len(user_ids)} users")
+        return True
+    finally:
+        if own_client:
+            await r.aclose()
+
+
 # ─── Job functions ────────────────────────────────────────────────────────────
 
 async def job_daily_ta_scan():
@@ -44,20 +132,9 @@ async def job_daily_ta_scan():
     from app.db.models.master_list import MasterListEntry
     from app.db.models.asset import Asset
     from app.db.models.portfolio import Portfolio
-    from app.db.models.notification import NotificationType
-    from app.services.notifications.service import NotificationService
     from app.agents.workflow import run_technical_workflow
     from sqlalchemy import select
     import redis.asyncio as aioredis
-
-    ACTIONABLE = {"BUY_NOW", "STRONG_BUY", "SELL_NOW", "STRONG_SELL"}
-    SIGNAL_COOLDOWN_SEC = 4 * 3600
-    SIGNAL_LABELS = {
-        "BUY_NOW":     "📈 קנה",
-        "STRONG_BUY":  "🚀 קנה חזק",
-        "SELL_NOW":    "📉 מכור",
-        "STRONG_SELL": "⚠️ מכור חזק",
-    }
 
     redis_client = aioredis.from_url(settings.REDIS_URL)
     logger.info("[ta_scan] started")
@@ -93,60 +170,10 @@ async def job_daily_ta_scan():
                 exchange = asset.exchange.value if asset else "NASDAQ"
                 result = await run_technical_workflow(symbol=symbol, exchange=exchange)
                 ta = result.get("technical_analysis") or {}
-                signal = ta.get("timing_signal", "WAIT")
                 success += 1
 
-                # Track the previous signal so we can detect DOWNGRADES too:
-                # a held stock dropping from BUY_NOW to WAIT is exit-relevant
-                # information, not silence.
-                last_signal_key = f"investment_ai:ta_last_signal:{symbol}"
-                prev_raw = await redis_client.get(last_signal_key)
-                prev_signal = prev_raw.decode() if prev_raw else None
-                await redis_client.set(last_signal_key, signal, ex=7 * 24 * 3600)
-
-                downgraded = prev_signal in ACTIONABLE and signal not in ACTIONABLE
-                if signal not in ACTIONABLE and not downgraded:
-                    continue
-
-                cooldown_key = f"investment_ai:ta_alert:{symbol}"
-                last = await redis_client.get(cooldown_key)
-                if last and last.decode() == signal:
-                    continue
-
-                async with AsyncSessionLocal() as db:
-                    holders = await db.execute(
-                        select(Portfolio.user_id).where(Portfolio.symbol==symbol, Portfolio.quantity>0).distinct()
-                    )
-                    user_ids = [r[0] for r in holders.all()]
-
-                await redis_client.set(cooldown_key, signal, ex=SIGNAL_COOLDOWN_SEC)
-                if not user_ids:
-                    continue
-
-                score = ta.get("technical_score", 0)
-                price = ta.get("current_price")
-                price_str = f" | מחיר: ${price:.2f}" if price else ""
-                if downgraded:
-                    prev_label = SIGNAL_LABELS.get(prev_signal, prev_signal)
-                    title = (f"⬇️ {symbol}: הסיגנל נחלש — {prev_label} ← המתנה"
-                             f"{price_str} (ניתוח טכני, ציון {score:.0f}/100)")
-                else:
-                    label = SIGNAL_LABELS.get(signal, signal)
-                    title = f"{label} — {symbol}{price_str} (ניתוח טכני, ציון {score:.0f}/100)"
-
-                svc = NotificationService()
-                async with AsyncSessionLocal() as db:
-                    for uid in user_ids:
-                        await svc.send_notification(
-                            user_id=uid, recommendation_id=None,
-                            internal_detail={"symbol": symbol, "signal": signal,
-                                             "previous_signal": prev_signal,
-                                             "technical_score": score,
-                                             "current_price": price, "trigger": "TA_SCAN"},
-                            db=db, notification_type=NotificationType.ALERT, title=title,
-                        )
-                alerted += 1
-                logger.info(f"[ta_scan] {symbol}: {prev_signal or '—'}→{signal} (score={score}) → {len(user_ids)} users")
+                if await process_signal_transition(symbol, ta, redis_client=redis_client):
+                    alerted += 1
 
             except Exception as e:
                 errors += 1
