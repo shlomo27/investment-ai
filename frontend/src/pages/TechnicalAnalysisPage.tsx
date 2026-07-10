@@ -258,6 +258,19 @@ const TechnicalAnalysisPage: React.FC = () => {
     }).catch(() => navigate("/recommendations"));
   }, [id]);
 
+  // Live view: while the page stays open, silently re-run the (free)
+  // technical analysis every 5 minutes so signal flips appear without a
+  // manual browser refresh.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRec((current) => {
+        if (current && !running) runAnalysis(current);
+        return current;
+      });
+    }, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+
   const handleConfirmTrade = async (quantity: number, price: number) => {
     if (!rec || !tradeModal) return;
     try {
