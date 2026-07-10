@@ -96,7 +96,16 @@ async def job_daily_ta_scan():
                 signal = ta.get("timing_signal", "WAIT")
                 success += 1
 
-                if signal not in ACTIONABLE:
+                # Track the previous signal so we can detect DOWNGRADES too:
+                # a held stock dropping from BUY_NOW to WAIT is exit-relevant
+                # information, not silence.
+                last_signal_key = f"investment_ai:ta_last_signal:{symbol}"
+                prev_raw = await redis_client.get(last_signal_key)
+                prev_signal = prev_raw.decode() if prev_raw else None
+                await redis_client.set(last_signal_key, signal, ex=7 * 24 * 3600)
+
+                downgraded = prev_signal in ACTIONABLE and signal not in ACTIONABLE
+                if signal not in ACTIONABLE and not downgraded:
                     continue
 
                 cooldown_key = f"investment_ai:ta_alert:{symbol}"
@@ -117,20 +126,27 @@ async def job_daily_ta_scan():
                 score = ta.get("technical_score", 0)
                 price = ta.get("current_price")
                 price_str = f" | מחיר: ${price:.2f}" if price else ""
-                label = SIGNAL_LABELS.get(signal, signal)
-                title = f"{label} — {symbol}{price_str} (ניתוח טכני, ציון {score:.0f}/100)"
+                if downgraded:
+                    prev_label = SIGNAL_LABELS.get(prev_signal, prev_signal)
+                    title = (f"⬇️ {symbol}: הסיגנל נחלש — {prev_label} ← המתנה"
+                             f"{price_str} (ניתוח טכני, ציון {score:.0f}/100)")
+                else:
+                    label = SIGNAL_LABELS.get(signal, signal)
+                    title = f"{label} — {symbol}{price_str} (ניתוח טכני, ציון {score:.0f}/100)"
 
                 svc = NotificationService()
                 async with AsyncSessionLocal() as db:
                     for uid in user_ids:
                         await svc.send_notification(
                             user_id=uid, recommendation_id=None,
-                            internal_detail={"symbol": symbol, "signal": signal, "technical_score": score,
+                            internal_detail={"symbol": symbol, "signal": signal,
+                                             "previous_signal": prev_signal,
+                                             "technical_score": score,
                                              "current_price": price, "trigger": "TA_SCAN"},
                             db=db, notification_type=NotificationType.ALERT, title=title,
                         )
                 alerted += 1
-                logger.info(f"[ta_scan] {symbol}: {signal} (score={score}) → {len(user_ids)} users")
+                logger.info(f"[ta_scan] {symbol}: {prev_signal or '—'}→{signal} (score={score}) → {len(user_ids)} users")
 
             except Exception as e:
                 errors += 1
