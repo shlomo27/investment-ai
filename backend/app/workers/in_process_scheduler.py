@@ -221,6 +221,8 @@ async def job_run_full_scan():
     """Weekly — Wednesday 09:00 IL — full AI pipeline on all 100 active pool stocks (3 concurrent)."""
     from app.core.database import AsyncSessionLocal
     from app.db.models.asset import Asset
+    from app.db.models.portfolio import Portfolio
+    from app.db.models.recommendation import Recommendation, RecommendationStatus
     from app.agents.workflow import run_investment_workflow
     from sqlalchemy import select
 
@@ -228,7 +230,42 @@ async def job_run_full_scan():
     try:
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(Asset).where(Asset.is_active_in_pool == True))
-            assets = result.scalars().all()
+            assets = list(result.scalars().all())
+            pool_symbols = {a.symbol for a in assets}
+
+            # A recommendation shown to users, or a stock a user actually holds,
+            # must be re-analyzed weekly even after the prescreener rotates it
+            # out of the active pool — otherwise stale cards linger in the feed
+            # and holders never get a fresh fundamental read on their position.
+            held_rows = await db.execute(
+                select(Portfolio.symbol).where(Portfolio.quantity > 0).distinct()
+            )
+            live_rows = await db.execute(
+                select(Recommendation.symbol)
+                .where(
+                    Recommendation.status.in_(
+                        [
+                            RecommendationStatus.APPROVED,
+                            RecommendationStatus.PRESENTED_TO_USER,
+                            RecommendationStatus.ACTIONED,
+                        ]
+                    )
+                )
+                .distinct()
+            )
+            extra_symbols = (
+                {r[0] for r in held_rows.all()} | {r[0] for r in live_rows.all()}
+            ) - pool_symbols
+            if extra_symbols:
+                extra_result = await db.execute(
+                    select(Asset).where(Asset.symbol.in_(extra_symbols))
+                )
+                extra_assets = list(extra_result.scalars().all())
+                assets.extend(extra_assets)
+                logger.info(
+                    f"[scheduler] full_scan: +{len(extra_assets)} held/live-rec stocks "
+                    f"outside the pool ({sorted(a.symbol for a in extra_assets)})"
+                )
 
         if not assets:
             logger.warning("[scheduler] full_scan: no active pool stocks — run prescreener first")
