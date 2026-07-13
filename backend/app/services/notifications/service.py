@@ -64,7 +64,7 @@ class NotificationService:
                 notification_type=notification_type,
                 external_message=external_msg,
                 internal_detail=internal_detail,
-                title=title or "עדכון השקעות" if user.preferred_language == "he" else "Investment Update",
+                title=title or ("עדכון השקעות" if user.preferred_language == "he" else "Investment Update"),
                 channels_sent=[],
                 is_read=False,
                 sent_at=datetime.now(timezone.utc),
@@ -127,17 +127,26 @@ class NotificationService:
                 rec_type = (internal_detail or {}).get("recommendation_type", "")
                 confidence = float((internal_detail or {}).get("confidence_score") or 0)
                 symbol = (internal_detail or {}).get("symbol", "")
+                from app.services.notifications.telegram_service import get_telegram_service
+                tg = get_telegram_service()
+                tg_success = False
                 if rec_type and symbol:
-                    from app.services.notifications.telegram_service import get_telegram_service
-                    tg = get_telegram_service()
                     tg_success = await tg.send_investment_alert(
                         symbol=symbol,
                         rec_type=rec_type,
                         confidence=confidence,
                         language=user.preferred_language or "he",
                     )
-                    if tg_success:
-                        channels_sent.append("telegram")
+                elif symbol and (internal_detail or {}).get("signal"):
+                    # Technical signal-change alert — carries "signal" instead of
+                    # "recommendation_type"; relay the composed title so holders
+                    # hear about trend flips on Telegram too.
+                    tg_success = await tg.send_message(
+                        f"🤖 <b>InvestAI — שינוי מגמה</b>\n\n{notification.title}\n\n"
+                        f"⚠️ כנס למערכת לצפייה בניתוח המלא"
+                    )
+                if tg_success:
+                    channels_sent.append("telegram")
                 self._telegram_sent_rec_ids.add(recommendation_id)
 
             notification.channels_sent = channels_sent
