@@ -96,11 +96,14 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         price_str = f" | מחיר: ${price:.2f}" if price else ""
         if downgraded:
             prev_label = SIGNAL_LABELS.get(prev_signal, prev_signal)
-            title = (f"⬇️ {symbol}: הסיגנל נחלש — {prev_label} ← המתנה"
+            # "היה X, עכשיו Y" — an inline arrow between Hebrew words is
+            # direction-ambiguous in RTL and users misread the transition.
+            title = (f"⬇️ {symbol}: הסיגנל נחלש — היה: {prev_label}, עכשיו: המתנה"
                      f"{price_str} (ניתוח טכני, ציון {score:.0f}/100)")
         else:
             label = SIGNAL_LABELS.get(signal, signal)
-            title = f"{label} — {symbol}{price_str} (ניתוח טכני, ציון {score:.0f}/100)"
+            prev_str = f" (קודם: {SIGNAL_LABELS.get(prev_signal, 'המתנה')})" if prev_signal else ""
+            title = f"{label} — {symbol}{price_str}{prev_str} (ניתוח טכני, ציון {score:.0f}/100)"
 
         svc = NotificationService()
         async with AsyncSessionLocal() as db:
