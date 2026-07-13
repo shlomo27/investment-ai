@@ -233,11 +233,10 @@ const RecommendationCard: React.FC<Props> = ({
           {expanded ? (isHe ? "הסתר" : "Collapse") : (isHe ? "פרטים" : "Details")}
         </button>
         <button
-          onClick={onRequestTechnical}
-          disabled={isLoadingTechnical}
-          className="text-xs bg-cyan-900/20 border border-cyan-700/50 text-cyan-400 rounded-lg px-3 py-1.5 hover:bg-cyan-900/40 disabled:opacity-50"
+          onClick={() => navigate(`/technical/${rec.id}`)}
+          className="text-xs bg-cyan-900/20 border border-cyan-700/50 text-cyan-400 rounded-lg px-3 py-1.5 hover:bg-cyan-900/40"
         >
-          {isLoadingTechnical ? (isHe ? "מנתח..." : "Analyzing...") : (isHe ? "ניתוח טכני" : "Technical")}
+          {isHe ? "ניתוח טכני" : "Technical"}
         </button>
         <button
           onClick={() => navigate(`/research/${rec.id}`)}
