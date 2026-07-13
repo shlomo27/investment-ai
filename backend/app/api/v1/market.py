@@ -1300,10 +1300,23 @@ async def get_earnings_calendar(
     if symbols:
         symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
     else:
+        # Default set: stocks the user actually HOLDS plus their watchlist —
+        # holdings are what upcoming earnings matter for most, and a fresh
+        # user has an empty watchlist.
+        from app.db.models.portfolio import Portfolio
+
         wl_result = await db.execute(
             select(Watchlist).where(Watchlist.user_id == current_user.id)
         )
-        symbol_list = [w.symbol for w in wl_result.scalars().all()]
+        held_result = await db.execute(
+            select(Portfolio.symbol).where(
+                Portfolio.user_id == current_user.id, Portfolio.quantity > 0
+            ).distinct()
+        )
+        symbol_list = sorted(
+            {w.symbol for w in wl_result.scalars().all()}
+            | {row[0] for row in held_result.all()}
+        )
 
     if not symbol_list:
         return []
