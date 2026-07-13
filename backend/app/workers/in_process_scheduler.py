@@ -423,6 +423,103 @@ async def job_poll_telegram_links():
 
 
 
+async def job_engine_health_check():
+    """
+    Every 6h — minimal ping to each of the 4 AI engines (Claude, GPT, Gemini,
+    Grok). Alerts the ADMIN channel only on state transitions: engine went
+    down (🔴 with the error) or recovered (🟢). Cost per round is a few dozen
+    tokens per engine — negligible.
+    """
+    import asyncio as _asyncio
+
+    from app.core.config import settings
+    from app.services.notifications.telegram_service import get_telegram_service
+    import redis.asyncio as aioredis
+
+    async def _ping_claude() -> str | None:
+        if not (settings.ANTHROPIC_API_KEY or "").strip():
+            return None
+        from langchain_anthropic import ChatAnthropic
+        llm = ChatAnthropic(model=settings.CLAUDE_MODEL, api_key=settings.ANTHROPIC_API_KEY,
+                            max_tokens=8, temperature=0)
+        await llm.ainvoke("ping")
+        return "ok"
+
+    async def _ping_gpt() -> str | None:
+        if not (settings.OPENAI_API_KEY or "").strip():
+            return None
+        from langchain_openai import ChatOpenAI
+        llm = ChatOpenAI(model=settings.OPENAI_MODEL, api_key=settings.OPENAI_API_KEY,
+                         max_tokens=8, temperature=0)
+        await llm.ainvoke("ping")
+        return "ok"
+
+    async def _ping_gemini() -> str | None:
+        if not (settings.GEMINI_API_KEY or "").strip():
+            return None
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        llm = ChatGoogleGenerativeAI(model=settings.GEMINI_MODEL, google_api_key=settings.GEMINI_API_KEY,
+                                     max_output_tokens=64, temperature=0)
+        await llm.ainvoke("ping")
+        return "ok"
+
+    async def _ping_grok() -> str | None:
+        if not (settings.XAI_API_KEY or "").strip():
+            return None
+        import httpx
+        # A real (tiny) generation, so exhausted credits fail here too —
+        # a models-list succeeds even with a $0 balance.
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                "https://api.x.ai/v1/responses",
+                headers={"Authorization": f"Bearer {settings.XAI_API_KEY}"},
+                json={"model": settings.XAI_MODEL, "input": "ping", "max_output_tokens": 16},
+            )
+            if resp.status_code != 200:
+                raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:150]}")
+        return "ok"
+
+    ENGINES = {
+        "Claude (ניתוח והחלטה)": _ping_claude,
+        "GPT (חדשות)": _ping_gpt,
+        "Gemini (מאקרו)": _ping_gemini,
+        "Grok (סנטימנט X)": _ping_grok,
+    }
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    tg = get_telegram_service()
+    try:
+        for name, ping in ENGINES.items():
+            key = f"investment_ai:engine_health:{name}"
+            prev_raw = await r.get(key)
+            prev = prev_raw.decode() if prev_raw else None
+            try:
+                result = await _asyncio.wait_for(ping(), timeout=60)
+                if result is None:
+                    continue  # engine not configured — nothing to watch
+                state, err = "up", ""
+            except Exception as exc:
+                state, err = "down", str(exc)[:200]
+
+            await r.set(key, state, ex=7 * 24 * 3600)
+
+            if state == "down" and prev != "down":
+                await tg.send_admin_alert(
+                    f"🔴 <b>מנוע AI נפל: {name}</b>\n\n"
+                    f"שגיאה: <code>{err}</code>\n\n"
+                    f"המערכת ממשיכה לעבוד עם שאר המנועים, אבל איכות הניתוח נפגעת "
+                    f"עד שהמנוע יחזור. בדוק מפתח/קרדיטים אצל הספק."
+                )
+                logger.warning(f"[engine_health] {name} DOWN: {err}")
+            elif state == "up" and prev == "down":
+                await tg.send_admin_alert(f"🟢 <b>מנוע AI התאושש: {name}</b>\n\nחזר לפעול תקין.")
+                logger.info(f"[engine_health] {name} recovered")
+    except Exception as exc:
+        logger.error(f"[engine_health] check failed: {exc}")
+    finally:
+        await r.aclose()
+
+
 # ─── Scheduler factory ────────────────────────────────────────────────────────
 
 def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
@@ -550,6 +647,15 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+    # AI engine health check — every 6h, admin alert on down/recovery
+    scheduler.add_job(
+        job_engine_health_check,
+        "interval",
+        hours=6,
+        id="scheduled_engine_health",
+        replace_existing=True,
+    )
+
     return scheduler
 
 
@@ -570,6 +676,7 @@ KNOWN_JOB_IDS = {
     "scheduled_price_alerts",
     "scheduled_portfolio_snapshot",
     "scheduled_telegram_link_poll",
+    "scheduled_engine_health",
 }
 
 
