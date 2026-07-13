@@ -271,6 +271,30 @@ const TechnicalAnalysisPage: React.FC = () => {
     return () => clearInterval(timer);
   }, [running]);
 
+  // Wake-up refresh: mobile browsers freeze timers in background tabs, so a
+  // tab reopened hours/days later keeps showing its old snapshot until the
+  // next (frozen) tick. Refresh immediately when the tab becomes visible
+  // again and the snapshot is stale.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      setRec((current) => {
+        const ta = current?.technical_analysis as TechnicalAnalysis | null;
+        const stale = ta?.analysis_timestamp
+          ? Date.now() - new Date(ta.analysis_timestamp).getTime() > 30 * 60 * 1000
+          : true;
+        if (current && !running && stale) runAnalysis(current);
+        return current;
+      });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [running]);
+
   const handleConfirmTrade = async (quantity: number, price: number) => {
     if (!rec || !tradeModal) return;
     try {
