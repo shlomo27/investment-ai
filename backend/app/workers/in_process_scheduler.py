@@ -479,6 +479,20 @@ async def job_engine_health_check():
                 raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:150]}")
         return "ok"
 
+    def _diagnose(err: str) -> str:
+        e = err.lower()
+        if any(k in e for k in ("insufficient", "credit", "billing", "payment", "402", "balance")):
+            return "💳 נגמרו הקרדיטים או בעיית חיוב — היכנס לחשבון הספק וטען/עדכן אמצעי תשלום"
+        if any(k in e for k in ("invalid api key", "invalid x-api-key", "unauthorized", "authentication", "401", "403", "permission")):
+            return "🔑 מפתח ה-API לא תקין או נחסם — בדוק את המשתנה ב-Railway מול המפתח אצל הספק"
+        if any(k in e for k in ("429", "rate limit", "quota", "resource_exhausted", "resource exhausted")):
+            return "⏳ חריגת מכסה/קצב — ייתכן שנגמרה המכסה (בגרסה חינמית) או עומס זמני; לרוב חולף תוך שעות"
+        if any(k in e for k in ("not found", "404", "no such model", "decommissioned", "deprecated")):
+            return "🏷️ שם המודל לא קיים אצל הספק — ייתכן שהוצא משימוש וצריך לעדכן את שם המודל"
+        if any(k in e for k in ("timeout", "timed out", "connection", "unavailable", "overloaded", "500", "502", "503", "529")):
+            return "🌐 תקלה זמנית בצד הספק — לרוב חולפת מעצמה; אם נמשכת מעל כמה שעות, בדוק את עמוד הסטטוס של הספק"
+        return "❓ שגיאה לא מזוהה — ראה את הפירוט הטכני למעלה"
+
     ENGINES = {
         "Claude (ניתוח והחלטה)": _ping_claude,
         "GPT (חדשות)": _ping_gpt,
@@ -507,8 +521,9 @@ async def job_engine_health_check():
                 await tg.send_admin_alert(
                     f"🔴 <b>מנוע AI נפל: {name}</b>\n\n"
                     f"שגיאה: <code>{err}</code>\n\n"
+                    f"<b>אבחון:</b> {_diagnose(err)}\n\n"
                     f"המערכת ממשיכה לעבוד עם שאר המנועים, אבל איכות הניתוח נפגעת "
-                    f"עד שהמנוע יחזור. בדוק מפתח/קרדיטים אצל הספק."
+                    f"עד שהמנוע יחזור."
                 )
                 logger.warning(f"[engine_health] {name} DOWN: {err}")
             elif state == "up" and prev == "down":
