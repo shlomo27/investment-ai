@@ -114,6 +114,7 @@ class UserResponse(BaseModel):
     investment_horizon_months: Optional[int] = None
     alert_frequency: str = "REALTIME"
     totp_enabled: bool = False
+    telegram_linked: bool = False
 
     class Config:
         from_attributes = True
@@ -435,4 +436,43 @@ async def complete_2fa_login(
 
     return AuthResponse(user=UserResponse.from_orm(user), tokens=tokens)
 
+# ─── Personal Telegram linking ─────────────────────────────────────────────────
 
+class TelegramLinkResponse(BaseModel):
+    link: str
+    expires_in: int
+
+
+@router.post("/telegram/link-code", response_model=TelegramLinkResponse)
+async def telegram_link_code(current_user: User = Depends(get_current_active_user)):
+    """Generate a one-time code and a t.me deep link that ties the user's
+    private Telegram chat to their account (consumed by the bot poller)."""
+    import secrets as pysecrets
+    import redis.asyncio as aioredis
+    from app.core.config import settings
+
+    code = pysecrets.token_urlsafe(8)
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        await r.set(f"investment_ai:tg_link:{code}", str(current_user.id), ex=600)
+    finally:
+        await r.aclose()
+    return TelegramLinkResponse(
+        link=f"https://t.me/{settings.TELEGRAM_BOT_USERNAME}?start={code}",
+        expires_in=600,
+    )
+
+
+@router.get("/telegram/status")
+async def telegram_status(current_user: User = Depends(get_current_active_user)):
+    return {"linked": bool(current_user.telegram_chat_id)}
+
+
+@router.delete("/telegram/link")
+async def telegram_unlink(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    current_user.telegram_chat_id = None
+    await db.flush()
+    return {"linked": False}

@@ -122,32 +122,54 @@ class NotificationService:
                 else:
                     logger.info("Email skipped — user has no email", user_id=user_id)
 
-            # Send Telegram (global channel — once per recommendation, not per user)
+            from app.services.notifications.telegram_service import get_telegram_service
+            tg = get_telegram_service()
+            personal_chat = getattr(user, "telegram_chat_id", None)
+
+            # Personal Telegram — the user's own private chat with the bot.
+            # Private like the app itself, so the real alert title is allowed
+            # (email/push/SMS stay generic by design).
+            if realtime and personal_chat:
+                sent_personal = await tg.send_message(
+                    f"🤖 <b>InvestAI</b>\n\n{notification.title}\n\n"
+                    f"⚠️ כנס למערכת לצפייה בניתוח המלא",
+                    chat_id=personal_chat,
+                )
+                if sent_personal:
+                    channels_sent.append("telegram_personal")
+
+            # Shared channel (once per recommendation, not per user)
             if recommendation_id not in self._telegram_sent_rec_ids:
                 rec_type = (internal_detail or {}).get("recommendation_type", "")
                 confidence = float((internal_detail or {}).get("confidence_score") or 0)
                 symbol = (internal_detail or {}).get("symbol", "")
-                from app.services.notifications.telegram_service import get_telegram_service
-                tg = get_telegram_service()
                 tg_success = False
                 if rec_type and symbol:
+                    # New-recommendation broadcast — goes to the shared channel
+                    # for everyone regardless of personal linking.
                     tg_success = await tg.send_investment_alert(
                         symbol=symbol,
                         rec_type=rec_type,
                         confidence=confidence,
                         language=user.preferred_language or "he",
                     )
+                    self._telegram_sent_rec_ids.add(recommendation_id)
                 elif symbol and (internal_detail or {}).get("signal"):
-                    # Technical signal-change alert — carries "signal" instead of
-                    # "recommendation_type"; relay the composed title so holders
-                    # hear about trend flips on Telegram too.
-                    tg_success = await tg.send_message(
-                        f"🤖 <b>InvestAI — שינוי מגמה</b>\n\n{notification.title}\n\n"
-                        f"⚠️ כנס למערכת לצפייה בניתוח המלא"
-                    )
+                    # Technical signal-change alert — personal by nature. Only
+                    # fall back to the shared channel for holders who have not
+                    # linked a private chat yet.
+                    if personal_chat:
+                        pass  # delivered privately above; keep channel quiet
+                    else:
+                        tg_success = await tg.send_message(
+                            f"🤖 <b>InvestAI — שינוי מגמה</b>\n\n{notification.title}\n\n"
+                            f"⚠️ כנס למערכת לצפייה בניתוח המלא"
+                        )
+                        self._telegram_sent_rec_ids.add(recommendation_id)
+                else:
+                    self._telegram_sent_rec_ids.add(recommendation_id)
                 if tg_success:
                     channels_sent.append("telegram")
-                self._telegram_sent_rec_ids.add(recommendation_id)
 
             notification.channels_sent = channels_sent
             # Commit here — background workers pass sessions that are closed
@@ -349,6 +371,12 @@ class NotificationService:
         if user.notification_email and user.email:
             if await self._send_email(email=user.email, name=user.full_name, subject=title, body=body):
                 channels_sent.append("email")
+        if getattr(user, "telegram_chat_id", None):
+            from app.services.notifications.telegram_service import get_telegram_service
+            if await get_telegram_service().send_message(
+                f"🤖 <b>InvestAI — {title}</b>\n\n{body}", chat_id=user.telegram_chat_id
+            ):
+                channels_sent.append("telegram_personal")
         return channels_sent
 
     async def send_system_notification(

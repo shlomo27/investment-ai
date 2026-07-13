@@ -102,6 +102,7 @@ export interface User {
   notification_push: boolean;
   alert_frequency?: "REALTIME" | "EVERY_4_HOURS" | "DAILY";
   totp_enabled: boolean;
+  telegram_linked?: boolean;
   created_at: string;
 }
 

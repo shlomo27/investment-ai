@@ -51,6 +51,9 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     preferred_language: Mapped[str] = mapped_column(String(10), default="he", nullable=False)
     push_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Personal Telegram chat (private bot conversation) — linked from Settings;
+    # personal alerts go here with full detail, unlike generic email/push/SMS
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     notification_email: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -63,6 +66,10 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+    @property
+    def telegram_linked(self) -> bool:
+        return bool(self.telegram_chat_id)
 
     # Relationships
     portfolio_items = relationship("Portfolio", back_populates="user", cascade="all, delete-orphan")

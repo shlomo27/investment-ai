@@ -89,6 +89,7 @@ class Settings(BaseSettings):
 
     # Telegram Bot — instant push notifications to a chat/channel
     TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_BOT_USERNAME: str = "my_invest_ai_bot"  # for t.me deep links
     TELEGRAM_CHAT_ID: str = ""
     TELEGRAM_ADMIN_CHAT_ID: str = ""  # separate channel for ops alerts (engine failures, spend cap)
 

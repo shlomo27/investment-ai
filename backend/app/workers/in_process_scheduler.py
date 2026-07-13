@@ -337,6 +337,92 @@ async def job_run_full_scan():
         logger.error(f"[scheduler] full_scan failed: {exc}")
 
 
+async def job_poll_telegram_links():
+    """
+    Every 30s — poll the bot for '/start <code>' messages sent from private
+    chats and link that chat to the user account behind the one-time code
+    (created by POST /auth/telegram/link-code). Personal alerts then go to
+    the user's own chat instead of the shared channel.
+    """
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.user import User
+    from app.services.notifications.telegram_service import get_telegram_service
+    from sqlalchemy import select
+    import httpx
+    import redis.asyncio as aioredis
+
+    token = settings.TELEGRAM_BOT_TOKEN
+    if not token or token.startswith("your_"):
+        return
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        offset_raw = await r.get("investment_ai:tg_update_offset")
+        params: dict = {"timeout": 0, "allowed_updates": '["message"]'}
+        if offset_raw:
+            params["offset"] = int(offset_raw)
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                f"https://api.telegram.org/bot{token}/getUpdates", params=params
+            )
+            data = resp.json()
+        if not data.get("ok"):
+            return
+        updates = data.get("result", [])
+        if not updates:
+            return
+        await r.set("investment_ai:tg_update_offset", updates[-1]["update_id"] + 1)
+
+        tg = get_telegram_service()
+        for upd in updates:
+            msg = upd.get("message") or {}
+            chat = msg.get("chat") or {}
+            text = (msg.get("text") or "").strip()
+            if chat.get("type") != "private" or not text.startswith("/start"):
+                continue
+            chat_id = str(chat["id"])
+            parts = text.split(maxsplit=1)
+            if len(parts) < 2:
+                await tg.send_message(
+                    "כדי לחבר את החשבון, לחץ על 'חבר טלגרם אישי' בהגדרות המערכת "
+                    "והשתמש בקישור שנוצר.",
+                    chat_id=chat_id,
+                )
+                continue
+            code = parts[1].strip()
+            uid_raw = await r.get(f"investment_ai:tg_link:{code}")
+            if not uid_raw:
+                await tg.send_message(
+                    "⚠️ הקוד לא תקף או שפג תוקפו (10 דקות). "
+                    "צור קישור חדש מהגדרות המערכת.",
+                    chat_id=chat_id,
+                )
+                continue
+            user_id = int(uid_raw)
+            async with AsyncSessionLocal() as db:
+                res = await db.execute(select(User).where(User.id == user_id))
+                user = res.scalar_one_or_none()
+                if not user:
+                    continue
+                user.telegram_chat_id = chat_id
+                await db.commit()
+                name = user.full_name
+            await r.delete(f"investment_ai:tg_link:{code}")
+            await tg.send_message(
+                f"✅ <b>הטלגרם חובר בהצלחה!</b>\n\n"
+                f"שלום {name}, מעכשיו תקבל כאן התרעות אישיות על התיק שלך — "
+                f"שינויי מגמה בהחזקות והמלצות חדשות.",
+                chat_id=chat_id,
+            )
+            logger.info(f"[tg_link] linked user {user_id} to chat {chat_id}")
+    except Exception as exc:
+        logger.warning(f"[tg_link] poll failed: {exc}")
+    finally:
+        await r.aclose()
+
+
+
 # ─── Scheduler factory ────────────────────────────────────────────────────────
 
 def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
@@ -455,6 +541,15 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+    # Personal Telegram linking — poll the bot for /start codes
+    scheduler.add_job(
+        job_poll_telegram_links,
+        "interval",
+        seconds=30,
+        id="scheduled_telegram_link_poll",
+        replace_existing=True,
+    )
+
     return scheduler
 
 
@@ -474,6 +569,7 @@ KNOWN_JOB_IDS = {
     "scheduled_track_outcomes",
     "scheduled_price_alerts",
     "scheduled_portfolio_snapshot",
+    "scheduled_telegram_link_poll",
 }
 
 

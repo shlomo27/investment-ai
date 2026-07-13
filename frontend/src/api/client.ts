@@ -185,6 +185,21 @@ export const authApi = {
     return response.data;
   },
 
+  telegramLinkCode: async (): Promise<{ link: string; expires_in: number }> => {
+    const response = await api.post("/auth/telegram/link-code");
+    return response.data;
+  },
+
+  telegramStatus: async (): Promise<{ linked: boolean }> => {
+    const response = await api.get("/auth/telegram/status");
+    return response.data;
+  },
+
+  telegramUnlink: async (): Promise<{ linked: boolean }> => {
+    const response = await api.delete("/auth/telegram/link");
+    return response.data;
+  },
+
   completeOnboarding: async (data: {
     risk_profile: RiskProfile;
     risk_score: number;

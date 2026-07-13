@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../store";
 import { updateUserProfile } from "../store/slices/authSlice";
 import { authApi } from "../api/client";
@@ -31,6 +31,52 @@ const Settings: React.FC = () => {
 
   const [saved, setSaved] = useState(false);
   const [pushStatus, setPushStatus] = useState<"idle" | "requesting" | "done" | "denied">("idle");
+
+  // Personal Telegram linking
+  const [tgLinked, setTgLinked] = useState<boolean>((user as any)?.telegram_linked ?? false);
+  const [tgWaiting, setTgWaiting] = useState(false);
+  const tgPollRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    authApi.telegramStatus().then((s) => setTgLinked(s.linked)).catch(() => {});
+    return () => {
+      if (tgPollRef.current) window.clearInterval(tgPollRef.current);
+    };
+  }, []);
+
+  const handleTelegramConnect = async () => {
+    try {
+      const { link } = await authApi.telegramLinkCode();
+      window.open(link, "_blank");
+      setTgWaiting(true);
+      if (tgPollRef.current) window.clearInterval(tgPollRef.current);
+      let attempts = 0;
+      tgPollRef.current = window.setInterval(async () => {
+        attempts += 1;
+        try {
+          const s = await authApi.telegramStatus();
+          if (s.linked) {
+            setTgLinked(true);
+            setTgWaiting(false);
+            if (tgPollRef.current) window.clearInterval(tgPollRef.current);
+          }
+        } catch {}
+        if (attempts > 60 && tgPollRef.current) {
+          window.clearInterval(tgPollRef.current);
+          setTgWaiting(false);
+        }
+      }, 3000);
+    } catch {
+      setTgWaiting(false);
+    }
+  };
+
+  const handleTelegramUnlink = async () => {
+    try {
+      await authApi.telegramUnlink();
+      setTgLinked(false);
+    } catch {}
+  };
 
   // 2FA state
   const [twoFAStep, setTwoFAStep] = useState<"idle" | "setup" | "verify" | "disable">("idle");
@@ -295,6 +341,50 @@ const Settings: React.FC = () => {
              : (isHe ? "🔔 הפעל התרעות Push" : "🔔 Enable Push Notifications")}
           </button>
         )}
+
+        {/* Personal Telegram */}
+        <div className="pt-3 border-t border-gray-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span>✈️</span>
+              <div>
+                <span className="text-sm text-gray-300 block">
+                  {isHe ? "טלגרם אישי" : "Personal Telegram"}
+                </span>
+                <span className="text-xs text-gray-500">
+                  {tgLinked
+                    ? (isHe ? "מחובר — התרעות אישיות נשלחות לצ'אט הפרטי שלך" : "Linked — personal alerts go to your private chat")
+                    : (isHe ? "התרעות אישיות על התיק שלך, ישירות לטלגרם" : "Personal portfolio alerts, straight to Telegram")}
+                </span>
+              </div>
+            </div>
+            {tgLinked ? (
+              <button
+                onClick={handleTelegramUnlink}
+                className="text-xs border border-red-800/60 text-red-400 hover:bg-red-900/20 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                {isHe ? "נתק" : "Unlink"}
+              </button>
+            ) : (
+              <button
+                onClick={handleTelegramConnect}
+                disabled={tgWaiting}
+                className="text-xs border border-blue-700/60 text-blue-400 hover:bg-blue-900/20 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+              >
+                {tgWaiting
+                  ? (isHe ? "ממתין לאישור בטלגרם..." : "Waiting for Telegram...")
+                  : (isHe ? "✈️ חבר טלגרם אישי" : "✈️ Connect Telegram")}
+              </button>
+            )}
+          </div>
+          {tgWaiting && (
+            <p className="text-xs text-gray-600 mt-2">
+              {isHe
+                ? 'נפתח חלון טלגרם — לחץ שם על "Start" והחיבור יושלם אוטומטית תוך חצי דקה.'
+                : 'A Telegram window opened — tap "Start" there and linking completes automatically within ~30s.'}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* ── Content Preferences ──────────────────────────────────────────── */}
