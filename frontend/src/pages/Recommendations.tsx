@@ -148,9 +148,9 @@ const Recommendations: React.FC = () => {
           className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "signals" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
         >
           {isHe ? "סיגנלים AI" : "AI Signals"}
-          {recommendations.length > 0 && (
+          {topPicks.length > 0 && (
             <span className="ml-2 bg-gray-700 text-gray-300 text-xs rounded-full px-1.5 py-0.5">
-              {recommendations.length}
+              {topPicks.length}
             </span>
           )}
         </button>
@@ -258,7 +258,7 @@ const Recommendations: React.FC = () => {
                     : "bg-gray-900 text-gray-400 border-gray-800 hover:border-gray-600"
                 }`}
               >
-                {f === "LONG" ? `LONG (${longCount})` : f === "SHORT" ? `SHORT (${shortCount})` : `${isHe ? "הכל" : "All"} (${recommendations.length})`}
+                {f === "LONG" ? `LONG (${longCount})` : f === "SHORT" ? `SHORT (${shortCount})` : `${isHe ? "הכל" : "All"} (${topPicks.length})`}
               </button>
             ))}
           </div>
