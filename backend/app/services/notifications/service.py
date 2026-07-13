@@ -150,7 +150,11 @@ class NotificationService:
                 self._telegram_sent_rec_ids.add(recommendation_id)
 
             notification.channels_sent = channels_sent
-            await db.flush()
+            # Commit here — background workers pass sessions that are closed
+            # (rolled back) without commit, which silently discarded the inbox
+            # row while Telegram/email already went out. API sessions commit
+            # again in get_db, which is harmless.
+            await db.commit()
 
             logger.info(
                 "Notification sent",
