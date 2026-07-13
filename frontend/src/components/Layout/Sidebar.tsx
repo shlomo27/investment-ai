@@ -10,7 +10,7 @@ interface NavItem {
 }
 
 const ADMIN_ITEMS: NavItem[] = [
-  { to: "/fund", icon: "🎯", label_he: "לוח ניהול", label_en: "Fund Dashboard" },
+  { to: "/fund", icon: "🎯", label_he: "לוח ניהול", label_en: "Dashboard" },
   { to: "/recommendations", icon: "🤖", label_he: "סיגנלים AI", label_en: "AI Signals" },
 ];
 

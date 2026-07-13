@@ -206,9 +206,9 @@ const FundDashboard: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{isHe ? "לוח בקרה - קרן גידור" : "Fund Dashboard"}</h1>
+          <h1 className="text-2xl font-bold">{isHe ? "לוח בקרה — התיק שלי" : "Portfolio Dashboard"}</h1>
           <p className="text-gray-400 text-sm mt-1">
-            {isHe ? "תצוגה מקצועית של הקרן — Long/Short Equity" : "Professional fund view — Long/Short Equity"}
+            {isHe ? "מעקב מקצועי אחר ההחזקות וההמלצות שלך" : "Professional view of your holdings & signals"}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -227,7 +227,7 @@ const FundDashboard: React.FC = () => {
       {/* Tab Navigation */}
       <div className="flex gap-2 border-b border-gray-800 pb-0">
         {[
-          { key: "fund", he: "ניהול קרן", en: "Fund Ops" },
+          { key: "fund", he: "ניהול תיק", en: "Portfolio Ops" },
           { key: "performance", he: "ביצועים", en: "Performance" },
           { key: "sectors", he: "סקטורים", en: "Sectors" },
           { key: "earnings", he: "דוחות קרובים", en: "Earnings" },
@@ -300,8 +300,9 @@ const FundDashboard: React.FC = () => {
           <p className="text-xs text-gray-500">{positions.length} {isHe ? "פוזיציות" : "positions"}</p>
         </div>
         <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-          <p className="text-xs text-gray-400 mb-1">{isHe ? "מזומן פנוי" : "Available Cash"}</p>
-          <p className="text-2xl font-bold text-blue-400">{fmt(summary?.cash_balance || 0)}</p>
+          <p className="text-xs text-gray-400 mb-1">{isHe ? "המלצות פעילות" : "Active Signals"}</p>
+          <p className="text-2xl font-bold text-blue-400">{approvedRecs.length}</p>
+          <p className="text-xs text-gray-500">{isHe ? "בפיד הסיגנלים" : "in the signals feed"}</p>
         </div>
       </div>
 
