@@ -170,7 +170,11 @@ const FundDashboard: React.FC = () => {
   const fmtPct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
 
   // Compute approved recommendation breakdown
-  const approvedRecs = recommendations.filter((r) => r.status === "APPROVED" || r.status === "PRESENTED_TO_USER");
+  // ACTIONED = the user marked it as bought at their broker — the
+  // recommendation is still live and must count in the signal summary.
+  const approvedRecs = recommendations.filter(
+    (r) => r.status === "APPROVED" || r.status === "PRESENTED_TO_USER" || r.status === "ACTIONED"
+  );
   const longRecs = approvedRecs.filter(
     (r) => r.recommendation_type === RecommendationType.BUY || r.recommendation_type === RecommendationType.STRONG_BUY
   );
