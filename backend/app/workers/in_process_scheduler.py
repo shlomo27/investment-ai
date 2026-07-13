@@ -93,7 +93,7 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
 
         score = ta.get("technical_score", 0)
         price = ta.get("current_price")
-        price_str = f" | מחיר: ${price:.2f}" if price else ""
+        price_str = f" | מחיר נוכחי: ${price:.2f}" if price else ""
         if downgraded:
             prev_label = SIGNAL_LABELS.get(prev_signal, prev_signal)
             # "היה X, עכשיו Y" — an inline arrow between Hebrew words is
