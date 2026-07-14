@@ -82,15 +82,19 @@ async def create_order(
     symbol = request.symbol.upper()
     total_amount = request.quantity * request.price
 
-    # Check exposure limits for BUY orders
+    # Exposure is advisory-only here: the user already executed the trade at
+    # their broker — refusing to RECORD it would only make the tracking
+    # portfolio lie. High concentration is noted on the order instead of
+    # blocking (the risk panel still shows live exposure warnings).
+    exposure_note = None
     if request.order_type == OrderType.BUY:
         exposure_check = await risk_manager.check_exposure(
             current_user.id, symbol, total_amount, db
         )
-        if exposure_check.get("blocked"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=exposure_check.get("message"),
+        if exposure_check.get("blocked") or exposure_check.get("warning"):
+            exposure_note = (
+                f"חשיפה: {exposure_check.get('current_exposure_pct', 0):.1f}% "
+                f"מהתיק (מומלץ עד {exposure_check.get('max_allowed_pct', 0):.1f}%)"
             )
 
     # Place order
@@ -101,7 +105,8 @@ async def create_order(
         quantity=request.quantity,
         price=request.price,
         recommendation_id=request.recommendation_id,
-        notes=request.notes,
+        notes=(f"{request.notes} | {exposure_note}" if request.notes and exposure_note
+               else exposure_note or request.notes),
         db=db,
     )
 

@@ -23,6 +23,7 @@ const ConfirmTradeModal: React.FC<Props> = ({
   const [exposureBlocked, setExposureBlocked] = useState(false);
 
   const price = rec.current_price_at_recommendation || 0;
+  const cur = rec.symbol.endsWith(".TA") ? "₪" : "$";
   const total = quantity * price;
   const isBuy = orderType === OrderType.BUY;
 
@@ -31,14 +32,18 @@ const ConfirmTradeModal: React.FC<Props> = ({
     const timer = setTimeout(async () => {
       try {
         const check = await ordersApi.checkExposure(rec.symbol, total);
-        if (check.blocked) {
-          setExposureBlocked(true);
-          setExposureWarning(check.message);
-        } else if (check.warning) {
-          setExposureBlocked(false);
-          setExposureWarning(check.message);
+        // Advisory only — the trade already happened at the broker; we never
+        // refuse to RECORD a real position, we just inform about concentration.
+        setExposureBlocked(false);
+        if (check.blocked || check.warning) {
+          const pct = check.current_exposure_pct?.toFixed(1);
+          const max = check.max_allowed_pct?.toFixed(0);
+          setExposureWarning(
+            pct && max
+              ? `שים לב: ההחזקה תהווה ${pct}% מתיק המעקב — מעל הרף המומלץ (${max}%). נרשם כרגיל.`
+              : check.message
+          );
         } else {
-          setExposureBlocked(false);
           setExposureWarning(null);
         }
       } catch (e) {
@@ -111,7 +116,7 @@ const ConfirmTradeModal: React.FC<Props> = ({
             <div className="flex justify-between text-sm mb-2">
               <span className="text-gray-400">{isHe ? "יעד מחיר" : "Target Price"}</span>
               <span className="font-bold text-green-400">
-                ₪{rec.target_price.toLocaleString("en", { minimumFractionDigits: 2 })}
+                {cur}{rec.target_price.toLocaleString("en", { minimumFractionDigits: 2 })}
               </span>
             </div>
           )}
@@ -119,7 +124,7 @@ const ConfirmTradeModal: React.FC<Props> = ({
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">{isHe ? "סטופ לוס" : "Stop Loss"}</span>
               <span className="font-bold text-red-400">
-                ₪{rec.stop_loss.toLocaleString("en", { minimumFractionDigits: 2 })}
+                {cur}{rec.stop_loss.toLocaleString("en", { minimumFractionDigits: 2 })}
               </span>
             </div>
           )}
@@ -146,7 +151,7 @@ const ConfirmTradeModal: React.FC<Props> = ({
         <div className="flex justify-between py-3 border-t border-b border-gray-800 mb-4">
           <span className="font-bold">{isHe ? "שווי ההחזקה" : "Position Value"}</span>
           <span className={`text-xl font-bold ${isBuy ? "text-green-400" : "text-red-400"}`}>
-            ₪{total.toLocaleString("en", { minimumFractionDigits: 2 })}
+            {cur}{total.toLocaleString("en", { minimumFractionDigits: 2 })}
           </span>
         </div>
 
