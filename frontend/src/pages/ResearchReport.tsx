@@ -848,7 +848,7 @@ const ResearchReport: React.FC = () => {
       {/* Fundamental Analysis */}
       {fa && (
         <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800 space-y-5">
-          <h2 className="font-bold">{isHe ? "ניתוח בסיסי — הפקיד" : "Fundamental Analysis"}</h2>
+          <h2 className="font-bold">{isHe ? "ניתוח פונדמנטלי" : "Fundamental Analysis"}</h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Assessment Badges */}

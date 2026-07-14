@@ -61,7 +61,7 @@ const AgentDecisionTree: React.FC<Props> = ({
       <div className="flex items-stretch gap-1">
         <Stage
           icon="📦"
-          label={isHe ? "הפקיד" : "Data Fetcher"}
+          label={isHe ? "איסוף נתונים" : "Data Fetcher"}
           sublabel={isHe ? "איסוף נתונים" : "Data Collection"}
           status="complete"
         />
