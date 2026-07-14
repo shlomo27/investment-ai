@@ -16,6 +16,34 @@ const Onboarding: React.FC = () => {
   const [step, setStep] = useState(0);
   const [lang, setLang] = useState<"he" | "en">(user?.preferred_language ?? "he");
   const [notifs, setNotifs] = useState({ email: true, sms: false, push: false });
+  const [tgLinked, setTgLinked] = useState(false);
+  const [tgWaiting, setTgWaiting] = useState(false);
+
+  const handleTelegramConnect = async () => {
+    try {
+      const { link } = await authApi.telegramLinkCode();
+      window.open(link, "_blank");
+      setTgWaiting(true);
+      let attempts = 0;
+      const timer = window.setInterval(async () => {
+        attempts += 1;
+        try {
+          const s = await authApi.telegramStatus();
+          if (s.linked) {
+            setTgLinked(true);
+            setTgWaiting(false);
+            window.clearInterval(timer);
+          }
+        } catch {}
+        if (attempts > 60) {
+          window.clearInterval(timer);
+          setTgWaiting(false);
+        }
+      }, 3000);
+    } catch {
+      setTgWaiting(false);
+    }
+  };
 
   const isHe = lang === "he";
 
@@ -191,6 +219,39 @@ const Onboarding: React.FC = () => {
                   </button>
                 </div>
               ))}
+
+              {/* Personal Telegram — linked once here, alerts follow the user forever */}
+              <div className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <span>✈️</span>
+                  <div>
+                    <span className="text-sm text-gray-300 block">{isHe ? "טלגרם אישי" : "Personal Telegram"}</span>
+                    <span className="text-xs text-gray-500">
+                      {tgLinked
+                        ? (isHe ? "מחובר ✓" : "Linked ✓")
+                        : (isHe ? "התרעות אישיות על התיק שלך, ישירות לטלגרם" : "Personal portfolio alerts, straight to Telegram")}
+                    </span>
+                  </div>
+                </div>
+                {tgLinked ? (
+                  <span className="text-green-400 text-sm font-bold">✓</span>
+                ) : (
+                  <button
+                    onClick={handleTelegramConnect}
+                    disabled={tgWaiting}
+                    className="text-xs border border-blue-700/60 text-blue-400 hover:bg-blue-900/20 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                  >
+                    {tgWaiting ? (isHe ? "ממתין לטלגרם..." : "Waiting...") : (isHe ? "חבר" : "Connect")}
+                  </button>
+                )}
+              </div>
+              {tgWaiting && (
+                <p className="text-xs text-gray-600">
+                  {isHe
+                    ? 'נפתח חלון טלגרם — לחץ שם על "Start" והחיבור יושלם אוטומטית תוך חצי דקה. אפשר גם להמשיך ולחבר אחר כך מההגדרות.'
+                    : 'A Telegram window opened — tap "Start" there; linking completes automatically within ~30s. You can also continue and link later from Settings.'}
+                </p>
+              )}
             </div>
 
             <div className="flex gap-3">
