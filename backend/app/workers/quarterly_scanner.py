@@ -158,6 +158,10 @@ async def job_quarterly_scan_batch() -> dict:
                 errors += 1
                 logger.warning(f"[quarterly_scanner] {symbol}: {exc}")
             await record_analysis_cost(1)
+            # Heartbeat: keep the running-flag alive per symbol so a killed
+            # batch (deploy/restart) unblocks the manual resume button within
+            # ~10 minutes instead of a stale 4h lock.
+            await redis_client.set(REDIS_PREFIX + "batch_running", "1", ex=600)
             await redis_client.sadd(REDIS_PREFIX + "done", symbol)
             await redis_client.expire(REDIS_PREFIX + "done", TTL_SECONDS)
             processed.append(symbol)

@@ -1183,7 +1183,7 @@ async def run_quarterly_batch_now(
         if running:
             remaining = await r.llen(REDIS_PREFIX + "todo")
             return {"started": False, "reason": "batch already running", "remaining": remaining}
-        await r.set(REDIS_PREFIX + "batch_running", "1", ex=4 * 3600)
+        await r.set(REDIS_PREFIX + "batch_running", "1", ex=600)
         remaining = await r.llen(REDIS_PREFIX + "todo")
     finally:
         await r.aclose()
