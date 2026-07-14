@@ -11,7 +11,8 @@ interface Props {
   onBuy: () => void;
   onSell: () => void;
   onDismiss: () => void;
-  suggestedAmount?: number;
+  suggestedAmount?: number; // legacy — no longer rendered
+  suggestedPct?: number;
   approvedAt?: string;
 }
 
@@ -25,6 +26,7 @@ const RecommendationCard: React.FC<Props> = ({
   onSell,
   onDismiss,
   suggestedAmount,
+  suggestedPct,
   approvedAt,
 }) => {
   const [expanded, setExpanded] = useState(false);
@@ -105,9 +107,9 @@ const RecommendationCard: React.FC<Props> = ({
             <p className="font-bold text-red-400">{fmt(rec.stop_loss)}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-400">{isHe ? "השקעה מוצעת" : "Suggested"}</p>
+            <p className="text-xs text-gray-400">{isHe ? "גודל פוזיציה מוצע" : "Position size"}</p>
             <p className="font-bold text-blue-400">
-              {suggestedAmount ? `₪${Math.round(suggestedAmount).toLocaleString("en")}` : "—"}
+              {suggestedPct ? (isHe ? `עד ${suggestedPct}% מהתיק` : `up to ${suggestedPct}%`) : "—"}
             </p>
           </div>
         </div>

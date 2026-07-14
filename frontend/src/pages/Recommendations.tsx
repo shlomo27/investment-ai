@@ -92,11 +92,12 @@ const Recommendations: React.FC = () => {
     }
   };
 
-  const getSuggestedAmount = (rec: Recommendation): number | undefined => {
-    if (!portfolioSummary?.total_value) return undefined;
+  // Generic position-size guidance from the committee's allocation tier —
+  // deliberately NOT a personalized money amount (advisory-only product:
+  // percent guidance is the same for every user).
+  const getSuggestedPct = (rec: Recommendation): number => {
     const alloc = (rec.fundamental_analysis as any)?.allocation_recommendation;
-    const pct = alloc === "HIGH" ? 0.15 : alloc === "MEDIUM" ? 0.10 : 0.05;
-    return portfolioSummary.total_value * pct;
+    return alloc === "HIGH" ? 15 : alloc === "MEDIUM" ? 10 : 5;
   };
 
   const handleConfirmTrade = async (quantity: number, price: number) => {
@@ -461,7 +462,7 @@ const Recommendations: React.FC = () => {
                   onBuy={() => setTradeModal({ rec, type: OrderType.BUY })}
                   onSell={() => setTradeModal({ rec, type: OrderType.SELL })}
                   onDismiss={() => handleAcknowledge(rec.id)}
-                  suggestedAmount={getSuggestedAmount(rec)}
+                  suggestedPct={getSuggestedPct(rec)}
                   approvedAt={rec.approved_at}
                 />
               ))}
