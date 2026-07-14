@@ -42,6 +42,7 @@ const Recommendations: React.FC = () => {
   const [scanLog, setScanLog] = useState<Awaited<ReturnType<typeof recommendationsApi.getScanActivity>> | null>(null);
   const [scanLogLoading, setScanLogLoading] = useState(false);
   const [expandedLog, setExpandedLog] = useState<number | null>(null);
+  const [expandedNotif, setExpandedNotif] = useState<number | null>(null);
 
   useEffect(() => {
     if (view !== "scanlog" || scanLog) return;
@@ -291,6 +292,7 @@ const Recommendations: React.FC = () => {
                   key={notif.id}
                   onClick={() => {
                     handleReadNotification(notif.id);
+                    setExpandedNotif((prev) => (prev === notif.id ? null : notif.id));
                   }}
                   className={`bg-gray-900 rounded-2xl p-5 border cursor-pointer transition-colors ${
                     !notif.is_read ? "border-blue-700/50 hover:border-blue-600" : "border-gray-800 hover:border-gray-700"
@@ -316,7 +318,7 @@ const Recommendations: React.FC = () => {
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-300 truncate">
+                      <p className={`text-sm text-gray-300 ${expandedNotif === notif.id ? "" : "truncate"}`}>
                         {notif.title || notif.external_message}
                       </p>
                       {notif.internal_detail?.confidence_score && (
@@ -324,6 +326,65 @@ const Recommendations: React.FC = () => {
                           {isHe ? "ביטחון:" : "Confidence:"}{" "}
                           {notif.internal_detail.confidence_score.toFixed(0)}%
                         </p>
+                      )}
+                      {expandedNotif === notif.id && notif.internal_detail && (
+                        <div className="mt-3 pt-3 border-t border-gray-800 space-y-2 text-xs text-gray-400">
+                          {notif.internal_detail.news_summary && (
+                            <p>
+                              <span className="text-gray-500 font-medium">{isHe ? "סיכום החדשות: " : "News summary: "}</span>
+                              {notif.internal_detail.news_summary}
+                            </p>
+                          )}
+                          {(notif.internal_detail.signal || notif.internal_detail.ta_signal) && (
+                            <p>
+                              <span className="text-gray-500 font-medium">{isHe ? "מצב טכני: " : "Technical: "}</span>
+                              {notif.internal_detail.signal || notif.internal_detail.ta_signal}
+                              {notif.internal_detail.previous_signal ? ` (${isHe ? "קודם" : "prev"}: ${notif.internal_detail.previous_signal})` : ""}
+                              {(notif.internal_detail.technical_score ?? notif.internal_detail.ta_score) != null
+                                ? ` · ${isHe ? "ציון" : "score"} ${Math.round(notif.internal_detail.technical_score ?? notif.internal_detail.ta_score)}/100`
+                                : ""}
+                              {notif.internal_detail.current_price ? ` · $${Number(notif.internal_detail.current_price).toFixed(2)}` : ""}
+                            </p>
+                          )}
+                          {notif.internal_detail.x_buzz_posts > 0 && (
+                            <p>
+                              <span className="text-gray-500 font-medium">{isHe ? "רשת X: " : "X buzz: "}</span>
+                              {notif.internal_detail.x_buzz_posts} {isHe ? "פוסטים, סנטימנט" : "posts, sentiment"}{" "}
+                              {Number(notif.internal_detail.x_buzz_score).toFixed(2)}
+                            </p>
+                          )}
+                          {notif.internal_detail.senior_notes && (
+                            <p>
+                              <span className="text-gray-500 font-medium">{isHe ? "הערות הוועדה: " : "Committee: "}</span>
+                              {notif.internal_detail.senior_notes}
+                            </p>
+                          )}
+                          {Array.isArray(notif.internal_detail.articles) && notif.internal_detail.articles.length > 0 && (
+                            <div>
+                              <p className="text-gray-500 font-medium mb-1">{isHe ? "כתבות:" : "Articles:"}</p>
+                              <ul className="space-y-1">
+                                {notif.internal_detail.articles.map((a: any, i: number) => (
+                                  <li key={i}>
+                                    {a.url ? (
+                                      <a
+                                        href={a.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="text-blue-400 hover:text-blue-300 underline"
+                                      >
+                                        {a.title}
+                                      </a>
+                                    ) : (
+                                      <span>{a.title}</span>
+                                    )}
+                                    {a.source ? <span className="text-gray-600"> — {a.source}</span> : null}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-2 flex-shrink-0">
