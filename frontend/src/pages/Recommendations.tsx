@@ -38,7 +38,19 @@ const Recommendations: React.FC = () => {
   const { summary: portfolioSummary } = useAppSelector((s) => s.portfolio);
   const isHe = user?.preferred_language === "he";
 
-  const [view, setView] = useState<"inbox" | "signals">("inbox");
+  const [view, setView] = useState<"inbox" | "signals" | "scanlog">("inbox");
+  const [scanLog, setScanLog] = useState<Awaited<ReturnType<typeof recommendationsApi.getScanActivity>> | null>(null);
+  const [scanLogLoading, setScanLogLoading] = useState(false);
+  const [expandedLog, setExpandedLog] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (view !== "scanlog" || scanLog) return;
+    setScanLogLoading(true);
+    recommendationsApi.getScanActivity(7)
+      .then(setScanLog)
+      .catch(() => {})
+      .finally(() => setScanLogLoading(false));
+  }, [view]);
   const [dirFilter, setDirFilter] = useState<DirectionFilter>("ALL");
   const [tradeModal, setTradeModal] = useState<{ rec: Recommendation; type: OrderType } | null>(null);
   const [techMap, setTechMap] = useState<Record<number, TechnicalAnalysis>>({});
@@ -154,6 +166,12 @@ const Recommendations: React.FC = () => {
             </span>
           )}
         </button>
+        <button
+          onClick={() => setView("scanlog")}
+          className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "scanlog" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
+        >
+          {isHe ? "יומן סריקות" : "Scan Log"}
+        </button>
       </div>
 
       {isLoading && (
@@ -161,6 +179,95 @@ const Recommendations: React.FC = () => {
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-24 bg-gray-900 rounded-2xl animate-pulse" />
           ))}
+        </div>
+      )}
+
+      {/* ── Scan Log ── */}
+      {view === "scanlog" && !isLoading && (
+        <div className="space-y-4">
+          <p className="text-sm text-gray-400">
+            {isHe
+              ? "כל ניתוח שהמערכת הריצה ב-7 הימים האחרונים — כולל מניות שנבדקו ונדחו והנימוק של ועדת ההשקעות."
+              : "Every analysis the system ran in the last 7 days — including stocks that were reviewed and rejected, with the committee's reasoning."}
+          </p>
+
+          {scanLogLoading && (
+            <div className="h-24 bg-gray-900 rounded-2xl animate-pulse" />
+          )}
+
+          {!scanLogLoading && scanLog && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {[
+                  { key: "approved_buy", he: "אושרו — קנייה", en: "Approved BUY", cls: "text-green-400 border-green-900/50" },
+                  { key: "approved_sell", he: "אושרו — מכירה", en: "Approved SELL", cls: "text-red-400 border-red-900/50" },
+                  { key: "hold", he: "החזק", en: "HOLD", cls: "text-yellow-400 border-yellow-900/50" },
+                  { key: "rejected", he: "נדחו", en: "Rejected", cls: "text-gray-300 border-gray-700" },
+                  { key: "superseded", he: "הוחלפו", en: "Superseded", cls: "text-gray-500 border-gray-800" },
+                ].map((c) => (
+                  <div key={c.key} className={`bg-gray-900 border rounded-xl p-3 text-center ${c.cls}`}>
+                    <p className="text-2xl font-bold">{scanLog.counts[c.key] || 0}</p>
+                    <p className="text-xs mt-1">{isHe ? c.he : c.en}</p>
+                  </div>
+                ))}
+              </div>
+
+              {scanLog.items.length === 0 ? (
+                <div className="bg-gray-900 rounded-2xl p-12 border border-gray-800 text-center text-gray-500">
+                  <p className="text-4xl mb-3">🔍</p>
+                  <p>{isHe ? "לא רצו ניתוחים בתקופה זו" : "No analyses in this period"}</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {scanLog.items.map((item) => {
+                    const badge =
+                      item.bucket === "approved_buy" ? { txt: isHe ? "אושרה — קנייה" : "BUY", cls: "bg-green-900/40 text-green-300" } :
+                      item.bucket === "approved_sell" ? { txt: isHe ? "אושרה — מכירה" : "SELL", cls: "bg-red-900/40 text-red-300" } :
+                      item.bucket === "hold" ? { txt: isHe ? "החזק" : "HOLD", cls: "bg-yellow-900/30 text-yellow-300" } :
+                      item.bucket === "superseded" ? { txt: isHe ? "הוחלפה" : "Superseded", cls: "bg-gray-800 text-gray-500" } :
+                      { txt: isHe ? "נדחתה" : "Rejected", cls: "bg-gray-800 text-gray-400 border border-gray-700" };
+                    const canOpenReport = item.bucket !== "rejected";
+                    return (
+                      <div key={item.id} className="bg-gray-900 rounded-xl border border-gray-800 px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-bold text-sm w-16">{item.symbol}</span>
+                          <span className={`text-xs rounded-full px-2 py-0.5 ${badge.cls}`}>{badge.txt}</span>
+                          <span className="text-xs text-gray-500">
+                            {item.confidence_score ? `${Math.round(item.confidence_score)}%` : ""}
+                          </span>
+                          <div className="flex-1" />
+                          <span className="text-xs text-gray-600">
+                            {item.created_at ? new Date(item.created_at).toLocaleDateString(isHe ? "he-IL" : "en-US") : ""}
+                          </span>
+                          {item.reason && (
+                            <button
+                              onClick={() => setExpandedLog(expandedLog === item.id ? null : item.id)}
+                              className="text-xs text-gray-400 hover:text-white border border-gray-700 rounded-lg px-2 py-1"
+                            >
+                              {expandedLog === item.id ? (isHe ? "הסתר" : "Hide") : (isHe ? "נימוק" : "Why")}
+                            </button>
+                          )}
+                          {canOpenReport && (
+                            <Link
+                              to={`/research/${item.id}`}
+                              className="text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-800/50 rounded-lg px-2 py-1"
+                            >
+                              {isHe ? "דוח" : "Report"}
+                            </Link>
+                          )}
+                        </div>
+                        {expandedLog === item.id && item.reason && (
+                          <p className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-800 leading-relaxed">
+                            {item.reason}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 

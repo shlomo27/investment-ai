@@ -208,6 +208,66 @@ async def get_unread_count(
     return {"unread_count": count}
 
 
+@router.get("/scan-activity")
+async def get_scan_activity(
+    days: int = 7,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Transparency log: EVERY analysis the pipeline produced in the last N
+    days — approved, HOLD, rejected (with the committee's reasoning) and
+    superseded — so users can see what was scanned and why nothing new
+    appeared in the feed.
+    """
+    from datetime import datetime, timezone, timedelta
+
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    result = await db.execute(
+        select(Recommendation)
+        .where(Recommendation.created_at >= since)
+        .order_by(desc(Recommendation.created_at))
+        .limit(300)
+    )
+    recs = result.scalars().all()
+
+    items = []
+    counts = {"approved_buy": 0, "approved_sell": 0, "hold": 0, "rejected": 0, "superseded": 0}
+    LIVE = {
+        RecommendationStatus.APPROVED,
+        RecommendationStatus.PRESENTED_TO_USER,
+        RecommendationStatus.ACTIONED,
+    }
+    for r in recs:
+        rec_type = r.recommendation_type.value if r.recommendation_type else "HOLD"
+        if r.status == RecommendationStatus.REJECTED:
+            bucket = "rejected"
+        elif r.status == RecommendationStatus.DISMISSED:
+            bucket = "superseded"
+        elif r.status in LIVE and rec_type in ("BUY", "STRONG_BUY"):
+            bucket = "approved_buy"
+        elif r.status in LIVE and rec_type in ("SELL", "STRONG_SELL"):
+            bucket = "approved_sell"
+        elif r.status in LIVE:
+            bucket = "hold"
+        else:
+            bucket = "rejected"
+        counts[bucket] = counts.get(bucket, 0) + 1
+        items.append({
+            "id": r.id,
+            "symbol": r.symbol,
+            "recommendation_type": rec_type,
+            "status": r.status.value,
+            "bucket": bucket,
+            "confidence_score": r.confidence_score,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "reason": (r.senior_review_notes or r.senior_notes or "")[:500],
+            "trigger_type": r.trigger_type,
+        })
+
+    return {"days": days, "total": len(items), "counts": counts, "items": items}
+
+
 @router.get("/{recommendation_id}", response_model=RecommendationResponse)
 async def get_recommendation(
     recommendation_id: int,

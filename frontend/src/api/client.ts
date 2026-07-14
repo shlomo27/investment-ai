@@ -340,6 +340,26 @@ export const recommendationsApi = {
     await api.post(`/recommendations/inbox/${notificationId}/read`);
   },
 
+  getScanActivity: async (days = 7): Promise<{
+    days: number;
+    total: number;
+    counts: Record<string, number>;
+    items: Array<{
+      id: number;
+      symbol: string;
+      recommendation_type: string;
+      status: string;
+      bucket: string;
+      confidence_score: number;
+      created_at: string | null;
+      reason: string;
+      trigger_type: string | null;
+    }>;
+  }> => {
+    const response = await api.get("/recommendations/scan-activity", { params: { days } });
+    return response.data;
+  },
+
   requestTechnicalAnalysis: async (
     recommendationId: number
   ): Promise<{ technical_analysis: TechnicalAnalysis }> => {
