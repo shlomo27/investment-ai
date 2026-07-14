@@ -63,7 +63,7 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
 
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (!user?.is_admin) return <Navigate to="/master-list" replace />;
+  if (!user?.is_admin) return <Navigate to="/recommendations" replace />;
   return <>{children}</>;
 };
 
@@ -129,7 +129,7 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               {user?.is_onboarded ? (
-                <Navigate to={user?.is_admin ? "/fund" : "/master-list"} replace />
+                <Navigate to={user?.is_admin ? "/fund" : "/recommendations"} replace />
               ) : (
                 <Onboarding />
               )}
@@ -165,11 +165,11 @@ const App: React.FC = () => {
         <Route
           path="/recommendations"
           element={
-            <AdminRoute>
+            <ProtectedRoute>
               <AppLayout>
                 <Recommendations />
               </AppLayout>
-            </AdminRoute>
+            </ProtectedRoute>
           }
         />
         <Route
@@ -225,11 +225,11 @@ const App: React.FC = () => {
         <Route
           path="/master-list"
           element={
-            <ProtectedRoute>
+            <AdminRoute>
               <AppLayout>
                 <MasterList />
               </AppLayout>
-            </ProtectedRoute>
+            </AdminRoute>
           }
         />
 

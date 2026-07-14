@@ -14,7 +14,7 @@ const NotFound: React.FC = () => {
         {isHe ? "הדף לא נמצא" : "Page not found"}
       </p>
       <button
-        onClick={() => navigate(user?.is_admin ? "/fund" : "/master-list")}
+        onClick={() => navigate(user?.is_admin ? "/fund" : "/recommendations")}
         className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 rounded-xl text-sm font-medium transition-colors"
       >
         {isHe ? "חזרה לדף הבית" : "Back to Home"}

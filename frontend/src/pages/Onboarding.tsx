@@ -79,7 +79,7 @@ const Onboarding: React.FC = () => {
     }
 
     if (completeOnboarding.fulfilled.match(result)) {
-      navigate(user?.is_admin ? "/fund" : "/master-list");
+      navigate(user?.is_admin ? "/fund" : "/recommendations");
     }
   };
 

@@ -140,9 +140,11 @@ const Recommendations: React.FC = () => {
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{isHe ? "סיגנלים והמלצות AI" : "AI Signals & Recommendations"}</h1>
-        <Link to="/fund" className="text-xs text-gray-400 hover:text-gray-200">
-          {isHe ? "לוח ניהול ←" : "Dashboard →"}
-        </Link>
+        {user?.is_admin && (
+          <Link to="/fund" className="text-xs text-gray-400 hover:text-gray-200">
+            {isHe ? "לוח ניהול ←" : "Dashboard →"}
+          </Link>
+        )}
       </div>
 
       {/* Main Tabs */}
