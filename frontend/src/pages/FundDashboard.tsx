@@ -423,8 +423,8 @@ const FundDashboard: React.FC = () => {
           </div>
           <p className="text-xs text-gray-400 mb-4">
             {isHe
-              ? "בוחר 100 מניות מתוך ~900 לניתוח AI יומי לפי רוטציה — מניות שלא נותחו לאחרונה מקבלות עדיפות. ה-AI מחליט בעצמו לקנות/למכור/לדלג. כיסוי מלא של כל היקום תוך ~9 ימים."
-              : "Selects 100 stocks from ~900 for daily AI analysis by rotation — stocks not recently analyzed get priority. The AI freely decides BUY/SELL/HOLD. Full universe coverage in ~9 days."}
+              ? "מדרג כל בוקר את כל ~900 מניות היקום לפי מומנטום (50% מומנטום 3 חודשים, 30% מומנטום 6 חודשים, 20% נפח) ובוחר את המאגר הפעיל: 80 החזקות ביותר ללונג + 20 החלשות ביותר לשורט. הניתוח הטכני והסריקה השבועית עובדים על המאגר הזה."
+              : "Ranks all ~900 universe stocks every morning by momentum (50% 3-month, 30% 6-month, 20% volume) and selects the active pool: top 80 for LONG + weakest 20 for SHORT. The TA scanner and weekly scan work on this pool."}
           </p>
 
           {universeStats && universeStats.top_candidates?.length > 0 ? (
