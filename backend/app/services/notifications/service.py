@@ -154,15 +154,24 @@ class NotificationService:
                         language=user.preferred_language or "he",
                     )
                     self._telegram_sent_rec_ids.add(recommendation_id)
-                elif symbol and (internal_detail or {}).get("signal"):
-                    # Technical signal-change alert — personal by nature. Only
-                    # fall back to the shared channel for holders who have not
-                    # linked a private chat yet.
+                elif symbol and (
+                    (internal_detail or {}).get("signal")
+                    or (internal_detail or {}).get("type") == "NEWS_PLUS_TA"
+                ):
+                    # Holder-targeted alerts (signal changes AND news alerts —
+                    # the latter carry ta_signal/type, not "signal"). Personal
+                    # by nature; fall back to the shared channel only for
+                    # holders who have not linked a private chat yet.
                     if personal_chat:
                         pass  # delivered privately above; keep channel quiet
                     else:
+                        header = (
+                            "שינוי מגמה"
+                            if (internal_detail or {}).get("signal")
+                            else "עדכון חדשות"
+                        )
                         tg_success = await tg.send_message(
-                            f"🤖 <b>InvestAI — שינוי מגמה</b>\n\n{notification.title}\n\n"
+                            f"🤖 <b>InvestAI — {header}</b>\n\n{notification.title}\n\n"
                             f"⚠️ כנס למערכת לצפייה בניתוח המלא"
                         )
                         self._telegram_sent_rec_ids.add(recommendation_id)
