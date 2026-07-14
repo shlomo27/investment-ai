@@ -171,6 +171,10 @@ async def job_quarterly_scan_batch() -> dict:
         if remaining == 0:
             await _on_scan_complete(quarter)
 
+        if approved:
+            from app.workers.in_process_scheduler import maybe_nudge_master_list_publish
+            await maybe_nudge_master_list_publish()
+
         return result
     finally:
         await redis_client.aclose()

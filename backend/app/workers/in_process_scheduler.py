@@ -339,6 +339,9 @@ async def job_run_full_scan():
                 f"{errors} שגיאות, {rejected} נדחו מתוך {total}.\n"
                 f"ייתכן שמנוע AI נפל או שנגמר קרדיט. בדוק לוגים + יתרות."
             )
+
+        if approved:
+            await maybe_nudge_master_list_publish()
     except Exception as exc:
         logger.error(f"[scheduler] full_scan failed: {exc}")
 
@@ -427,6 +430,62 @@ async def job_poll_telegram_links():
     finally:
         await r.aclose()
 
+
+
+async def maybe_nudge_master_list_publish():
+    """
+    After deep scans: if fresh live recommendations accumulated since the
+    last master-list publish, remind the admin (once per 24h) that clients
+    are still seeing the old list. Publishing stays a deliberate manual act —
+    this only makes sure it is never forgotten.
+    """
+    from datetime import datetime, timezone
+
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.master_list import MasterListEntry
+    from app.db.models.recommendation import Recommendation, RecommendationStatus
+    from app.services.notifications.telegram_service import get_telegram_service
+    from sqlalchemy import select, func
+    import redis.asyncio as aioredis
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        NUDGE_KEY = "investment_ai:master_list_nudge"
+        if await r.get(NUDGE_KEY):
+            return  # already nudged within the last 24h
+
+        async with AsyncSessionLocal() as db:
+            last_pub = (
+                await db.execute(select(func.max(MasterListEntry.published_at)))
+            ).scalar()
+            live = [
+                RecommendationStatus.APPROVED,
+                RecommendationStatus.PRESENTED_TO_USER,
+                RecommendationStatus.ACTIONED,
+            ]
+            q = select(func.count(Recommendation.id)).where(Recommendation.status.in_(live))
+            if last_pub:
+                q = q.where(Recommendation.created_at > last_pub)
+            new_count = (await db.execute(q)).scalar() or 0
+
+        if new_count < 3:
+            return  # not enough new material to bother the admin
+
+        days = (datetime.now(timezone.utc) - last_pub).days if last_pub else None
+        age_str = f"פורסמה לפני {days} ימים" if days is not None else "מעולם לא פורסמה"
+        await get_telegram_service().send_admin_alert(
+            f"📋 <b>רשימת המאסטר מתיישנת</b>\n\n"
+            f"הרשימה שהלקוחות רואים {age_str}, ומאז הצטברו "
+            f"<b>{new_count}</b> המלצות חיות חדשות בפיד הסיגנלים.\n\n"
+            f"רשימת מאסטר ← \"פרסם רשימה חדשה\" כדי שהלקוחות יראו את העדכני."
+        )
+        await r.set(NUDGE_KEY, "1", ex=24 * 3600)
+        logger.info(f"[master_nudge] admin nudged: {new_count} new live recs since last publish")
+    except Exception as exc:
+        logger.warning(f"[master_nudge] failed: {exc}")
+    finally:
+        await r.aclose()
 
 
 async def job_engine_health_check():
