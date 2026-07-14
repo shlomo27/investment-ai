@@ -209,6 +209,13 @@ async def job_daily_ta_scan():
                 exchange = asset.exchange.value if asset else "NASDAQ"
                 result = await run_technical_workflow(symbol=symbol, exchange=exchange)
                 ta = result.get("technical_analysis") or {}
+                # yfinance rate-limits mid-batch on cloud IPs; a throttled fetch
+                # returns empty and silently skips the stock. Retry once after a
+                # short pause so held/feed positions aren't left unmonitored.
+                if not ta:
+                    await asyncio.sleep(3)
+                    result = await run_technical_workflow(symbol=symbol, exchange=exchange)
+                    ta = result.get("technical_analysis") or {}
                 success += 1
 
                 # Persist the fresh TA onto any live recommendation for this
@@ -235,6 +242,13 @@ async def job_daily_ta_scan():
                 logger.warning(f"[ta_scan] {symbol} failed: {e}")
             await asyncio.sleep(0.5)
 
+        from datetime import datetime, timezone
+        await redis_client.set(
+            "investment_ai:ta_scan:heartbeat",
+            f"{datetime.now(timezone.utc).isoformat()}|scanned={len(symbols)}|"
+            f"success={success}|alerted={alerted}|errors={errors}",
+            ex=7 * 24 * 3600,
+        )
         logger.info(f"[ta_scan] done: success={success}, alerted={alerted}, errors={errors}")
     except Exception as exc:
         logger.error(f"[ta_scan] failed: {exc}")

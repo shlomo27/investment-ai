@@ -567,6 +567,25 @@ async def simulate_ta_scan(
     return {"started": True, "message": "TA scan running in background — check notifications inbox in ~1 min"}
 
 
+@router.get("/ta-scan/heartbeat")
+async def ta_scan_heartbeat(current_user: User = Depends(get_current_active_user)):
+    """When did the 30-min background TA scan last complete, and with what
+    result — lets the admin confirm the scheduler is alive."""
+    import redis.asyncio as aioredis
+    from app.core.config import settings
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        raw = await r.get("investment_ai:ta_scan:heartbeat")
+    finally:
+        await r.aclose()
+    if not raw:
+        return {"last_run": None, "detail": "no scan recorded yet"}
+    parts = raw.decode().split("|")
+    stats = dict(p.split("=", 1) for p in parts[1:] if "=" in p)
+    return {"last_run": parts[0], **stats}
+
+
 _AI_CHECK_KEY = "investment_ai:ai_engines_check"
 
 
