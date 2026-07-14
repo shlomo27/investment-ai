@@ -45,12 +45,21 @@ const Recommendations: React.FC = () => {
   const [expandedNotif, setExpandedNotif] = useState<number | null>(null);
 
   useEffect(() => {
-    if (view !== "scanlog" || scanLog) return;
-    setScanLogLoading(true);
-    recommendationsApi.getScanActivity(7)
-      .then(setScanLog)
-      .catch(() => {})
-      .finally(() => setScanLogLoading(false));
+    if (view !== "scanlog") return;
+    // Refetch on every tab open (and repoll while open) — during an active
+    // quarterly batch new rows land every few minutes and a cached snapshot
+    // made the log look stuck.
+    let cancelled = false;
+    const load = (showSpinner: boolean) => {
+      if (showSpinner) setScanLogLoading(true);
+      recommendationsApi.getScanActivity(7)
+        .then((d) => { if (!cancelled) setScanLog(d); })
+        .catch(() => {})
+        .finally(() => { if (showSpinner && !cancelled) setScanLogLoading(false); });
+    };
+    load(!scanLog);
+    const timer = window.setInterval(() => load(false), 60_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
   }, [view]);
   const [dirFilter, setDirFilter] = useState<DirectionFilter>("ALL");
   const [tradeModal, setTradeModal] = useState<{ rec: Recommendation; type: OrderType } | null>(null);
