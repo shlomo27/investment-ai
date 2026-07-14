@@ -1181,6 +1181,14 @@ async def run_quarterly_batch_now(
             return {"started": False, "reason": "no active quarterly scan"}
         running = await r.get(REDIS_PREFIX + "batch_running")
         if running:
+            # Self-heal: the live batch heartbeats this flag with a 10-minute
+            # TTL. A TTL beyond that is a stale lock (legacy 4h flag, or a
+            # batch killed by a deploy) — clear it and start.
+            ttl = await r.ttl(REDIS_PREFIX + "batch_running")
+            if ttl is None or ttl > 610:
+                await r.delete(REDIS_PREFIX + "batch_running")
+                running = None
+        if running:
             remaining = await r.llen(REDIS_PREFIX + "todo")
             return {"started": False, "reason": "batch already running", "remaining": remaining}
         await r.set(REDIS_PREFIX + "batch_running", "1", ex=600)
