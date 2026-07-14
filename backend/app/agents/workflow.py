@@ -330,6 +330,13 @@ async def node_notify_users(state: AgentWorkflowState) -> AgentWorkflowState:
     if not rec_id:
         return {**state, "workflow_status": "completed"}
 
+    # HOLD approvals stay in the feed/scan-log but never page anyone —
+    # "do nothing" is not an actionable alert worth waking users for.
+    rec_type = (state.get("senior_decision") or {}).get("final_recommendation", "")
+    if rec_type not in ("BUY", "STRONG_BUY", "SELL", "STRONG_SELL"):
+        logger.info("notify_users skipped for non-actionable recommendation", rec_type=rec_type)
+        return {**state, "workflow_status": "completed"}
+
     try:
         from app.services.notifications.service import NotificationService
         from app.core.database import AsyncSessionLocal
