@@ -357,6 +357,7 @@ Respond in JSON format:
         # ── Layer 2: Finnhub ──────────────────────────────────────────────────
         fin = get_finnhub_service()
         if fin.is_configured():
+            extra = None
             if missing:
                 try:
                     extra = await fin.get_basic_financials(symbol)
@@ -375,6 +376,7 @@ Respond in JSON format:
 
             # Market cap: Yahoo throttling often zeroes it, which makes the
             # analyst flag a bogus "Market Cap ~$0" exclusion.
+            profile = None
             if market_cap_missing:
                 try:
                     profile = await fin.get_profile(symbol)
@@ -383,6 +385,28 @@ Respond in JSON format:
                 if profile and profile.get("market_cap"):
                     data["market_cap"] = profile["market_cap"]
                     filled.append("market_cap")
+
+            # FCF from Finnhub (per-share × shares outstanding) — relieves the
+            # quota-capped FMP layer: FMP's 250/day free tier dies mid-way
+            # through a 50-stock quarterly batch, leaving FCF=0 and causing
+            # bogus "FCF not verified" committee rejections.
+            if not data.get("free_cash_flow"):
+                if extra is None:
+                    try:
+                        extra = await fin.get_basic_financials(symbol)
+                    except Exception:
+                        extra = None
+                fcf_ps = (extra or {}).get("free_cash_flow_per_share")
+                if fcf_ps:
+                    if profile is None:
+                        try:
+                            profile = await fin.get_profile(symbol)
+                        except Exception:
+                            profile = None
+                    shares = (profile or {}).get("share_outstanding")
+                    if shares:
+                        data["free_cash_flow"] = float(fcf_ps) * float(shares)
+                        filled.append("free_cash_flow(finnhub)")
 
         # ── Layer 3: FMP (last resort, quota-limited) ────────────────────────
         still_critical = [f for f in self._FMP_CRITICAL_FIELDS if not data.get(f)]

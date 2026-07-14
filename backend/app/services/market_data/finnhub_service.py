@@ -72,11 +72,13 @@ class FinnhubService:
                 if not data.get("name"):
                     return None
                 mc = data.get("marketCapitalization")
+                so = data.get("shareOutstanding")
                 return {
                     "sector": data.get("finnhubIndustry"),
                     "country": data.get("country", "US"),
                     "currency": data.get("currency", "USD"),
                     "market_cap": float(mc) * 1_000_000 if mc else None,
+                    "share_outstanding": float(so) * 1_000_000 if so else None,
                     "exchange": data.get("exchange"),
                 }
         except Exception as e:
@@ -122,6 +124,9 @@ class FinnhubService:
                     "dividend_yield": _first("dividendYieldIndicatedAnnual", "currentDividendYieldTTM"),
                     "debt_to_equity": m.get("totalDebt/totalEquityAnnual"),
                     "current_ratio": _first("currentRatioAnnual", "currentRatioQuarterly"),
+                    "free_cash_flow_per_share": _first(
+                        "freeCashFlowPerShareTTM", "freeCashFlowPerShareAnnual"
+                    ),
                 }
         except Exception as e:
             logger.debug("Finnhub financials failed", symbol=symbol, error=str(e))
