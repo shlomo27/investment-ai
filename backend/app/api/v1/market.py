@@ -1159,6 +1159,49 @@ async def get_master_list(db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.post("/quarterly/run-batch")
+async def run_quarterly_batch_now(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Admin: resume/run today's quarterly scan batch in the background.
+    Deploys kill an in-flight batch and APScheduler won't refire until the
+    next day — this lets the admin continue the queue immediately."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    import asyncio as _asyncio
+    from app.core.config import settings
+    from app.workers.quarterly_scanner import job_quarterly_scan_batch, REDIS_PREFIX
+    import redis.asyncio as aioredis
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        active = await r.get(REDIS_PREFIX + "active")
+        if not active:
+            return {"started": False, "reason": "no active quarterly scan"}
+        running = await r.get(REDIS_PREFIX + "batch_running")
+        if running:
+            remaining = await r.llen(REDIS_PREFIX + "todo")
+            return {"started": False, "reason": "batch already running", "remaining": remaining}
+        await r.set(REDIS_PREFIX + "batch_running", "1", ex=4 * 3600)
+        remaining = await r.llen(REDIS_PREFIX + "todo")
+    finally:
+        await r.aclose()
+
+    async def _run_and_clear():
+        try:
+            await job_quarterly_scan_batch()
+        finally:
+            r2 = aioredis.from_url(settings.REDIS_URL)
+            try:
+                await r2.delete(REDIS_PREFIX + "batch_running")
+            finally:
+                await r2.aclose()
+
+    _asyncio.create_task(_run_and_clear())
+    return {"started": True, "remaining_before": remaining}
+
+
 @router.post("/master-list/publish")
 async def publish_master_list(
     db: AsyncSession = Depends(get_db),

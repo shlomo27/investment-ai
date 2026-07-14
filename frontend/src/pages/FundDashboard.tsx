@@ -31,6 +31,20 @@ const FundDashboard: React.FC = () => {
   const [earningsStatus, setEarningsStatus] = useState<any>(null);
   const [earningsChecking, setEarningsChecking] = useState(false);
   const [earningsCheckResult, setEarningsCheckResult] = useState<any>(null);
+  const [batchResult, setBatchResult] = useState<any>(null);
+  const [batchStarting, setBatchStarting] = useState(false);
+
+  const handleRunQuarterlyBatch = async () => {
+    setBatchStarting(true);
+    setBatchResult(null);
+    try {
+      const res = await marketApi.runQuarterlyBatch();
+      setBatchResult(res);
+    } catch (e: any) {
+      setBatchResult({ error: e?.response?.data?.detail || "Failed" });
+    }
+    setBatchStarting(false);
+  };
 
   // Dashboard tab state
   const [activeTab, setActiveTab] = useState<"fund" | "performance" | "sectors" | "earnings" | "compare">("fund");
@@ -492,6 +506,14 @@ const FundDashboard: React.FC = () => {
               {earningsChecking ? (isHe ? "בודק..." : "Checking...") : (isHe ? "בדוק עכשיו" : "Check Now")}
             </button>
             <button
+              onClick={handleRunQuarterlyBatch}
+              disabled={batchStarting}
+              className="text-xs bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
+              title={isHe ? "המשך את אצוות הסריקה הרבעונית של היום (אם נעצרה בפריסה)" : "Resume today's quarterly batch (if a deploy killed it)"}
+            >
+              {batchStarting ? (isHe ? "מפעיל..." : "Starting...") : (isHe ? "המשך סריקה רבעונית" : "Resume Quarterly Batch")}
+            </button>
+            <button
               onClick={handleResetEarnings}
               className="text-xs text-red-400 hover:text-red-300 border border-red-900/40 px-2 py-1.5 rounded-lg"
               title={isHe ? "מחק את כל נתוני הדוחות מ-Redis" : "Clear all earnings data from Redis"}
@@ -506,6 +528,16 @@ const FundDashboard: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {batchResult && (
+          <div className={`mb-4 p-3 rounded-xl text-xs ${batchResult.error ? "bg-red-900/20 text-red-400" : "bg-purple-900/20 text-purple-300"}`}>
+            {batchResult.error
+              ? batchResult.error
+              : batchResult.started
+                ? (isHe ? `האצווה רצה ברקע — ${batchResult.remaining_before} מניות בתור. עקוב ביומן הסריקות.` : `Batch running — ${batchResult.remaining_before} in queue. Watch the scan log.`)
+                : (isHe ? `לא הופעל: ${batchResult.reason}${batchResult.remaining != null ? ` (בתור: ${batchResult.remaining})` : ""}` : `Not started: ${batchResult.reason}`)}
+          </div>
+        )}
 
         {/* Check result */}
         {earningsCheckResult && (
