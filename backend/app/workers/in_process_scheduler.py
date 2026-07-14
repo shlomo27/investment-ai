@@ -58,6 +58,7 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
     from app.core.config import settings
     from app.core.database import AsyncSessionLocal
     from app.db.models.portfolio import Portfolio
+    from app.db.models.watchlist import Watchlist
     from app.db.models.notification import NotificationType
     from app.services.notifications.service import NotificationService
     from sqlalchemy import select
@@ -91,7 +92,18 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
             holders = await db.execute(
                 select(Portfolio.user_id).where(Portfolio.symbol == symbol, Portfolio.quantity > 0).distinct()
             )
-            user_ids = [row[0] for row in holders.all()]
+            # Watchlist users who opted into technical alerts also get trend
+            # changes — lets a user track a feed rec (e.g. ADBE) without
+            # pretending to hold it.
+            watchers = await db.execute(
+                select(Watchlist.user_id).where(
+                    Watchlist.symbol == symbol,
+                    Watchlist.alert_on_technical_signal == True,
+                ).distinct()
+            )
+            user_ids = list(
+                {row[0] for row in holders.all()} | {row[0] for row in watchers.all()}
+            )
 
         await r.set(cooldown_key, signal, ex=SIGNAL_COOLDOWN_SEC)
         if not user_ids:
@@ -141,9 +153,16 @@ async def job_daily_ta_scan():
     from app.db.models.master_list import MasterListEntry
     from app.db.models.asset import Asset
     from app.db.models.portfolio import Portfolio
+    from app.db.models.recommendation import Recommendation, RecommendationStatus
     from app.agents.workflow import run_technical_workflow
     from sqlalchemy import select
     import redis.asyncio as aioredis
+
+    LIVE_STATUSES = [
+        RecommendationStatus.APPROVED,
+        RecommendationStatus.PRESENTED_TO_USER,
+        RecommendationStatus.ACTIONED,
+    ]
 
     redis_client = aioredis.from_url(settings.REDIS_URL)
     logger.info("[ta_scan] started")
@@ -160,15 +179,26 @@ async def job_daily_ta_scan():
                 select(Portfolio.symbol).where(Portfolio.quantity > 0).distinct()
             )
             held_symbols = {r[0] for r in held_rows.all()}
+            # And every stock with a LIVE recommendation in the signals feed —
+            # otherwise a feed card's technical signal goes stale until the
+            # user opens its technical page (ADBE showed WAIT on the card while
+            # a fresh analysis said SELL).
+            live_rows = await db.execute(
+                select(Recommendation.symbol).where(
+                    Recommendation.status.in_(LIVE_STATUSES)
+                ).distinct()
+            )
+            live_symbols = {r[0] for r in live_rows.all()}
 
-        symbols = sorted(master_symbols | held_symbols)
+        symbols = sorted(master_symbols | held_symbols | live_symbols)
         if not symbols:
             logger.info("[ta_scan] no active master list symbols — skipping")
             return
 
         logger.info(
             f"[ta_scan] scanning {len(symbols)} stocks "
-            f"(master={len(master_symbols)}, held-only={len(held_symbols - master_symbols)})"
+            f"(master={len(master_symbols)}, held-only={len(held_symbols - master_symbols)}, "
+            f"live-rec-only={len(live_symbols - master_symbols - held_symbols)})"
         )
         alerted = success = errors = 0
 
@@ -180,6 +210,22 @@ async def job_daily_ta_scan():
                 result = await run_technical_workflow(symbol=symbol, exchange=exchange)
                 ta = result.get("technical_analysis") or {}
                 success += 1
+
+                # Persist the fresh TA onto any live recommendation for this
+                # symbol so the feed card + technical page reflect the latest
+                # signal without the user having to open and re-run it.
+                if ta:
+                    async with AsyncSessionLocal() as db:
+                        recs = (await db.execute(
+                            select(Recommendation).where(
+                                Recommendation.symbol == symbol,
+                                Recommendation.status.in_(LIVE_STATUSES),
+                            )
+                        )).scalars().all()
+                        for rec in recs:
+                            rec.technical_analysis = ta
+                        if recs:
+                            await db.commit()
 
                 if await process_signal_transition(symbol, ta, redis_client=redis_client):
                     alerted += 1
