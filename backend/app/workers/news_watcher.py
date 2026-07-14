@@ -180,9 +180,20 @@ async def _run_news_watch() -> dict:
 
             emoji, decision = _COMBINED.get((news_action, ta_signal), ("📊", "עקוב"))
 
-            # Skip only when news, TA AND X buzz are all weak
-            if news_action == "WAIT" and ta_signal == "WAIT" and confidence == "LOW" and not strong_x:
+            # When BOTH news and TA say WAIT there is no actionable direction —
+            # "אין סיגנל ברור" is noise, never worth an alert (even with X buzz,
+            # since we still have nothing directional to tell the holder).
+            if news_action == "WAIT" and ta_signal == "WAIT":
                 continue
+
+            # Cooldown: don't re-alert the same symbol+decision within 4h, even
+            # as fresh articles keep publishing. Prevents a stock that's "in the
+            # news" from pinging holders every 30-min run.
+            cd_key = f"investment_ai:news_alert:{symbol}"
+            prev_decision = await redis_client.get(cd_key)
+            if prev_decision and prev_decision.decode() == decision:
+                continue
+            await redis_client.set(cd_key, decision, ex=4 * 3600)
 
             sources_str = ", ".join(list({a["source"] for a in new_articles})[:3])
             title  = f"{emoji} {symbol}: {decision} | {sources_str}{x_flag}"

@@ -138,11 +138,21 @@ class NotificationService:
                 if sent_personal:
                     channels_sent.append("telegram_personal")
 
-            # Shared channel (once per recommendation, not per user)
-            if recommendation_id not in self._telegram_sent_rec_ids:
+            # Shared channel (once per EVENT, not per user). recommendation_id
+            # is None for every signal-change and news alert, so keying the
+            # dedup set on it collapsed ALL None-id alerts in one worker run
+            # into a single Telegram post (only the first symbol got through).
+            # Key on the content instead so each distinct event posts once.
+            symbol = (internal_detail or {}).get("symbol", "")
+            dedup_key = (
+                recommendation_id
+                if recommendation_id is not None
+                else f"{symbol}|{notification.title}"
+            )
+            if dedup_key not in self._telegram_sent_rec_ids:
+                self._telegram_sent_rec_ids.add(dedup_key)
                 rec_type = (internal_detail or {}).get("recommendation_type", "")
                 confidence = float((internal_detail or {}).get("confidence_score") or 0)
-                symbol = (internal_detail or {}).get("symbol", "")
                 tg_success = False
                 if rec_type and symbol:
                     # New-recommendation broadcast — goes to the shared channel
@@ -153,7 +163,6 @@ class NotificationService:
                         confidence=confidence,
                         language=user.preferred_language or "he",
                     )
-                    self._telegram_sent_rec_ids.add(recommendation_id)
                 elif symbol and (
                     (internal_detail or {}).get("signal")
                     or (internal_detail or {}).get("type") == "NEWS_PLUS_TA"
@@ -162,9 +171,7 @@ class NotificationService:
                     # the latter carry ta_signal/type, not "signal"). Personal
                     # by nature; fall back to the shared channel only for
                     # holders who have not linked a private chat yet.
-                    if personal_chat:
-                        pass  # delivered privately above; keep channel quiet
-                    else:
+                    if not personal_chat:
                         header = (
                             "שינוי מגמה"
                             if (internal_detail or {}).get("signal")
@@ -174,9 +181,6 @@ class NotificationService:
                             f"🤖 <b>InvestAI — {header}</b>\n\n{notification.title}\n\n"
                             f"⚠️ כנס למערכת לצפייה בניתוח המלא"
                         )
-                        self._telegram_sent_rec_ids.add(recommendation_id)
-                else:
-                    self._telegram_sent_rec_ids.add(recommendation_id)
                 if tg_success:
                     channels_sent.append("telegram")
 
