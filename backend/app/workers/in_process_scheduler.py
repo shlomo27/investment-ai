@@ -72,6 +72,12 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         prev_signal = prev_raw.decode() if prev_raw else None
         await r.set(last_signal_key, signal, ex=7 * 24 * 3600)
 
+        # Alert on TRANSITIONS only — a signal that merely persists past the
+        # 4h cooldown must not re-alert ("קנה (קודם: קנה)" repeats confused
+        # holders into thinking something changed).
+        if prev_signal == signal:
+            return False
+
         downgraded = prev_signal in ACTIONABLE and signal not in ACTIONABLE
         if signal not in ACTIONABLE and not downgraded:
             return False
