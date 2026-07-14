@@ -51,7 +51,9 @@ async def _analyze_news_with_llm(symbol: str, articles: list) -> dict:
   "action": "BUY" | "SELL" | "WAIT",
   "confidence": "HIGH" | "MEDIUM" | "LOW",
   "summary": "משפט אחד קצר בעברית שמסכם מה המשמעות עבור המשקיע"
-}}"""
+}}
+
+חשוב: עומדות לרשותך כותרות בלבד (ללא גוף המאמר) — לעולם אל תכתוב שחסר לך תוכן או שנדרש לקרוא את המאמר. אם הכותרות עצמן אינן מכילות מידע מהותי (כותרות סקרנות/שגרה), כתוב בסיכום: "סיקור תקשורתי שגרתי — ללא אירוע מהותי חדש", וקבע action=WAIT ו-confidence=LOW."""
     try:
         client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
         response = await client.messages.create(
