@@ -1193,6 +1193,11 @@ async def run_quarterly_batch_now(
     from app.workers.quarterly_scanner import job_quarterly_scan_batch, REDIS_PREFIX
     import redis.asyncio as aioredis
 
+    # Bump freshly-reported companies to the front before resuming, so a scan
+    # triggered before earnings-prioritization still analyzes them next.
+    from app.workers.quarterly_scanner import reprioritize_todo_with_earnings
+    reorder = await reprioritize_todo_with_earnings()
+
     r = aioredis.from_url(settings.REDIS_URL)
     try:
         active = await r.get(REDIS_PREFIX + "active")
@@ -1226,7 +1231,7 @@ async def run_quarterly_batch_now(
                 await r2.aclose()
 
     _asyncio.create_task(_run_and_clear())
-    return {"started": True, "remaining_before": remaining}
+    return {"started": True, "remaining_before": remaining, "reprioritized": reorder}
 
 
 @router.post("/master-list/publish")

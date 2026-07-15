@@ -40,17 +40,59 @@ async def trigger_quarterly_scan(quarter: str) -> dict:
         if not symbols:
             return {"started": False, "total": 0, "quarter": quarter}
 
+        # Freshly-reported companies (the ones that TRIGGERED this scan) go to
+        # the FRONT — their 10-Q data is newest, so analyze them while it's
+        # fresh instead of weeks later when the alphabetical cursor arrives.
+        reported = {s.decode() for s in await redis_client.smembers("investment_ai:earnings_queue")}
+        priority = [s for s in symbols if s in reported]
+        rest = [s for s in symbols if s not in reported]
+        ordered = priority + rest  # lpush in consumption order → rpop returns priority first
+
         pipe = redis_client.pipeline()
         pipe.delete(REDIS_PREFIX + "todo")
         pipe.delete(REDIS_PREFIX + "done")
-        for sym in symbols:
+        for sym in ordered:
             pipe.lpush(REDIS_PREFIX + "todo", sym)
         pipe.set(REDIS_PREFIX + "quarter", quarter, ex=TTL_SECONDS)
         pipe.set(REDIS_PREFIX + "active", "1", ex=TTL_SECONDS)
         await pipe.execute()
 
-        logger.info(f"[quarterly_scanner] triggered {quarter} — {len(symbols)} symbols queued")
-        return {"started": True, "total": len(symbols), "quarter": quarter}
+        logger.info(
+            f"[quarterly_scanner] triggered {quarter} — {len(symbols)} queued "
+            f"({len(priority)} freshly-reported prioritized)"
+        )
+        return {"started": True, "total": len(symbols), "quarter": quarter,
+                "prioritized": len(priority)}
+    finally:
+        await redis_client.aclose()
+
+
+async def reprioritize_todo_with_earnings() -> dict:
+    """Reorder the EXISTING scan queue so freshly-reported companies are next.
+    Used when a scan was already triggered before earnings prioritization —
+    rebuilds the todo list with reporters at the front (safe while the batch
+    is not actively popping)."""
+    from app.core.config import settings
+    import redis.asyncio as aioredis
+
+    redis_client = aioredis.from_url(settings.REDIS_URL)
+    try:
+        pending = [s.decode() for s in await redis_client.lrange(REDIS_PREFIX + "todo", 0, -1)]
+        if not pending:
+            return {"reordered": False, "reason": "queue empty"}
+        reported = {s.decode() for s in await redis_client.smembers("investment_ai:earnings_queue")}
+        priority = [s for s in pending if s in reported]
+        rest = [s for s in pending if s not in reported]
+        if not priority:
+            return {"reordered": False, "reason": "no reported companies pending", "pending": len(pending)}
+        ordered = priority + rest
+        pipe = redis_client.pipeline()
+        pipe.delete(REDIS_PREFIX + "todo")
+        for sym in ordered:
+            pipe.lpush(REDIS_PREFIX + "todo", sym)
+        await pipe.execute()
+        logger.info(f"[quarterly_scanner] reprioritized queue — {len(priority)} reporters moved to front")
+        return {"reordered": True, "prioritized": len(priority), "pending": len(pending)}
     finally:
         await redis_client.aclose()
 
