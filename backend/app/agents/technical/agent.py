@@ -112,6 +112,42 @@ class TechnicalAnalystAgent:
             except Exception:
                 pass
 
+            # Ex-dividend awareness: on the ex-div day a stock drops ~the
+            # dividend amount mechanically — not a bearish move. Flag it, and if
+            # a same-day drop roughly matches the dividend, don't let it read as
+            # a fresh sell signal (add the mechanical portion back).
+            exdiv = {"ex_dividend_date": None, "dividend_amount": None, "is_ex_dividend_today": False}
+            if not is_tase:
+                try:
+                    exdiv = await self.yahoo_service.get_ex_dividend_info(symbol)
+                except Exception as e:
+                    logger.warning("ex-dividend check failed", symbol=symbol, error=str(e))
+            if exdiv.get("is_ex_dividend_today"):
+                try:
+                    prev = float(df["Close"].iloc[-2]) if len(df) > 1 else None
+                    cur = float(df["Close"].iloc[-1])
+                    div = exdiv.get("dividend_amount") or 0.0
+                    day_drop = (prev - cur) if prev else 0.0
+                    # Only neutralize if the drop is downward and within ~1.5x
+                    # the dividend (i.e. explained by the ex-div adjustment).
+                    if div and 0 < day_drop <= div * 1.5:
+                        signal["score"] = min(100, signal["score"] + 6)
+                        signal.setdefault("reasoning", "")
+                        signal["reasoning"] += (
+                            " | הערה: המניה מנותקת דיבידנד היום — הירידה מכנית, לא אות דובי."
+                        )
+                except Exception:
+                    pass
+
+            # Keep the signal LABEL consistent with the final score after the
+            # candlestick + ex-dividend adjustments (both mutate the score).
+            _s = signal["score"]
+            if _s >= 72:   signal["signal"], signal["strength"] = "STRONG_BUY",  "STRONG"
+            elif _s >= 60: signal["signal"], signal["strength"] = "BUY_NOW",     "MODERATE"
+            elif _s <= 28: signal["signal"], signal["strength"] = "STRONG_SELL", "STRONG"
+            elif _s <= 40: signal["signal"], signal["strength"] = "SELL_NOW",    "MODERATE"
+            else:          signal["signal"], signal["strength"] = "WAIT",        "WEAK"
+
             result = {
                 "symbol": symbol,
                 "exchange": exchange,
@@ -157,6 +193,10 @@ class TechnicalAnalystAgent:
                 "nearest_resistance": min(resistance, default=None) if resistance else None,
                 # Patterns
                 "chart_patterns": patterns,
+                # Ex-dividend context
+                "is_ex_dividend_today": exdiv.get("is_ex_dividend_today", False),
+                "ex_dividend_date": exdiv.get("ex_dividend_date"),
+                "dividend_amount": exdiv.get("dividend_amount"),
                 # Overall Signal
                 "timing_signal": signal["signal"],   # BUY_NOW | SELL_NOW | WAIT | STRONG_BUY | STRONG_SELL
                 "entry_price": signal.get("entry_price"),

@@ -63,6 +63,41 @@ class YahooFinanceService:
             logger.error("Yahoo Finance get_stock_info failed", symbol=symbol, error=str(e))
             raise
 
+    async def get_ex_dividend_info(self, symbol: str) -> Dict[str, Any]:
+        """Ex-dividend date + amount from yfinance .info, and whether today is
+        the ex-dividend day. On ex-div day a stock drops ~the dividend amount
+        MECHANICALLY — the technical layer flags it so a same-day drop is not
+        misread as bearish."""
+        from datetime import datetime, timezone, date
+
+        def _fetch():
+            t = yf.Ticker(symbol, session=_make_session())
+            info = t.info or {}
+            return {
+                "exDividendDate": info.get("exDividendDate"),
+                "dividendRate": info.get("dividendRate") or info.get("lastDividendValue"),
+            }
+
+        try:
+            raw = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+        except Exception as e:
+            logger.debug("ex-dividend fetch failed", symbol=symbol, error=str(e))
+            return {"ex_dividend_date": None, "dividend_amount": None, "is_ex_dividend_today": False}
+
+        ex_ts = raw.get("exDividendDate")
+        ex_date = None
+        if ex_ts:
+            try:
+                ex_date = datetime.fromtimestamp(int(ex_ts), tz=timezone.utc).date()
+            except Exception:
+                ex_date = None
+        today = datetime.now(timezone.utc).date()
+        return {
+            "ex_dividend_date": ex_date.isoformat() if ex_date else None,
+            "dividend_amount": self._safe_float(raw.get("dividendRate")),
+            "is_ex_dividend_today": bool(ex_date and ex_date == today),
+        }
+
     async def get_historical_prices(self, symbol: str, period: str = "6mo") -> Optional[pd.DataFrame]:
         """Fetch OHLCV historical data. Tries Ticker.history() first (v8 API, cloud-friendly),
         then yf.download() (v7), then Alpha Vantage as last resort."""
