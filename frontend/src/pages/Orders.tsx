@@ -135,10 +135,10 @@ const Orders: React.FC = () => {
                   </td>
                   <td className="px-4 py-3 text-sm">{order.quantity.toFixed(4)}</td>
                   <td className="px-4 py-3 text-sm">
-                    ₪{(order.executed_price || order.price_at_order).toLocaleString("en", { minimumFractionDigits: 2 })}
+                    {order.symbol.endsWith(".TA") ? "₪" : "$"}{(order.executed_price || order.price_at_order).toLocaleString("en", { minimumFractionDigits: 2 })}
                   </td>
                   <td className="px-4 py-3 text-sm font-medium">
-                    ₪{(order.executed_total || order.total_amount).toLocaleString("en", { minimumFractionDigits: 2 })}
+                    {order.symbol.endsWith(".TA") ? "₪" : "$"}{(order.executed_total || order.total_amount).toLocaleString("en", { minimumFractionDigits: 2 })}
                   </td>
                   <td className="px-4 py-3">{statusBadge(order.status)}</td>
                   <td className="px-4 py-3 text-xs text-gray-400">

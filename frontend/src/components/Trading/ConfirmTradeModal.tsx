@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Recommendation, OrderType } from "../../types";
-import { ordersApi } from "../../api/client";
+import { ordersApi, portfolioApi } from "../../api/client";
 
 interface Props {
   recommendation: Recommendation;
@@ -21,9 +21,26 @@ const ConfirmTradeModal: React.FC<Props> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [exposureWarning, setExposureWarning] = useState<string | null>(null);
   const [exposureBlocked, setExposureBlocked] = useState(false);
+  const [existingQty, setExistingQty] = useState<number | null>(null);
+  const [existingAvg, setExistingAvg] = useState<number | null>(null);
 
   const price = rec.current_price_at_recommendation || 0;
   const cur = rec.symbol.endsWith(".TA") ? "₪" : "$";
+
+  // On open, check whether this symbol is ALREADY in the tracking portfolio,
+  // so we can warn before the user records a second (duplicate) holding.
+  useEffect(() => {
+    let cancelled = false;
+    portfolioApi.getSummary()
+      .then((s) => {
+        if (cancelled) return;
+        const pos = s.positions?.find((p) => p.symbol === rec.symbol && p.quantity > 0);
+        setExistingQty(pos ? pos.quantity : 0);
+        setExistingAvg(pos ? pos.avg_buy_price : null);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [rec.symbol]);
   const total = quantity * price;
   const isBuy = orderType === OrderType.BUY;
 
@@ -155,6 +172,15 @@ const ConfirmTradeModal: React.FC<Props> = ({
           </span>
         </div>
 
+        {/* Already-held warning — prevents an accidental duplicate holding */}
+        {isBuy && existingQty !== null && existingQty > 0 && (
+          <div className="rounded-xl p-3 mb-4 text-sm bg-blue-900/20 border border-blue-700 text-blue-300">
+            ℹ️ {isHe
+              ? `אתה כבר מחזיק ${existingQty.toLocaleString("en")} יחידות של ${rec.symbol}${existingAvg ? ` (מחיר ממוצע ${cur}${existingAvg.toFixed(2)})` : ""}. ההוספה תצטרף לפוזיציה הקיימת — לא תיווצר החזקה נפרדת. אם זו טעות, לחץ ביטול.`
+              : `You already hold ${existingQty.toLocaleString("en")} units of ${rec.symbol}${existingAvg ? ` (avg ${cur}${existingAvg.toFixed(2)})` : ""}. This will add to your existing position, not create a separate one. Cancel if this is a mistake.`}
+          </div>
+        )}
+
         {/* Exposure Warning */}
         {exposureWarning && (
           <div className={`rounded-xl p-3 mb-4 text-sm ${exposureBlocked ? "bg-red-900/20 border border-red-700 text-red-400" : "bg-yellow-900/20 border border-yellow-700 text-yellow-400"}`}>
@@ -182,7 +208,9 @@ const ConfirmTradeModal: React.FC<Props> = ({
             {isSubmitting
               ? (isHe ? "מעדכן..." : "Updating...")
               : isBuy
-              ? (isHe ? "הוסף לתיק המעקב" : "Add to Tracked Portfolio")
+              ? (existingQty && existingQty > 0
+                  ? (isHe ? "הוסף לפוזיציה הקיימת" : "Add to Existing Position")
+                  : (isHe ? "הוסף לתיק המעקב" : "Add to Tracked Portfolio"))
               : (isHe ? "עדכן מכירה בתיק" : "Record Sale in Portfolio")}
           </button>
         </div>
