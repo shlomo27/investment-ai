@@ -17,6 +17,31 @@ BATCH_PER_DAY = 50
 TTL_SECONDS   = 60 * 24 * 3600  # 60 days
 
 
+async def _earnings_report_dates(redis_client) -> dict:
+    """symbol -> earnings report date (YYYY-MM-DD) from the earnings tracker,
+    used to order freshly-reported companies oldest-report-first."""
+    import json as _json
+    out = {}
+    try:
+        details = await redis_client.hgetall("investment_ai:earnings_details")
+        for k, v in details.items():
+            sym = k.decode() if isinstance(k, bytes) else k
+            try:
+                d = _json.loads(v.decode() if isinstance(v, bytes) else v)
+                if d.get("earnings_date"):
+                    out[sym] = d["earnings_date"]
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return out
+
+
+def _order_priority(priority, date_map):
+    """Oldest-reported first; reporters with no known date go last in the group."""
+    return sorted(priority, key=lambda s: date_map.get(s, "9999-99-99"))
+
+
 async def trigger_quarterly_scan(quarter: str) -> dict:
     """Load ALL universe stocks into the Redis scan queue. Guards against double-start."""
     from app.core.config import settings
@@ -44,9 +69,10 @@ async def trigger_quarterly_scan(quarter: str) -> dict:
         # the FRONT — their 10-Q data is newest, so analyze them while it's
         # fresh instead of weeks later when the alphabetical cursor arrives.
         reported = {s.decode() for s in await redis_client.smembers("investment_ai:earnings_queue")}
-        priority = [s for s in symbols if s in reported]
+        date_map = await _earnings_report_dates(redis_client)
+        priority = _order_priority([s for s in symbols if s in reported], date_map)
         rest = [s for s in symbols if s not in reported]
-        ordered = priority + rest  # lpush in consumption order → rpop returns priority first
+        ordered = priority + rest  # lpush in consumption order → rpop returns priority first (oldest report first)
 
         pipe = redis_client.pipeline()
         pipe.delete(REDIS_PREFIX + "todo")
@@ -81,7 +107,8 @@ async def reprioritize_todo_with_earnings() -> dict:
         if not pending:
             return {"reordered": False, "reason": "queue empty"}
         reported = {s.decode() for s in await redis_client.smembers("investment_ai:earnings_queue")}
-        priority = [s for s in pending if s in reported]
+        date_map = await _earnings_report_dates(redis_client)
+        priority = _order_priority([s for s in pending if s in reported], date_map)
         rest = [s for s in pending if s not in reported]
         if not priority:
             return {"reordered": False, "reason": "no reported companies pending", "pending": len(pending)}
