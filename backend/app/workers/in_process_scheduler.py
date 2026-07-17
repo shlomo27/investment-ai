@@ -535,10 +535,11 @@ async def maybe_nudge_master_list_publish():
         days = (datetime.now(timezone.utc) - last_pub).days if last_pub else None
         age_str = f"פורסמה לפני {days} ימים" if days is not None else "מעולם לא פורסמה"
         await get_telegram_service().send_admin_alert(
-            f"📋 <b>רשימת המאסטר מתיישנת</b>\n\n"
-            f"הרשימה שהלקוחות רואים {age_str}, ומאז הצטברו "
-            f"<b>{new_count}</b> המלצות חיות חדשות בפיד הסיגנלים.\n\n"
-            f"רשימת מאסטר ← \"פרסם רשימה חדשה\" כדי שהלקוחות יראו את העדכני."
+            f"📋 <b>ארכיון רשימת המאסטר מתיישן</b>\n\n"
+            f"הלקוחות רואים את פיד הסיגנלים החי (מתעדכן לבד), אז הם לא נפגעים. "
+            f"אבל רשימת המאסטר הרשמית שלך {age_str}, ומאז הצטברו "
+            f"<b>{new_count}</b> המלצות חדשות בפיד.\n\n"
+            f"אם תרצה תיעוד רשמי מעודכן: רשימת מאסטר ← \"פרסם רשימה חדשה\" (רשות)."
         )
         await r.set(NUDGE_KEY, "1", ex=24 * 3600)
         logger.info(f"[master_nudge] admin nudged: {new_count} new live recs since last publish")

@@ -194,6 +194,25 @@ async def job_quarterly_scan_batch() -> dict:
         quarter = (await redis_client.get(REDIS_PREFIX + "quarter") or b"").decode()
         logger.info(f"[quarterly_scanner] batch for {quarter}")
 
+        # Bump freshly-reported companies to the front every run (oldest report
+        # first), so the automatic scan prioritizes them without the admin
+        # having to press "resume".
+        try:
+            pending = [s.decode() for s in await redis_client.lrange(REDIS_PREFIX + "todo", 0, -1)]
+            reported = {s.decode() for s in await redis_client.smembers("investment_ai:earnings_queue")}
+            prio = _order_priority([s for s in pending if s in reported],
+                                   await _earnings_report_dates(redis_client))
+            if prio:
+                rest = [s for s in pending if s not in reported]
+                pipe = redis_client.pipeline()
+                pipe.delete(REDIS_PREFIX + "todo")
+                for sym in (prio + rest):
+                    pipe.lpush(REDIS_PREFIX + "todo", sym)
+                await pipe.execute()
+                logger.info(f"[quarterly_scanner] batch reprioritized {len(prio)} reporters to front")
+        except Exception as e:
+            logger.warning(f"[quarterly_scanner] batch reprioritize failed: {e}")
+
         from app.workers.cost_guard import budget_exceeded, record_analysis_cost, get_today_spend
 
         approved = rejected = errors = 0
