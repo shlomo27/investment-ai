@@ -614,20 +614,41 @@ const FundDashboard: React.FC = () => {
               )}
             </div>
 
-            {/* Confirmed — already reported */}
+            {/* Confirmed — already reported, with analysis status */}
             {earningsStatus.companies?.length > 0 && (
               <div className="mb-3">
-                <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
-                  {isHe ? "פרסמו דוחות (נספרים לסף)" : "Already reported (counted toward threshold)"}
-                </p>
-                <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1">
-                  {earningsStatus.companies.map((c: any) => (
-                    <div key={c.symbol} className="flex items-center justify-between bg-green-900/20 border border-green-900/30 rounded-lg px-2.5 py-1.5">
-                      <span className="font-mono font-bold text-xs text-white">{c.symbol}</span>
-                      <span className="text-xs text-green-400">{c.earnings_date}</span>
-                    </div>
-                  ))}
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">
+                    {isHe ? "פרסמו דוחות — סטטוס ניתוח" : "Reported — analysis status"}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {isHe
+                      ? `${earningsStatus.analyzed_count ?? 0}/${earningsStatus.companies.length} נותחו`
+                      : `${earningsStatus.analyzed_count ?? 0}/${earningsStatus.companies.length} analyzed`}
+                  </p>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1">
+                  {earningsStatus.companies.map((c: any) => {
+                    const done = c.analyzed;
+                    const badge = done
+                      ? { txt: isHe ? "✓ נותחה" : "✓ analyzed", cls: "text-green-300 bg-green-900/30 border-green-800/40" }
+                      : c.queued
+                        ? { txt: isHe ? "⏳ בתור" : "⏳ queued", cls: "text-yellow-300 bg-yellow-900/20 border-yellow-800/40" }
+                        : { txt: isHe ? "• ממתינה" : "• pending", cls: "text-gray-400 bg-gray-800/40 border-gray-700" };
+                    return (
+                      <div key={c.symbol} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 border ${done ? "bg-green-900/10 border-green-900/30" : "bg-gray-800/30 border-gray-800"}`}>
+                        <span className="font-mono font-bold text-xs text-white w-14">{c.symbol}</span>
+                        <span className="text-xs text-gray-500">{c.earnings_date}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border ml-auto ${badge.cls}`}>{badge.txt}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-gray-600 mt-1.5">
+                  {isHe
+                    ? "כל חברה שדיווחה מנותחת בסופו של דבר; המדווחות מקבלות עדיפות בתור. 'בתור' = ממתינה לניתוח בסבב הקרוב."
+                    : "Every reporter is analyzed eventually; reporters get queue priority. 'queued' = awaiting analysis in an upcoming batch."}
+                </p>
               </div>
             )}
 

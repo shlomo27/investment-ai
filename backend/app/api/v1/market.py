@@ -1048,6 +1048,7 @@ async def earnings_reset(
 @router.get("/earnings/status")
 async def earnings_status(
     current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Return current earnings queue status (for admin dashboard)."""
     import json as _json
@@ -1062,19 +1063,43 @@ async def earnings_status(
         last_check     = await r.get("investment_ai:earnings_last_check")
         scan_triggered = await r.get("investment_ai:earnings_scan_triggered")
 
+        # Analysis status per reporter: has it been scanned yet?
+        #  - in the quarterly "done" set  → analyzed this quarter
+        #  - has a Recommendation row     → analyzed (any path)
+        #  - still in the "todo" list     → queued, awaiting analysis
+        done_set  = set(await r.smembers("investment_ai:quarterly_scan:done"))
+        todo_list = set(await r.lrange("investment_ai:quarterly_scan:todo", 0, -1))
+
+        from app.db.models.recommendation import Recommendation
+        from sqlalchemy import select as _sel
+        analyzed_syms = set()
+        try:
+            reporter_syms = list(details_raw.keys())
+            if reporter_syms:
+                rows = await db.execute(
+                    _sel(Recommendation.symbol).where(Recommendation.symbol.in_(reporter_syms)).distinct()
+                )
+                analyzed_syms = {row[0] for row in rows.all()}
+        except Exception:
+            pass
+
         confirmed = []
         for sym, val in details_raw.items():
             try:
                 d = _json.loads(val)
+                is_analyzed = sym in done_set or sym in analyzed_syms
                 confirmed.append({
                     "symbol": sym,
                     "earnings_date": d.get("earnings_date"),
                     "added_at": d.get("added_at"),
                     "status": "confirmed",
+                    "analyzed": is_analyzed,
+                    "queued": (not is_analyzed) and (sym in todo_list),
                 })
             except Exception:
                 pass
         confirmed.sort(key=lambda x: x.get("earnings_date", ""), reverse=True)
+        analyzed_count = sum(1 for c in confirmed if c["analyzed"])
 
         pending = []
         for sym, val in pending_raw.items():
@@ -1092,6 +1117,7 @@ async def earnings_status(
 
         return {
             "queue_count":     int(queue_count),
+            "analyzed_count":  analyzed_count,
             "trigger_at":      settings.MIN_EARNINGS_TRIGGER,
             "companies":       confirmed,
             "pending":         pending,
