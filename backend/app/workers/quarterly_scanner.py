@@ -161,6 +161,10 @@ async def _on_scan_complete(quarter: str) -> None:
         rescans  = int(await redis_client.get(REDIS_PREFIX + "rescans") or 0)
         await redis_client.delete(REDIS_PREFIX + "active")
         await redis_client.delete(REDIS_PREFIX + "rescans")
+        # Stamp completion so the earnings watcher knows when the last full
+        # safety-net sweep finished (drives the ~80-day timer).
+        from datetime import datetime as _dt, timezone as _tz
+        await redis_client.set(REDIS_PREFIX + "last_completed", _dt.now(_tz.utc).isoformat(), ex=TTL_SECONDS)
     finally:
         await redis_client.aclose()
 

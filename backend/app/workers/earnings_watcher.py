@@ -48,6 +48,35 @@ def _quarter_label(dt: datetime) -> str:
     return f"{dt.year}-Q{(dt.month - 1) // 3 + 1}"
 
 
+async def _finnhub_reporters(from_date: str, to_date: str, universe: set) -> dict:
+    """symbol -> report date for companies that ALREADY reported (epsActual is
+    populated) in the window, filtered to the universe. Second detection source
+    alongside Nasdaq."""
+    from app.services.market_data.earnings_calendar_service import get_earnings_calendar_service
+    svc = get_earnings_calendar_service()
+    if not getattr(svc, "_enabled", False):
+        return {}
+    import httpx as _httpx
+    from app.core.config import settings as _settings
+    out = {}
+    try:
+        async with _httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://finnhub.io/api/v1/calendar/earnings",
+                params={"from": from_date, "to": to_date, "token": _settings.FINNHUB_API_KEY},
+            )
+            if resp.status_code != 200:
+                return {}
+            for item in resp.json().get("earningsCalendar", []):
+                sym = (item.get("symbol") or "").upper()
+                # epsActual present => the company has actually reported
+                if sym in universe and item.get("epsActual") is not None:
+                    out[sym] = item.get("date", "")
+    except Exception:
+        return out
+    return out
+
+
 async def _analyze_reporters_now(syms: list) -> int:
     """Run a full analysis on each freshly-reported company immediately (used
     when no quarterly sweep will cover it). Budget-guarded — stops at the daily
@@ -203,6 +232,34 @@ async def job_earnings_queue_check() -> dict:
 
         logger.info(f"[earnings_watcher] Nasdaq past lookback: {past_confirmed} new confirmed")
 
+        # ── Second source: Finnhub earnings calendar (past 14 days) ───────────
+        # Nasdaq's feed has gaps (it missed IBM). Finnhub cross-checks so a
+        # reporter detected by EITHER source is caught.
+        try:
+            fh_reporters = await _finnhub_reporters(
+                (today - timedelta(days=14)).strftime("%Y-%m-%d"),
+                today.strftime("%Y-%m-%d"),
+                set(universe_map.keys()),
+            )
+            fh_new = 0
+            for sym, ed in fh_reporters.items():
+                if not await redis_client.sismember(REDIS_KEY_QUEUE, sym):
+                    await redis_client.sadd(REDIS_KEY_QUEUE, sym)
+                    await redis_client.expire(REDIS_KEY_QUEUE, REDIS_TTL)
+                    await redis_client.hset(
+                        REDIS_KEY_DETAILS, sym,
+                        json.dumps({"earnings_date": ed, "added_at": today.isoformat(), "source": "Finnhub"}),
+                    )
+                    await redis_client.expire(REDIS_KEY_DETAILS, REDIS_TTL)
+                    await redis_client.hdel(REDIS_KEY_PENDING, sym)
+                    past_confirmed += 1
+                    newly_syms.add(sym)
+                    await _requeue_for_rescan(redis_client, sym)
+                    fh_new += 1
+            logger.info(f"[earnings_watcher] Finnhub cross-check: {fh_new} additional reporters")
+        except Exception as e:
+            logger.warning(f"[earnings_watcher] Finnhub source failed: {e}")
+
         # ── Upcoming reporters: Alpha Vantage → PENDING ───────────────────────
         newly_pending = 0
         api_key = settings.ALPHA_VANTAGE_KEY or settings.FMP_API_KEY
@@ -277,28 +334,34 @@ async def job_earnings_queue_check() -> dict:
             "last_check":       today.isoformat(),
         }
 
-        if queued_total >= settings.MIN_EARNINGS_TRIGGER:
-            logger.info(f"[earnings_watcher] threshold reached → triggering quarterly scan")
-            try:
-                scan_result = await trigger_quarterly_scan(quarter)
-                result["scan_triggered"] = scan_result
-                await redis_client.set(REDIS_KEY_TRIGGERED, quarter, ex=REDIS_TTL)
-                await redis_client.delete(REDIS_KEY_QUEUE)
-                await redis_client.delete(REDIS_KEY_DETAILS)
-                await redis_client.delete(REDIS_KEY_PENDING)
-            except Exception as e:
-                logger.error(f"[earnings_watcher] trigger failed: {e}")
-                result["trigger_error"] = str(e)
-
-        # Immediate per-report analysis: a company reported but there's no
-        # quarterly sweep to cover it (below the trigger threshold AND no scan
-        # active) — analyze it right now so a fresh report is never ignored
-        # until the next quarter. Budget-guarded and bounded to this run's new
-        # reporters (at most ~threshold before a sweep would trigger anyway).
-        triggered_now = queued_total >= settings.MIN_EARNINGS_TRIGGER
+        # PRIMARY engine: analyze every fresh reporter immediately (no more
+        # waiting for a 20-report threshold). If a full sweep is already
+        # running, those symbols were re-queued for it instead — skip to avoid
+        # double work.
         scan_active = await redis_client.get("investment_ai:quarterly_scan:active")
-        if newly_syms and not triggered_now and not scan_active:
+        if newly_syms and not scan_active:
             result["immediate_analyzed"] = await _analyze_reporters_now(list(newly_syms))
+
+        # SAFETY NET: a full-universe sweep still runs periodically to catch
+        # anything both earnings sources missed (feed gaps) and non-reporters.
+        # Time-based now (not the 20-earnings trigger) — fire if none has
+        # completed in ~80 days and no sweep is currently active.
+        try:
+            last_sweep = await redis_client.get("investment_ai:quarterly_scan:last_completed")
+            due = True
+            if last_sweep:
+                try:
+                    last_dt = datetime.fromisoformat(last_sweep.decode() if isinstance(last_sweep, bytes) else last_sweep)
+                    due = (today - last_dt.replace(tzinfo=timezone.utc)).days >= 80
+                except Exception:
+                    due = True
+            if due and not scan_active:
+                logger.info("[earnings_watcher] safety-net sweep due → triggering full scan")
+                scan_result = await trigger_quarterly_scan(quarter)
+                result["safety_net_sweep"] = scan_result
+                await redis_client.set(REDIS_KEY_TRIGGERED, quarter, ex=REDIS_TTL)
+        except Exception as e:
+            logger.warning(f"[earnings_watcher] safety-net sweep check failed: {e}")
 
         return result
 
