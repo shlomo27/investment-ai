@@ -18,6 +18,7 @@ Redis keys:
   investment_ai:earnings_last_check   STRING — ISO timestamp of last run
   investment_ai:earnings_scan_triggered STRING — quarter when triggered
 """
+import asyncio
 import csv
 import io
 import json
@@ -45,6 +46,40 @@ NASDAQ_HEADERS = {
 
 def _quarter_label(dt: datetime) -> str:
     return f"{dt.year}-Q{(dt.month - 1) // 3 + 1}"
+
+
+async def _analyze_reporters_now(syms: list) -> int:
+    """Run a full analysis on each freshly-reported company immediately (used
+    when no quarterly sweep will cover it). Budget-guarded — stops at the daily
+    cap; the rest are picked up by the next quarterly trigger."""
+    from app.workers.cost_guard import budget_exceeded, record_analysis_cost
+    from app.agents.workflow import run_investment_workflow
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.asset import Asset
+    from sqlalchemy import select as _sel
+
+    analyzed = 0
+    for sym in syms:
+        try:
+            if await budget_exceeded():
+                logger.warning("[earnings_watcher] immediate analysis halted — daily budget")
+                break
+            async with AsyncSessionLocal() as db:
+                asset = (await db.execute(_sel(Asset).where(Asset.symbol == sym))).scalar_one_or_none()
+            if not asset:
+                continue  # not in the tracked universe
+            await run_investment_workflow(
+                symbol=sym, exchange=asset.exchange.value,
+                trigger_type="EARNINGS", trigger_details="immediate earnings analysis",
+            )
+            await record_analysis_cost(1)
+            analyzed += 1
+            await asyncio.sleep(1)
+        except Exception as e:
+            logger.warning(f"[earnings_watcher] immediate analysis {sym} failed: {e}")
+    if analyzed:
+        logger.info(f"[earnings_watcher] immediate-analyzed {analyzed} fresh reporters")
+    return analyzed
 
 
 async def _requeue_for_rescan(redis_client, sym: str) -> None:
@@ -143,6 +178,7 @@ async def job_earnings_queue_check() -> dict:
 
         # ── Past reporters: Nasdaq calendar for last 14 days ──────────────────
         past_confirmed = 0
+        newly_syms: set = set()
         for days_back in range(1, 15):
             check_date = today - timedelta(days=days_back)
             # Skip weekends (markets closed)
@@ -162,6 +198,7 @@ async def job_earnings_queue_check() -> dict:
                     await redis_client.expire(REDIS_KEY_DETAILS, REDIS_TTL)
                     await redis_client.hdel(REDIS_KEY_PENDING, sym)
                     past_confirmed += 1
+                    newly_syms.add(sym)
                     await _requeue_for_rescan(redis_client, sym)
 
         logger.info(f"[earnings_watcher] Nasdaq past lookback: {past_confirmed} new confirmed")
@@ -218,6 +255,8 @@ async def job_earnings_queue_check() -> dict:
                 await redis_client.expire(REDIS_KEY_DETAILS, REDIS_TTL)
                 await redis_client.hdel(REDIS_KEY_PENDING, sym)
                 newly_confirmed += 1
+                newly_syms.add(sym)
+                await _requeue_for_rescan(redis_client, sym)
 
         queued_total  = await redis_client.scard(REDIS_KEY_QUEUE)
         pending_total = await redis_client.hlen(REDIS_KEY_PENDING)
@@ -250,6 +289,16 @@ async def job_earnings_queue_check() -> dict:
             except Exception as e:
                 logger.error(f"[earnings_watcher] trigger failed: {e}")
                 result["trigger_error"] = str(e)
+
+        # Immediate per-report analysis: a company reported but there's no
+        # quarterly sweep to cover it (below the trigger threshold AND no scan
+        # active) — analyze it right now so a fresh report is never ignored
+        # until the next quarter. Budget-guarded and bounded to this run's new
+        # reporters (at most ~threshold before a sweep would trigger anyway).
+        triggered_now = queued_total >= settings.MIN_EARNINGS_TRIGGER
+        scan_active = await redis_client.get("investment_ai:quarterly_scan:active")
+        if newly_syms and not triggered_now and not scan_active:
+            result["immediate_analyzed"] = await _analyze_reporters_now(list(newly_syms))
 
         return result
 
