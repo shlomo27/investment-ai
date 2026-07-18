@@ -47,6 +47,28 @@ def _quarter_label(dt: datetime) -> str:
     return f"{dt.year}-Q{(dt.month - 1) // 3 + 1}"
 
 
+async def _requeue_for_rescan(redis_client, sym: str) -> None:
+    """A company reported earnings — if a quarterly scan is ACTIVE, re-analyze
+    it with the fresh data even if it was already scanned this sweep: drop it
+    from the done set and push it to the FRONT of the todo queue. Tracks a
+    counter so the completion report can mention re-scans."""
+    QP = "investment_ai:quarterly_scan:"
+    try:
+        if not await redis_client.get(QP + "active"):
+            return  # no active sweep — it'll be picked up by the next trigger
+        removed = await redis_client.srem(QP + "done", sym)
+        # Only requeue if it isn't already waiting in todo.
+        pending = set(await redis_client.lrange(QP + "todo", 0, -1))
+        pending = {p.decode() if isinstance(p, bytes) else p for p in pending}
+        if sym not in pending:
+            await redis_client.rpush(QP + "todo", sym)  # rpush → tail → rpop next
+            await redis_client.incr(QP + "rescans")
+            import logging as _l
+            _l.getLogger(__name__).info(f"[earnings_watcher] requeued {sym} for re-scan (fresh earnings)")
+    except Exception:
+        pass
+
+
 async def _nasdaq_reporters_for_date(date_str: str, universe: set) -> list:
     """
     Fetch companies that reported earnings on a specific date from Nasdaq.
@@ -140,6 +162,7 @@ async def job_earnings_queue_check() -> dict:
                     await redis_client.expire(REDIS_KEY_DETAILS, REDIS_TTL)
                     await redis_client.hdel(REDIS_KEY_PENDING, sym)
                     past_confirmed += 1
+                    await _requeue_for_rescan(redis_client, sym)
 
         logger.info(f"[earnings_watcher] Nasdaq past lookback: {past_confirmed} new confirmed")
 

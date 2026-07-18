@@ -157,9 +157,29 @@ async def _on_scan_complete(quarter: str) -> None:
 
     redis_client = aioredis.from_url(settings.REDIS_URL)
     try:
+        scanned  = await redis_client.scard(REDIS_PREFIX + "done")
+        rescans  = int(await redis_client.get(REDIS_PREFIX + "rescans") or 0)
         await redis_client.delete(REDIS_PREFIX + "active")
+        await redis_client.delete(REDIS_PREFIX + "rescans")
     finally:
         await redis_client.aclose()
+
+    rescan_note = f" (כולל {rescans} ניתוחים חוזרים על חברות שדיווחו תוך כדי)" if rescans else ""
+    title = (
+        f"✅ הסריקה הרבעונית ל-{quarter} הסתיימה — נסרקו {scanned} מניות{rescan_note}. "
+        f"בחן תוצאות ופרסם רשימת מאסטר."
+    )
+
+    # Admin Telegram channel — this is the milestone the admin waits for.
+    try:
+        from app.services.notifications.telegram_service import get_telegram_service
+        await get_telegram_service().send_admin_alert(
+            f"✅ <b>הסריקה הרבעונית הושלמה — {quarter}</b>\n\n"
+            f"נסרקו כל {scanned} המניות ביקום{rescan_note}.\n\n"
+            f"רשימת מאסטר ← \"פרסם רשימה חדשה\" לתיעוד רשמי מעודכן."
+        )
+    except Exception as e:
+        logger.warning(f"[quarterly_scanner] completion telegram failed: {e}")
 
     notifier = NotificationService()
     async with AsyncSessionLocal() as db:
@@ -168,11 +188,12 @@ async def _on_scan_complete(quarter: str) -> None:
         for uid in admin_ids:
             await notifier.send_notification(
                 user_id=uid, recommendation_id=None,
-                internal_detail={"type": "QUARTERLY_SCAN_COMPLETE", "quarter": quarter},
+                internal_detail={"type": "QUARTERLY_SCAN_COMPLETE", "quarter": quarter,
+                                 "scanned": scanned, "rescans": rescans},
                 db=db, notification_type=NotificationType.SYSTEM,
-                title=f"✅ הסריקה הרבעונית ל-{quarter} הסתיימה — בחן תוצאות ופרסם רשימת מאסטר",
+                title=title,
             )
-    logger.info(f"[quarterly_scanner] scan complete for {quarter} — {len(admin_ids)} admins notified")
+    logger.info(f"[quarterly_scanner] scan complete for {quarter} — scanned={scanned}, rescans={rescans}")
 
 
 async def job_quarterly_scan_batch() -> dict:
