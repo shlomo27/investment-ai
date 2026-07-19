@@ -242,6 +242,7 @@ async def job_quarterly_scan_batch() -> dict:
 
         approved = rejected = errors = 0
         processed = []
+        engine_fail_streak = 0  # consecutive analyses that failed on a dead engine
 
         for _ in range(BATCH_PER_DAY):
             if await budget_exceeded():
@@ -256,6 +257,7 @@ async def job_quarterly_scan_batch() -> dict:
             if not sym_bytes:
                 break
             symbol = sym_bytes.decode()
+            engine_down = False
             try:
                 async with AsyncSessionLocal() as db:
                     asset = (await db.execute(select(Asset).where(Asset.symbol==symbol))).scalar_one_or_none()
@@ -263,13 +265,41 @@ async def job_quarterly_scan_batch() -> dict:
                 direction_bias = getattr(asset, "direction_bias", None)
                 result = await run_investment_workflow(symbol=symbol, exchange=exchange, direction_bias=direction_bias)
                 status = (result or {}).get("workflow_status", "")
-                if status in ("completed", "saved"):
+                # Engine-down signature: the fundamental agent fell back to a
+                # 0.0-confidence "Analysis failed" result (Claude out of credits
+                # / down). That's NOT a real rejection — don't record it.
+                fa = (result or {}).get("fundamental_analysis") or {}
+                notes = str(fa.get("analyst_notes", ""))
+                if fa.get("confidence_score", None) == 0.0 and notes.startswith("Analysis failed"):
+                    engine_down = True
+                elif status in ("completed", "saved"):
                     approved += 1
                 else:
                     rejected += 1
             except Exception as exc:
                 errors += 1
                 logger.warning(f"[quarterly_scanner] {symbol}: {exc}")
+
+            if engine_down:
+                # Put the symbol back at the front and DON'T mark it done —
+                # it'll be re-analyzed once the engine recovers.
+                await redis_client.rpush(REDIS_PREFIX + "todo", symbol)
+                engine_fail_streak += 1
+                if engine_fail_streak >= 3:
+                    logger.error("[quarterly_scanner] halting batch — decision engine appears DOWN")
+                    from app.services.notifications.telegram_service import get_telegram_service
+                    await get_telegram_service().send_admin_alert(
+                        "⛔ <b>הסריקה נעצרה — מנוע הניתוח נפל</b>\n\n"
+                        "Claude מחזיר שגיאה (כנראה נגמרו קרדיטים). המערכת עצרה את "
+                        "הסריקה כדי לא לדחות חברות על לא עוול — הן יישארו בתור "
+                        "וינותחו מחדש כשהמנוע יחזור.\n\nטען קרדיטים ל-Anthropic "
+                        "והפעל auto top-up כדי שזה לא יקרה שוב."
+                    )
+                    break
+                await asyncio.sleep(2)
+                continue
+
+            engine_fail_streak = 0
             await record_analysis_cost(1)
             # Heartbeat: keep the running-flag alive per symbol so a killed
             # batch (deploy/restart) unblocks the manual resume button within
