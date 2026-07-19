@@ -240,8 +240,37 @@ async def job_quarterly_scan_batch() -> dict:
 
         from app.workers.cost_guard import budget_exceeded, record_analysis_cost, get_today_spend
 
+        # Freshness map: skip (mark done, no cost) any symbol with a REAL
+        # analysis in the last 14 days — unless it reported earnings after
+        # that analysis. Avoids paying twice for earnings-path stocks.
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        from app.db.models.recommendation import Recommendation
+        from sqlalchemy import func as _f
+        cutoff = _dt.now(_tz.utc) - _td(days=14)
+        async with AsyncSessionLocal() as db:
+            la_rows = await db.execute(
+                select(Recommendation.symbol, _f.max(Recommendation.created_at))
+                .where(Recommendation.confidence_score > 0)
+                .group_by(Recommendation.symbol)
+            )
+            last_analysis = {r[0]: r[1] for r in la_rows.all()}
+        report_dates = await _earnings_report_dates(redis_client)
+
+        def _recently_analyzed(sym: str) -> bool:
+            la = last_analysis.get(sym)
+            if la is None:
+                return False
+            la_utc = la if la.tzinfo else la.replace(tzinfo=_tz.utc)
+            if la_utc < cutoff:
+                return False
+            rd = report_dates.get(sym)
+            if rd and la_utc.date().isoformat() < rd:
+                return False
+            return True
+
         approved = rejected = errors = 0
         processed = []
+        skipped_fresh = 0
         engine_fail_streak = 0  # consecutive analyses that failed on a dead engine
 
         for _ in range(BATCH_PER_DAY):
@@ -257,6 +286,11 @@ async def job_quarterly_scan_batch() -> dict:
             if not sym_bytes:
                 break
             symbol = sym_bytes.decode()
+            if _recently_analyzed(symbol):
+                await redis_client.sadd(REDIS_PREFIX + "done", symbol)
+                await redis_client.expire(REDIS_PREFIX + "done", TTL_SECONDS)
+                skipped_fresh += 1
+                continue
             engine_down = False
             try:
                 async with AsyncSessionLocal() as db:
@@ -312,7 +346,8 @@ async def job_quarterly_scan_batch() -> dict:
 
         remaining = await redis_client.llen(REDIS_PREFIX + "todo")
         result = {"quarter": quarter, "processed": len(processed),
-                  "approved": approved, "rejected": rejected, "errors": errors, "remaining": remaining}
+                  "approved": approved, "rejected": rejected, "errors": errors,
+                  "skipped_fresh": skipped_fresh, "remaining": remaining}
         logger.info(f"[quarterly_scanner] batch done: {result}")
 
         if remaining == 0:

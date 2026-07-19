@@ -336,8 +336,56 @@ async def job_run_full_scan():
                     f"outside the pool ({sorted(a.symbol for a in extra_assets)})"
                 )
 
+            # Skip stocks with a fresh REAL analysis (last 14 days, confidence
+            # > 0 — engine-down fallbacks don't count) UNLESS the company
+            # reported earnings after that analysis. Earnings-driven analysis
+            # is the primary engine now; the weekly scan fills gaps: new
+            # momentum entrants and aging theses.
+            from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+            from sqlalchemy import func as _f
+            cutoff = _dt.now(_tz.utc) - _td(days=14)
+            la_rows = await db.execute(
+                select(Recommendation.symbol, _f.max(Recommendation.created_at))
+                .where(Recommendation.confidence_score > 0)
+                .group_by(Recommendation.symbol)
+            )
+            last_analysis = {r[0]: r[1] for r in la_rows.all()}
+
+        report_dates = {}
+        try:
+            from app.workers.quarterly_scanner import _earnings_report_dates
+            from app.core.config import settings as _settings
+            import redis.asyncio as _aioredis
+            _r = _aioredis.from_url(_settings.REDIS_URL)
+            try:
+                report_dates = await _earnings_report_dates(_r)
+            finally:
+                await _r.aclose()
+        except Exception:
+            pass
+
+        def _recently_analyzed(sym: str) -> bool:
+            la = last_analysis.get(sym)
+            if la is None:
+                return False
+            la_utc = la if la.tzinfo else la.replace(tzinfo=_tz.utc)
+            if la_utc < cutoff:
+                return False
+            rd = report_dates.get(sym)
+            if rd and la_utc.date().isoformat() < rd:
+                return False  # reported AFTER last analysis — must re-analyze
+            return True
+
+        skipped = [a.symbol for a in assets if _recently_analyzed(a.symbol)]
+        assets = [a for a in assets if a.symbol not in set(skipped)]
+        if skipped:
+            logger.info(
+                f"[scheduler] full_scan: skipping {len(skipped)} recently-analyzed stocks "
+                f"(fresh analysis <14d, no newer earnings)"
+            )
+
         if not assets:
-            logger.warning("[scheduler] full_scan: no active pool stocks — run prescreener first")
+            logger.info("[scheduler] full_scan: nothing to scan — all covered by recent analyses")
             return
 
         from app.workers.cost_guard import budget_exceeded, record_analysis_cost, get_today_spend
