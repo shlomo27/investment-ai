@@ -237,9 +237,11 @@ async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowSt
                     ]),
                 )
             )).scalars().all()
-            prev_actionable = next(
+            _BUY_SIDE = {RecommendationType.BUY, RecommendationType.STRONG_BUY}
+            _LESS_FAVORABLE = {RecommendationType.HOLD, RecommendationType.SELL, RecommendationType.STRONG_SELL}
+            prev_buy = next(
                 (p.recommendation_type for p in prev_live
-                 if p.recommendation_type in _ACTIONABLE_TYPES), None
+                 if p.recommendation_type in _BUY_SIDE), None
             )
             superseded = await session.execute(
                 sa_update(Recommendation)
@@ -258,11 +260,10 @@ async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowSt
                     "Superseded stale recommendations",
                     symbol=state["asset_symbol"], count=superseded.rowcount,
                 )
-            # Remember if we just downgraded an actionable rec to a
-            # non-actionable one (BUY/SELL → HOLD) so notify_users can alert
-            # holders that it's no longer recommended.
-            if prev_actionable and rec_type not in _ACTIONABLE_TYPES:
-                state = {**state, "_downgraded_from": prev_actionable.value}
+            # Remember if we just downgraded a live BUY into something less
+            # favorable (HOLD or SELL) so notify_users alerts holders/watchers.
+            if prev_buy and rec_type in _LESS_FAVORABLE:
+                state = {**state, "_downgraded_from": prev_buy.value}
 
             recommendation = Recommendation(
                 asset_id=asset.id,
@@ -345,11 +346,13 @@ async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowSt
         return {**state, "workflow_status": "failed", "error": f"Save failed: {e}"}
 
 
-async def _notify_recommendation_removed(symbol: str, old_type: str, notes: str) -> None:
-    """Alert holders + technical-alert watchlisters that a stock they cared
-    about is no longer a live BUY/SELL recommendation (downgraded to HOLD or
-    superseded by a rejection). They acted on the old call, so silence here
-    would leave them holding a thesis the committee walked back."""
+async def _notify_recommendation_removed(symbol: str, old_type: str, new_type: str,
+                                         notes: str, current_price=None) -> None:
+    """Alert holders + technical-alert watchlisters that the committee walked
+    back a BUY on a stock they own/watch. Message severity matches the new
+    state: HOLD = calm ("no longer a buy, reconsider"), SELL = urgent
+    ("turned negative, consider selling"), rejection = moderate. Holders also
+    see their own P&L so they can decide fast."""
     from app.core.database import AsyncSessionLocal
     from app.db.models.portfolio import Portfolio
     from app.db.models.watchlist import Watchlist
@@ -357,35 +360,56 @@ async def _notify_recommendation_removed(symbol: str, old_type: str, notes: str)
     from app.services.notifications.service import NotificationService
     from sqlalchemy import select
 
-    label = {"BUY": "📈 קנייה", "STRONG_BUY": "🚀 קנייה חזקה",
-             "SELL": "📉 מכירה", "STRONG_SELL": "⚠️ מכירה חזקה"}.get(old_type, old_type)
+    old_label = {"BUY": "📈 קנייה", "STRONG_BUY": "🚀 קנייה חזקה"}.get(old_type, old_type)
+    nt = (new_type or "").upper()
+    urgent = nt in ("SELL", "STRONG_SELL")
+    if urgent:
+        headline = f"🔴 {symbol}: ההמלצה התהפכה למכירה"
+        action = "הוועדה הפכה שלילית על המניה — שקול למכור, לא להחזיק."
+    elif nt in ("REJECTED", "REJECT"):
+        headline = f"🔻 {symbol}: ההמלצה בוטלה"
+        action = "המניה כבר לא עומדת בקריטריונים של הוועדה. שקול לבחון מחדש את הפוזיציה."
+    else:  # HOLD
+        headline = f"🔻 {symbol}: כבר לא {old_label} — עברה ל'החזק'"
+        action = "אין סיבה חדה למכור, אבל גם לא לקנות עוד. סביר להמשיך להחזיק ולעקוב."
+
     try:
         async with AsyncSessionLocal() as db:
-            holders = await db.execute(
-                select(Portfolio.user_id).where(Portfolio.symbol == symbol, Portfolio.quantity > 0).distinct()
+            hp = await db.execute(
+                select(Portfolio.user_id, Portfolio.avg_buy_price)
+                .where(Portfolio.symbol == symbol, Portfolio.quantity > 0)
             )
+            holder_avg = {r[0]: r[1] for r in hp.all()}
             watchers = await db.execute(
                 select(Watchlist.user_id).where(
                     Watchlist.symbol == symbol, Watchlist.alert_on_technical_signal == True
                 ).distinct()
             )
-            user_ids = list({r[0] for r in holders.all()} | {r[0] for r in watchers.all()})
+            watcher_ids = {r[0] for r in watchers.all()}
+            user_ids = list(set(holder_avg) | watcher_ids)
             if not user_ids:
                 return
-            title = (f"🔻 {symbol}: ההמלצה בוטלה — כבר לא {label}. "
-                     f"הניתוח המחודש הוריד אותה ל'החזק'. שקול לבחון מחדש את הפוזיציה.")
+            reason = f" הסיבה: {notes.strip()}" if notes and notes.strip() else ""
             svc = NotificationService()
             for uid in user_ids:
+                pnl = ""
+                avg = holder_avg.get(uid)
+                if avg and current_price:
+                    pct = (current_price - avg) / avg * 100 if avg else 0
+                    sign = "+" if pct >= 0 else ""
+                    pnl = (f" | הפוזיציה שלך: קנית ב-${avg:.2f}, מחיר נוכחי ${current_price:.2f} "
+                           f"({sign}{pct:.1f}%)")
+                title = f"{headline}{pnl}.{reason} 👈 פתח את הניתוח המלא כדי להחליט."
                 await svc.send_notification(
                     user_id=uid, recommendation_id=None,
                     internal_detail={"symbol": symbol, "signal": "REMOVED",
-                                     "previous_signal": old_type,
+                                     "previous_signal": old_type, "new_state": nt,
                                      "senior_notes": notes, "trigger": "REC_REMOVED"},
                     db=db, notification_type=NotificationType.ALERT, title=title,
                 )
-        logger.info("Notified rec removal", symbol=symbol, old_type=old_type, users=len(user_ids))
+        logger.info("Notified rec downgrade", symbol=symbol, old=old_type, new=nt, users=len(user_ids))
     except Exception as e:
-        logger.warning("rec-removal notify failed", symbol=symbol, error=str(e))
+        logger.warning("rec-downgrade notify failed", symbol=symbol, error=str(e))
 
 
 async def node_notify_users(state: AgentWorkflowState) -> AgentWorkflowState:
@@ -399,14 +423,18 @@ async def node_notify_users(state: AgentWorkflowState) -> AgentWorkflowState:
     # HOLD approvals stay in the feed/scan-log but never page anyone —
     # "do nothing" is not an actionable alert worth waking users for.
     rec_type = (state.get("senior_decision") or {}).get("final_recommendation", "")
+
+    # Downgrade alert to holders/watchers — fires whenever a live BUY was
+    # walked back (→ HOLD or → SELL). Runs before the HOLD early-return so
+    # the SELL case gets the personalized alert (with P&L) too.
+    if state.get("_downgraded_from"):
+        await _notify_recommendation_removed(
+            state["asset_symbol"], state["_downgraded_from"], rec_type,
+            (state.get("senior_decision") or {}).get("senior_notes") or "",
+            (state.get("data_fetcher_output") or {}).get("price"),
+        )
+
     if rec_type not in ("BUY", "STRONG_BUY", "SELL", "STRONG_SELL"):
-        # But if this HOLD just REPLACED a live BUY/SELL, holders/watchers
-        # acted on the old rec — tell them it's no longer recommended.
-        if state.get("_downgraded_from"):
-            await _notify_recommendation_removed(
-                state["asset_symbol"], state["_downgraded_from"],
-                (state.get("senior_decision") or {}).get("senior_notes") or "",
-            )
         logger.info("notify_users skipped for non-actionable recommendation", rec_type=rec_type)
         return {**state, "workflow_status": "completed"}
 
@@ -551,8 +579,8 @@ async def node_log_rejection(state: AgentWorkflowState) -> AgentWorkflowState:
 
                 if downgraded_from:
                     await _notify_recommendation_removed(
-                        state["asset_symbol"], downgraded_from,
-                        senior.get("rejection_reasoning") or "",
+                        state["asset_symbol"], downgraded_from, "REJECTED",
+                        senior.get("rejection_reasoning") or "", raw.get("price"),
                     )
 
     except Exception as e:
