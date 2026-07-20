@@ -238,6 +238,43 @@ async def job_quarterly_scan_batch() -> dict:
         except Exception as e:
             logger.warning(f"[quarterly_scanner] batch reprioritize failed: {e}")
 
+        # Self-heal engine-outage casualties: REJECTED rows with confidence 0.0
+        # are the dead-engine signature (a real committee rejection always has
+        # a confidence number). Requeue those symbols for a real analysis and
+        # dismiss the bogus rows so the scan log stops counting them as
+        # genuine rejections. Bounded to the last 14 days; once re-analyzed
+        # properly they stop matching, so this converges.
+        try:
+            from datetime import datetime as _dth, timezone as _tzh, timedelta as _tdh
+            from app.db.models.recommendation import Recommendation as _Rec, RecommendationStatus as _RS
+            heal_cutoff = _dth.now(_tzh.utc) - _tdh(days=14)
+            async with AsyncSessionLocal() as db:
+                bogus = (await db.execute(
+                    select(_Rec).where(
+                        _Rec.status == _RS.REJECTED,
+                        _Rec.confidence_score == 0.0,
+                        _Rec.created_at >= heal_cutoff,
+                    )
+                )).scalars().all()
+                heal_syms = sorted({r.symbol for r in bogus})
+                for r in bogus:
+                    r.status = _RS.DISMISSED
+                if bogus:
+                    await db.commit()
+            if heal_syms:
+                pending_now = {p.decode() if isinstance(p, bytes) else p
+                               for p in await redis_client.lrange(REDIS_PREFIX + "todo", 0, -1)}
+                requeued = 0
+                for sym in heal_syms:
+                    await redis_client.srem(REDIS_PREFIX + "done", sym)
+                    if sym not in pending_now:
+                        await redis_client.rpush(REDIS_PREFIX + "todo", sym)
+                        requeued += 1
+                logger.info(f"[quarterly_scanner] self-heal: requeued {requeued} engine-outage casualties "
+                            f"({len(bogus)} bogus rejections dismissed)")
+        except Exception as e:
+            logger.warning(f"[quarterly_scanner] self-heal failed: {e}")
+
         from app.workers.cost_guard import budget_exceeded, record_analysis_cost, get_today_spend
 
         # Freshness map: skip (mark done, no cost) any symbol with a REAL
