@@ -223,6 +223,24 @@ async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowSt
             # a rerun (weekly scan, duplicate job, manual trigger) refreshes
             # instead of piling up duplicates.
             from sqlalchemy import update as sa_update
+            _ACTIONABLE_TYPES = {
+                RecommendationType.BUY, RecommendationType.STRONG_BUY,
+                RecommendationType.SELL, RecommendationType.STRONG_SELL,
+            }
+            prev_live = (await session.execute(
+                select(Recommendation).where(
+                    Recommendation.symbol == state["asset_symbol"],
+                    Recommendation.status.in_([
+                        RecommendationStatus.APPROVED,
+                        RecommendationStatus.PRESENTED_TO_USER,
+                        RecommendationStatus.ACTIONED,
+                    ]),
+                )
+            )).scalars().all()
+            prev_actionable = next(
+                (p.recommendation_type for p in prev_live
+                 if p.recommendation_type in _ACTIONABLE_TYPES), None
+            )
             superseded = await session.execute(
                 sa_update(Recommendation)
                 .where(
@@ -240,6 +258,11 @@ async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowSt
                     "Superseded stale recommendations",
                     symbol=state["asset_symbol"], count=superseded.rowcount,
                 )
+            # Remember if we just downgraded an actionable rec to a
+            # non-actionable one (BUY/SELL → HOLD) so notify_users can alert
+            # holders that it's no longer recommended.
+            if prev_actionable and rec_type not in _ACTIONABLE_TYPES:
+                state = {**state, "_downgraded_from": prev_actionable.value}
 
             recommendation = Recommendation(
                 asset_id=asset.id,
@@ -322,6 +345,49 @@ async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowSt
         return {**state, "workflow_status": "failed", "error": f"Save failed: {e}"}
 
 
+async def _notify_recommendation_removed(symbol: str, old_type: str, notes: str) -> None:
+    """Alert holders + technical-alert watchlisters that a stock they cared
+    about is no longer a live BUY/SELL recommendation (downgraded to HOLD or
+    superseded by a rejection). They acted on the old call, so silence here
+    would leave them holding a thesis the committee walked back."""
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.portfolio import Portfolio
+    from app.db.models.watchlist import Watchlist
+    from app.db.models.notification import NotificationType
+    from app.services.notifications.service import NotificationService
+    from sqlalchemy import select
+
+    label = {"BUY": "📈 קנייה", "STRONG_BUY": "🚀 קנייה חזקה",
+             "SELL": "📉 מכירה", "STRONG_SELL": "⚠️ מכירה חזקה"}.get(old_type, old_type)
+    try:
+        async with AsyncSessionLocal() as db:
+            holders = await db.execute(
+                select(Portfolio.user_id).where(Portfolio.symbol == symbol, Portfolio.quantity > 0).distinct()
+            )
+            watchers = await db.execute(
+                select(Watchlist.user_id).where(
+                    Watchlist.symbol == symbol, Watchlist.alert_on_technical_signal == True
+                ).distinct()
+            )
+            user_ids = list({r[0] for r in holders.all()} | {r[0] for r in watchers.all()})
+            if not user_ids:
+                return
+            title = (f"🔻 {symbol}: ההמלצה בוטלה — כבר לא {label}. "
+                     f"הניתוח המחודש הוריד אותה ל'החזק'. שקול לבחון מחדש את הפוזיציה.")
+            svc = NotificationService()
+            for uid in user_ids:
+                await svc.send_notification(
+                    user_id=uid, recommendation_id=None,
+                    internal_detail={"symbol": symbol, "signal": "REMOVED",
+                                     "previous_signal": old_type,
+                                     "senior_notes": notes, "trigger": "REC_REMOVED"},
+                    db=db, notification_type=NotificationType.ALERT, title=title,
+                )
+        logger.info("Notified rec removal", symbol=symbol, old_type=old_type, users=len(user_ids))
+    except Exception as e:
+        logger.warning("rec-removal notify failed", symbol=symbol, error=str(e))
+
+
 async def node_notify_users(state: AgentWorkflowState) -> AgentWorkflowState:
     """Node 4b: Notify eligible users about new recommendation."""
     logger.info("Workflow node: notify_users", rec_id=state.get("recommendation_id"))
@@ -334,6 +400,13 @@ async def node_notify_users(state: AgentWorkflowState) -> AgentWorkflowState:
     # "do nothing" is not an actionable alert worth waking users for.
     rec_type = (state.get("senior_decision") or {}).get("final_recommendation", "")
     if rec_type not in ("BUY", "STRONG_BUY", "SELL", "STRONG_SELL"):
+        # But if this HOLD just REPLACED a live BUY/SELL, holders/watchers
+        # acted on the old rec — tell them it's no longer recommended.
+        if state.get("_downgraded_from"):
+            await _notify_recommendation_removed(
+                state["asset_symbol"], state["_downgraded_from"],
+                (state.get("senior_decision") or {}).get("senior_notes") or "",
+            )
         logger.info("notify_users skipped for non-actionable recommendation", rec_type=rec_type)
         return {**state, "workflow_status": "completed"}
 
@@ -436,7 +509,51 @@ async def node_log_rejection(state: AgentWorkflowState) -> AgentWorkflowState:
                     trigger_details=state.get("trigger_details"),
                 )
                 session.add(rejected_rec)
+
+                # If this is a GENUINE rejection (not an engine-down 0.0
+                # fallback) that overturned a live BUY/SELL, supersede the
+                # stale rec and tell holders it's no longer recommended.
+                fconf = fundamental.get("confidence_score")
+                genuine = not (fconf == 0.0 and str(fundamental.get("analyst_notes", "")).startswith("Analysis failed"))
+                downgraded_from = None
+                if genuine:
+                    from sqlalchemy import update as sa_update
+                    _ACT = {RecommendationType.BUY, RecommendationType.STRONG_BUY,
+                            RecommendationType.SELL, RecommendationType.STRONG_SELL}
+                    prev_live = (await session.execute(
+                        select(Recommendation).where(
+                            Recommendation.symbol == state["asset_symbol"],
+                            Recommendation.status.in_([
+                                RecommendationStatus.APPROVED,
+                                RecommendationStatus.PRESENTED_TO_USER,
+                                RecommendationStatus.ACTIONED,
+                            ]),
+                        )
+                    )).scalars().all()
+                    downgraded_from = next(
+                        (p.recommendation_type.value for p in prev_live
+                         if p.recommendation_type in _ACT), None
+                    )
+                    if prev_live:
+                        await session.execute(
+                            sa_update(Recommendation)
+                            .where(
+                                Recommendation.symbol == state["asset_symbol"],
+                                Recommendation.status.in_([
+                                    RecommendationStatus.APPROVED,
+                                    RecommendationStatus.PRESENTED_TO_USER,
+                                    RecommendationStatus.ACTIONED,
+                                ]),
+                            )
+                            .values(status=RecommendationStatus.DISMISSED)
+                        )
                 await session.commit()
+
+                if downgraded_from:
+                    await _notify_recommendation_removed(
+                        state["asset_symbol"], downgraded_from,
+                        senior.get("rejection_reasoning") or "",
+                    )
 
     except Exception as e:
         logger.warning("log_rejection failed", error=str(e))
