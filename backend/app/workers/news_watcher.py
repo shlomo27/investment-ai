@@ -228,8 +228,106 @@ async def _run_news_watch() -> dict:
             logger.error(f"[news_watcher] {symbol}: {sym_exc}")
         await asyncio.sleep(1)
 
+    # ── Standalone social-buzz pass ──────────────────────────────────────────
+    # A viral X moment can move a stock BEFORE any news breaks. Independently of
+    # the news loop above, check X buzz for stocks users actually hold/watch and
+    # alert on a strong spike. Scoped to held+watchlist to bound Grok cost.
+    buzz_alerts = 0
+    try:
+        buzz_alerts = await _social_buzz_pass(redis_client, notifier)
+    except Exception as e:
+        logger.warning(f"[news_watcher] social-buzz pass failed: {e}")
+
     await redis_client.aclose()
-    return {"symbols_checked": len(symbols), "symbols_alerted": symbols_alerted}
+    return {"symbols_checked": len(symbols), "symbols_alerted": symbols_alerted,
+            "buzz_alerts": buzz_alerts}
+
+
+async def _social_buzz_pass(redis_client, notifier) -> int:
+    """Alert holders/watchlisters on a STRONG, FRESH X buzz spike — even with
+    no news. Strong = >=15 posts AND |sentiment| >= 0.4. A per-symbol 4h
+    cooldown plus a spike check (buzz notably higher than last seen) keeps it
+    from firing on persistent chatter."""
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.portfolio import Portfolio
+    from app.db.models.watchlist import Watchlist
+    from app.db.models.notification import NotificationType
+    from app.services.market_data.sentiment_service import SentimentService
+    from sqlalchemy import select
+
+    async with AsyncSessionLocal() as db:
+        held = await db.execute(
+            select(Portfolio.symbol).where(Portfolio.quantity > 0).distinct()
+        )
+        watched = await db.execute(
+            select(Watchlist.symbol).where(Watchlist.alert_on_technical_signal == True).distinct()
+        )
+        symbols = sorted({r[0] for r in held.all()} | {r[0] for r in watched.all()})
+
+    if not symbols:
+        return 0
+
+    alerts = 0
+    svc = SentimentService()
+    for symbol in symbols:
+        if symbol.endswith(".TA"):
+            continue  # Grok X search is US-focused
+        try:
+            x = await svc._get_grok_x_sentiment(symbol)
+            posts = int(x.get("count", 0) or 0)
+            score = float(x.get("score", 0.0) or 0.0)
+            if posts < 15 or abs(score) < 0.4:
+                continue  # not a strong buzz
+
+            # Spike + cooldown: only alert if this run's post count is a clear
+            # jump over the last seen, and not within the 4h cooldown.
+            last_key = f"investment_ai:buzz_last:{symbol}"
+            cd_key = f"investment_ai:buzz_alert:{symbol}"
+            last_raw = await redis_client.get(last_key)
+            last_posts = int(last_raw) if last_raw else 0
+            await redis_client.set(last_key, posts, ex=24 * 3600)
+            if await redis_client.get(cd_key):
+                continue
+            if last_posts and posts < last_posts * 1.5:
+                continue  # buzz didn't meaningfully grow — not a fresh spike
+            await redis_client.set(cd_key, "1", ex=4 * 3600)
+
+            # Recipients
+            async with AsyncSessionLocal() as db:
+                hp = await db.execute(
+                    select(Portfolio.user_id).where(Portfolio.symbol == symbol, Portfolio.quantity > 0).distinct()
+                )
+                wp = await db.execute(
+                    select(Watchlist.user_id).where(
+                        Watchlist.symbol == symbol, Watchlist.alert_on_technical_signal == True
+                    ).distinct()
+                )
+                user_ids = list({r[0] for r in hp.all()} | {r[0] for r in wp.all()})
+            if not user_ids:
+                continue
+
+            mood = "חיובי 🔥" if score > 0 else "שלילי 🧊"
+            sample = ""
+            posts_list = x.get("posts") or []
+            if posts_list:
+                sample = " | דוגמה: " + (posts_list[0].get("text", "") or "")[:120]
+            title = (f"📣 {symbol}: באזz חריג ב-X — {posts} פוסטים, סנטימנט {mood} ({score:+.2f}). "
+                     f"ייתכן שהמניה תזוז לפני שיגיעו חדשות.{sample} 👈 בדוק במערכת.")
+            async with AsyncSessionLocal() as db:
+                for uid in user_ids:
+                    await notifier.send_notification(
+                        user_id=uid, recommendation_id=None,
+                        internal_detail={"symbol": symbol, "signal": "X_BUZZ",
+                                         "x_buzz_posts": posts, "x_buzz_score": round(score, 3),
+                                         "trigger": "SOCIAL_BUZZ"},
+                        db=db, notification_type=NotificationType.ALERT, title=title,
+                    )
+            alerts += 1
+            logger.info(f"[news_watcher] social-buzz alert {symbol}: {posts} posts, score {score:.2f} → {len(user_ids)} users")
+        except Exception as e:
+            logger.debug(f"[news_watcher] buzz check {symbol} failed: {e}")
+        await asyncio.sleep(1)
+    return alerts
 
 
 async def job_watch_news():
