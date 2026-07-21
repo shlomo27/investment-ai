@@ -159,7 +159,7 @@ class FMPService:
         if not self._key():
             return None
         async with httpx.AsyncClient(timeout=15) as client:
-            data = await self._get(client, f"/historical-price-full/{symbol}", {"serietype": "line"})
+            data = await self._get(client, f"/historical-price-full/{symbol}", {})
         if not data or not isinstance(data, dict):
             return None
         bars = data.get("historical", [])[:limit]

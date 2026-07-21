@@ -191,7 +191,24 @@ class YahooFinanceService:
         except Exception as e:
             logger.warning("v8 chart direct HTTP OHLCV failed, trying Alpha Vantage", symbol=symbol, error=str(e))
 
-        # Method 3: Alpha Vantage
+        # Method 3: FMP historical (we already hold the key; reliable OHLCV
+        # when yfinance is throttled on cloud IPs — keeps TA at full fidelity
+        # instead of falling back to the crude info-derived analysis).
+        try:
+            from app.services.market_data.fmp_service import get_fmp_service
+            fmp_bars = await get_fmp_service().get_historical_prices(symbol, limit=250)
+            if fmp_bars and len(fmp_bars) >= 30:
+                fdf = pd.DataFrame(fmp_bars)
+                fdf["date"] = pd.to_datetime(fdf["date"])
+                fdf = fdf.sort_values("date").set_index("date")
+                fdf = fdf.rename(columns={"open": "Open", "high": "High", "low": "Low",
+                                          "close": "Close", "volume": "Volume"})
+                logger.info("FMP historical succeeded", symbol=symbol, bars=len(fdf))
+                return fdf[["Open", "High", "Low", "Close", "Volume"]]
+        except Exception as e:
+            logger.warning("FMP historical fallback failed", symbol=symbol, error=str(e))
+
+        # Method 4: Alpha Vantage
         return await self._get_historical_alpha_vantage(symbol)
 
     async def _get_historical_alpha_vantage(self, symbol: str) -> Optional[pd.DataFrame]:

@@ -69,7 +69,8 @@ async def _analyze_news_with_llm(symbol: str, articles: list) -> dict:
         return json.loads(raw)
     except Exception as e:
         logger.debug(f"[news_watcher] LLM failed for {symbol}: {e}")
-        return {"sentiment": "NEUTRAL", "action": "WAIT", "confidence": "LOW", "summary": ""}
+        return {"sentiment": "NEUTRAL", "action": "WAIT", "confidence": "LOW",
+                "summary": "", "_llm_failed": True}
 
 
 async def _get_recipient_ids(symbol: str) -> list:
@@ -140,6 +141,12 @@ async def _run_news_watch() -> dict:
                 continue
 
             analysis    = await _analyze_news_with_llm(symbol, new_articles)
+            if analysis.get("_llm_failed"):
+                # News engine is down — don't send a news alert that only looks
+                # analyzed. The technical alert (local math) still fires on its
+                # own; the client is never shown a degraded/misleading read.
+                logger.info(f"[news_watcher] {symbol}: news engine down — skipping news alert")
+                continue
             news_action = analysis.get("action", "WAIT")
             sentiment   = analysis.get("sentiment", "NEUTRAL")
             summary     = analysis.get("summary", "")

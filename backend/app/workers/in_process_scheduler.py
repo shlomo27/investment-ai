@@ -112,12 +112,38 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         score = ta.get("technical_score", 0)
         price = ta.get("current_price")
         price_str = f" | מחיר נוכחי: ${price:.2f}" if price else ""
+
+        # Entry-point moment: the stock has a LIVE BUY recommendation
+        # (fundamental YES) and its technical just turned positive. That's the
+        # "both agree" window a watcher waited for — frame it as such.
+        entry_point = False
+        if signal in ("BUY_NOW", "STRONG_BUY"):
+            from app.db.models.recommendation import Recommendation, RecommendationStatus, RecommendationType
+            async with AsyncSessionLocal() as db:
+                live_buy = (await db.execute(
+                    select(Recommendation.id).where(
+                        Recommendation.symbol == symbol,
+                        Recommendation.recommendation_type.in_(
+                            [RecommendationType.BUY, RecommendationType.STRONG_BUY]
+                        ),
+                        Recommendation.status.in_([
+                            RecommendationStatus.APPROVED,
+                            RecommendationStatus.PRESENTED_TO_USER,
+                            RecommendationStatus.ACTIONED,
+                        ]),
+                    ).limit(1)
+                )).first()
+            entry_point = live_buy is not None
+
         if downgraded:
             prev_label = SIGNAL_LABELS.get(prev_signal, prev_signal)
             # "היה X, עכשיו Y" — an inline arrow between Hebrew words is
             # direction-ambiguous in RTL and users misread the transition.
             title = (f"⬇️ {symbol}: הסיגנל נחלש — היה: {prev_label}, עכשיו: המתנה"
                      f"{price_str} (ניתוח טכני, ציון {score:.0f}/100)")
+        elif entry_point:
+            title = (f"🟢 {symbol}: נקודת הכניסה הגיעה — ההמלצה (קנייה) נפגשה עם סיגנל טכני חיובי. "
+                     f"שני הצדדים מסכימים{price_str} (ציון טכני {score:.0f}/100). 👈 בדוק במערכת.")
         else:
             label = SIGNAL_LABELS.get(signal, signal)
             prev_str = f" (קודם: {SIGNAL_LABELS.get(prev_signal, 'המתנה')})" if prev_signal else ""

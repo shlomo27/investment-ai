@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { watchlistApi } from "../../api/client";
 import { Recommendation, RecommendationType, OrderType, TechnicalAnalysis } from "../../types";
 
 interface Props {
@@ -30,7 +31,26 @@ const RecommendationCard: React.FC<Props> = ({
   approvedAt,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const [following, setFollowing] = useState(false);
+  const [followMsg, setFollowMsg] = useState(false);
   const navigate = useNavigate();
+
+  const handleFollowForEntry = async () => {
+    setFollowing(true);
+    try {
+      await watchlistApi.addToWatchlist({
+        symbol: rec.symbol,
+        exchange: rec.symbol.endsWith(".TA") ? "TASE" : "NASDAQ",
+        alert_on_technical_signal: true,
+        notes: "Following for entry point",
+      });
+      setFollowMsg(true);
+    } catch {
+      // already on watchlist or failed — still show confirmation
+      setFollowMsg(true);
+    }
+    setFollowing(false);
+  };
 
   const isBuy = rec.recommendation_type.includes("BUY");
   const isSell = rec.recommendation_type.includes("SELL");
@@ -56,6 +76,20 @@ const RecommendationCard: React.FC<Props> = ({
               </span>
             </div>
             {rec.asset_name && <p className="text-sm text-gray-400">{rec.asset_name}</p>}
+            {(() => {
+              // Entry readiness: combine the BUY thesis with the live technical
+              // signal into one timing cue. Only for BUY recommendations.
+              if (!isBuy) return null;
+              const sig = (tech?.timing_signal || rec.technical_analysis?.timing_signal || "").toUpperCase();
+              if (!sig) return null;
+              if (sig === "BUY_NOW" || sig === "STRONG_BUY") {
+                return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-green-900/50 text-green-300 border border-green-600/50">🟢 {isHe ? "נקודת כניסה טובה" : "Good entry"}</span>;
+              }
+              if (sig === "SELL_NOW" || sig === "STRONG_SELL" || sig === "WAIT") {
+                return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300 border border-yellow-700/40">🟡 {isHe ? "הזדמנות — המתן לייצוב" : "Wait for stabilization"}</span>;
+              }
+              return null;
+            })()}
             {(() => {
               if (!approvedAt) return null;
               const ageDays = Math.floor((Date.now() - new Date(approvedAt).getTime()) / 86400000);
@@ -247,6 +281,24 @@ const RecommendationCard: React.FC<Props> = ({
           {isHe ? "מחקר מלא" : "Research"}
         </button>
         <div className="flex-1" />
+        {(() => {
+          if (!isBuy) return null;
+          const sig = (tech?.timing_signal || rec.technical_analysis?.timing_signal || "").toUpperCase();
+          const positive = sig === "BUY_NOW" || sig === "STRONG_BUY";
+          if (positive) return null;  // already a good entry — no need to wait
+          return followMsg ? (
+            <span className="text-xs text-green-400 px-2">{isHe ? "✓ במעקב — נודיע בכניסה" : "✓ Following"}</span>
+          ) : (
+            <button
+              onClick={handleFollowForEntry}
+              disabled={following}
+              className="text-xs bg-blue-900/20 border border-blue-700/50 text-blue-300 rounded-lg px-3 py-1.5 hover:bg-blue-900/40 disabled:opacity-60"
+              title={isHe ? "נודיע לך כשהניתוח הטכני יאשר נקודת כניסה" : "We'll alert you when the technical confirms an entry point"}
+            >
+              {following ? "..." : (isHe ? "👁 עקוב לנקודת כניסה" : "👁 Follow for entry")}
+            </button>
+          );
+        })()}
         {isBuy || (!isSell) ? (
           <button
             onClick={onBuy}

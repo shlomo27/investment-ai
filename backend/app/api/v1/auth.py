@@ -168,20 +168,73 @@ async def register(
     )
 
 
+async def _login_lockout_check(email: str):
+    """Brute-force guard: after 8 failed attempts, lock the email for 15 min."""
+    from app.core.config import settings
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.REDIS_URL)
+        try:
+            n = int(await r.get(f"investment_ai:login_fail:{email}") or 0)
+            if n >= 8:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="יותר מדי ניסיונות התחברות. נסה שוב בעוד 15 דקות.",
+                )
+        finally:
+            await r.aclose()
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # redis down — don't block logins
+
+
+async def _login_fail_record(email: str):
+    from app.core.config import settings
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.REDIS_URL)
+        try:
+            k = f"investment_ai:login_fail:{email}"
+            await r.incr(k)
+            await r.expire(k, 15 * 60)
+        finally:
+            await r.aclose()
+    except Exception:
+        pass
+
+
+async def _login_fail_clear(email: str):
+    from app.core.config import settings
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.REDIS_URL)
+        try:
+            await r.delete(f"investment_ai:login_fail:{email}")
+        finally:
+            await r.aclose()
+    except Exception:
+        pass
+
+
 @router.post("/login", response_model=AuthResponse)
 async def login(
     request: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ):
     """Login with email and password."""
-    result = await db.execute(select(User).where(User.email == request.email.lower()))
+    email = request.email.lower()
+    await _login_lockout_check(email)
+    result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(request.password, user.hashed_password):
+        await _login_fail_record(email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
+    await _login_fail_clear(email)
 
     if not user.is_active:
         raise HTTPException(

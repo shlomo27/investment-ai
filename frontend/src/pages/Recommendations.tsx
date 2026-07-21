@@ -62,6 +62,7 @@ const Recommendations: React.FC = () => {
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [view]);
   const [dirFilter, setDirFilter] = useState<DirectionFilter>("ALL");
+  const [sortBy, setSortBy] = useState<"confidence" | "newest">("confidence");
   const [tradeModal, setTradeModal] = useState<{ rec: Recommendation; type: OrderType } | null>(null);
   const [techMap, setTechMap] = useState<Record<number, TechnicalAnalysis>>({});
   const [loadingTech, setLoadingTech] = useState<Record<number, boolean>>({});
@@ -130,10 +131,13 @@ const Recommendations: React.FC = () => {
   const topSells = sorted.filter((r) => isShort(r.recommendation_type)).slice(0, SELL_LIMIT);
   const topPicks = [...topBuys, ...topSells].sort((a, b) => b.confidence_score - a.confidence_score);
 
-  const filteredRecs =
+  const _filtered =
     dirFilter === "LONG" ? topBuys :
     dirFilter === "SHORT" ? topSells :
     topPicks;
+  const filteredRecs = sortBy === "newest"
+    ? [..._filtered].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    : _filtered;
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
   const longCount = topBuys.length;
@@ -441,6 +445,16 @@ const Recommendations: React.FC = () => {
                 {f === "LONG" ? `LONG (${longCount})` : f === "SHORT" ? `SHORT (${shortCount})` : `${isHe ? "הכל" : "All"} (${topPicks.length})`}
               </button>
             ))}
+            <div className="flex-1" />
+            <button
+              onClick={() => setSortBy(sortBy === "confidence" ? "newest" : "confidence")}
+              className="px-3 py-1.5 rounded-lg text-xs border bg-gray-900 text-gray-300 border-gray-800 hover:border-gray-600"
+              title={isHe ? "החלף מיון" : "Toggle sort"}
+            >
+              {sortBy === "confidence"
+                ? (isHe ? "↕ לפי ביטחון" : "↕ By confidence")
+                : (isHe ? "↕ לפי הכי חדש" : "↕ By newest")}
+            </button>
           </div>
 
           {filteredRecs.length === 0 ? (
