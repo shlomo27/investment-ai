@@ -314,12 +314,21 @@ async def _social_buzz_pass(redis_client, notifier) -> int:
                 continue
 
             mood = "חיובי 🔥" if score > 0 else "שלילי 🧊"
-            sample = ""
+            direction = ("סנטימנט חיובי — ייתכן לחץ קנייה" if score > 0
+                         else "סנטימנט שלילי — ייתכן לחץ מכירה")
+            # Clean multi-line layout — Hebrew lines kept separate from the
+            # English tweet sample so RTL doesn't scramble them.
+            lines = [
+                f"📣 {symbol}: באזz חריג ברשת X",
+                f"פעילות חריגה: {posts} פוסטים · {mood} ({score:+.2f})",
+                f"{direction}. פעמים רבות התנועה בטוויטר מקדימה את החדשות.",
+            ]
             posts_list = x.get("posts") or []
-            if posts_list:
-                sample = " | דוגמה: " + (posts_list[0].get("text", "") or "")[:120]
-            title = (f"📣 {symbol}: באזz חריג ב-X — {posts} פוסטים, סנטימנט {mood} ({score:+.2f}). "
-                     f"ייתכן שהמניה תזוז לפני שיגיעו חדשות.{sample} 👈 בדוק במערכת.")
+            if posts_list and posts_list[0].get("text"):
+                lines.append("📝 ציטוט לדוגמה:")
+                lines.append((posts_list[0]["text"] or "")[:160])
+            lines.append("👈 פתח את המניה במערכת לניתוח הטכני והחדשות המלאים.")
+            title = "\n".join(lines)
             async with AsyncSessionLocal() as db:
                 for uid in user_ids:
                     await notifier.send_notification(
