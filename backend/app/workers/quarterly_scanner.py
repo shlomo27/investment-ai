@@ -219,6 +219,11 @@ async def job_quarterly_scan_batch() -> dict:
         quarter = (await redis_client.get(REDIS_PREFIX + "quarter") or b"").decode()
         logger.info(f"[quarterly_scanner] batch for {quarter}")
 
+        from app.workers.cost_guard import is_decision_engine_down
+        if await is_decision_engine_down():
+            logger.warning("[quarterly_scanner] decision engine DOWN — skipping batch")
+            return {"skipped": True, "reason": "decision engine down"}
+
         # Bump freshly-reported companies to the front every run (oldest report
         # first), so the automatic scan prioritizes them without the admin
         # having to press "resume".
@@ -358,6 +363,8 @@ async def job_quarterly_scan_batch() -> dict:
                 engine_fail_streak += 1
                 if engine_fail_streak >= 3:
                     logger.error("[quarterly_scanner] halting batch — decision engine appears DOWN")
+                    from app.workers.cost_guard import mark_decision_engine_down
+                    await mark_decision_engine_down()
                     from app.services.notifications.telegram_service import get_telegram_service
                     await get_telegram_service().send_admin_alert(
                         "⛔ <b>הסריקה נעצרה — מנוע הניתוח נפל</b>\n\n"
@@ -371,6 +378,8 @@ async def job_quarterly_scan_batch() -> dict:
                 continue
 
             engine_fail_streak = 0
+            from app.workers.cost_guard import clear_decision_engine_down
+            await clear_decision_engine_down()
             await record_analysis_cost(1)
             # Heartbeat: keep the running-flag alive per symbol so a killed
             # batch (deploy/restart) unblocks the manual resume button within

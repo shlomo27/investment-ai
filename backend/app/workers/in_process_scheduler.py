@@ -417,10 +417,19 @@ async def job_run_full_scan():
         from app.workers.cost_guard import budget_exceeded, record_analysis_cost, get_today_spend
         from app.services.notifications.telegram_service import get_telegram_service
 
+        from app.workers.cost_guard import (
+            is_decision_engine_down, is_engine_down_result,
+            mark_decision_engine_down, clear_decision_engine_down,
+        )
+        if await is_decision_engine_down():
+            logger.warning("[scheduler] full_scan skipped — decision engine DOWN")
+            return
+
         logger.info(f"[scheduler] full_scan: scanning {len(assets)} stocks")
         BATCH = 3
         approved = rejected = errors = 0
         stopped_on_budget = False
+        engine_fail_streak = 0
 
         for i in range(0, len(assets), BATCH):
             if await budget_exceeded():
@@ -445,16 +454,37 @@ async def job_run_full_scan():
                 ],
                 return_exceptions=True,
             )
+            batch_engine_down = False
             for r in results:
                 if isinstance(r, Exception):
                     errors += 1
                     logger.warning(f"[scheduler] stock scan error: {r}")
                 elif isinstance(r, dict):
+                    if is_engine_down_result(r):
+                        batch_engine_down = True
+                        continue
                     status = r.get("workflow_status", "")
                     if status in ("completed", "saved"):
                         approved += 1
                     else:
                         rejected += 1
+
+            if batch_engine_down:
+                engine_fail_streak += 1
+                if engine_fail_streak >= 2:  # ~6 stocks all failing → engine down
+                    await mark_decision_engine_down()
+                    await get_telegram_service().send_admin_alert(
+                        "⛔ <b>הסריקה השבועית נעצרה — מנוע הניתוח נפל</b>\n\n"
+                        "Claude מחזיר שגיאה (כנראה קרדיטים). הסריקה נעצרה כדי לא "
+                        "לייצר ניתוחים שגויים. טען קרדיטים והפעל auto top-up."
+                    )
+                    logger.error("[scheduler] full_scan halted — decision engine DOWN")
+                    break
+                await asyncio.sleep(2)
+                continue
+
+            engine_fail_streak = 0
+            await clear_decision_engine_down()
             await record_analysis_cost(len(batch))
             await asyncio.sleep(2)  # brief pause between batches
 

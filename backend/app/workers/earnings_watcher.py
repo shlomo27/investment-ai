@@ -81,11 +81,18 @@ async def _analyze_reporters_now(syms: list) -> int:
     """Run a full analysis on each freshly-reported company immediately (used
     when no quarterly sweep will cover it). Budget-guarded — stops at the daily
     cap; the rest are picked up by the next quarterly trigger."""
-    from app.workers.cost_guard import budget_exceeded, record_analysis_cost
+    from app.workers.cost_guard import (
+        budget_exceeded, record_analysis_cost, is_decision_engine_down,
+        is_engine_down_result, mark_decision_engine_down, clear_decision_engine_down,
+    )
     from app.agents.workflow import run_investment_workflow
     from app.core.database import AsyncSessionLocal
     from app.db.models.asset import Asset
     from sqlalchemy import select as _sel
+
+    if await is_decision_engine_down():
+        logger.warning("[earnings_watcher] immediate analysis skipped — decision engine DOWN")
+        return 0
 
     analyzed = 0
     for sym in syms:
@@ -97,10 +104,16 @@ async def _analyze_reporters_now(syms: list) -> int:
                 asset = (await db.execute(_sel(Asset).where(Asset.symbol == sym))).scalar_one_or_none()
             if not asset:
                 continue  # not in the tracked universe
-            await run_investment_workflow(
+            result = await run_investment_workflow(
                 symbol=sym, exchange=asset.exchange.value,
                 trigger_type="EARNINGS", trigger_details="immediate earnings analysis",
             )
+            if is_engine_down_result(result):
+                # Engine down — stop before producing more 0.0 rejections.
+                await mark_decision_engine_down()
+                logger.error("[earnings_watcher] immediate analysis halted — engine DOWN")
+                break
+            await clear_decision_engine_down()
             await record_analysis_cost(1)
             analyzed += 1
             await asyncio.sleep(1)

@@ -61,3 +61,47 @@ async def budget_exceeded() -> bool:
     if cap <= 0:
         return False
     return (await get_today_spend()) >= cap
+
+
+# ─── Decision-engine (Claude) outage gate ─────────────────────────────────────
+# When the fundamental agent falls back to a 0.0 "Analysis failed" result the
+# decision engine is down (out of credits / provider error). Any deep-analysis
+# job that keeps running then only produces worthless 0.0 rejections. These
+# helpers let every job coordinate: mark the outage once, skip while it's set,
+# clear it the moment a real analysis succeeds.
+_ENGINE_DOWN_KEY = "investment_ai:decision_engine_down"
+
+
+async def mark_decision_engine_down(ttl: int = 1800) -> None:
+    try:
+        r = await _redis()
+        await r.set(_ENGINE_DOWN_KEY, "1", ex=ttl)
+        await r.aclose()
+    except Exception:
+        pass
+
+
+async def is_decision_engine_down() -> bool:
+    try:
+        r = await _redis()
+        v = await r.get(_ENGINE_DOWN_KEY)
+        await r.aclose()
+        return bool(v)
+    except Exception:
+        return False
+
+
+async def clear_decision_engine_down() -> None:
+    try:
+        r = await _redis()
+        await r.delete(_ENGINE_DOWN_KEY)
+        await r.aclose()
+    except Exception:
+        pass
+
+
+def is_engine_down_result(result: dict) -> bool:
+    """True if a workflow result carries the dead-engine signature."""
+    fa = (result or {}).get("fundamental_analysis") or {}
+    return fa.get("confidence_score", None) == 0.0 and \
+        str(fa.get("analyst_notes", "")).startswith("Analysis failed")
