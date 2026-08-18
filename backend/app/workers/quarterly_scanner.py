@@ -180,10 +180,23 @@ async def requeue_unanalyzed_reporters() -> dict:
         pending = {p.decode() if isinstance(p, bytes) else p
                    for p in await redis_client.lrange(REDIS_PREFIX + "todo", 0, -1)}
         requeued = 0
+        capped = 0
         for sym in reversed(needs):        # reversed → rpop yields oldest-report first
+            # Loop guard: a genuine committee rejection can also carry 0
+            # confidence, which looks identical to "never analyzed" — without a
+            # cap such a symbol would be re-queued and re-analyzed every single
+            # day forever, burning budget. Allow at most 2 automatic retries per
+            # report cycle (30-day window).
+            ck = f"{REDIS_PREFIX}requeue_count:{sym}"
+            tries = int(await redis_client.get(ck) or 0)
+            if tries >= 2:
+                capped += 1
+                continue
             await redis_client.srem(REDIS_PREFIX + "done", sym)
             if sym not in pending:
                 await redis_client.rpush(REDIS_PREFIX + "todo", sym)
+                await redis_client.incr(ck)
+                await redis_client.expire(ck, 30 * 24 * 3600)
                 requeued += 1
 
         # Make sure the sweep is active so the daily batch will consume them.
@@ -192,7 +205,7 @@ async def requeue_unanalyzed_reporters() -> dict:
 
         logger.info(f"[quarterly_scanner] requeued {requeued} unanalyzed reporters "
                     f"({len(needs)} needed analysis)")
-        return {"requeued": requeued, "needed": len(needs),
+        return {"requeued": requeued, "needed": len(needs), "capped": capped,
                 "queue_len": await redis_client.llen(REDIS_PREFIX + "todo")}
     finally:
         await redis_client.aclose()
@@ -353,6 +366,20 @@ async def job_quarterly_scan_batch() -> dict:
                             f"({len(bogus)} bogus rejections dismissed)")
         except Exception as e:
             logger.warning(f"[quarterly_scanner] self-heal failed: {e}")
+
+        # Continuous coverage guarantee: every run, re-queue any confirmed
+        # earnings reporter whose latest REAL analysis is missing or predates
+        # its report. Catches anything the per-report path missed — a report
+        # confirmed while the engine was down, a detection that arrived late,
+        # or an analysis that silently failed — without needing an admin to
+        # press anything.
+        try:
+            cover = await requeue_unanalyzed_reporters()
+            if cover.get("requeued"):
+                logger.info(f"[quarterly_scanner] coverage check re-queued "
+                            f"{cover['requeued']} reporters missing a real analysis")
+        except Exception as e:
+            logger.warning(f"[quarterly_scanner] coverage check failed: {e}")
 
         from app.workers.cost_guard import budget_exceeded, record_analysis_cost, get_today_spend
 
