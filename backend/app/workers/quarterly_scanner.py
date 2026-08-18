@@ -13,7 +13,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 REDIS_PREFIX  = "investment_ai:quarterly_scan:"
-BATCH_PER_DAY = 50
+# Sized to the daily budget ceiling rather than an arbitrary round number:
+# DAILY_CLAUDE_BUDGET_USD / EST_COST_PER_FULL_ANALYSIS_USD = 15 / 0.20 = 75.
+# Below this the batch cap — not the budget — was the binding constraint,
+# leaving paid-for headroom unused while the reporter backlog waited.
+BATCH_PER_DAY = 75
 TTL_SECONDS   = 60 * 24 * 3600  # 60 days
 
 
