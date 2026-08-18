@@ -34,6 +34,24 @@ const FundDashboard: React.FC = () => {
   const [batchResult, setBatchResult] = useState<any>(null);
   const [batchStarting, setBatchStarting] = useState(false);
 
+  const handleRequeueReporters = async () => {
+    setBatchStarting(true);
+    setBatchResult(null);
+    try {
+      const res = await marketApi.requeueReporters();
+      setBatchResult({
+        started: false,
+        reason: res.requeued
+          ? `${res.requeued} חברות שדיווחו הוחזרו לתור לניתוח מחדש (מתוך ${res.needed} שנמצאו). התור: ${res.queue_len}.`
+          : (res.reason || "לא נמצאו חברות שדורשות ניתוח מחדש"),
+      });
+      await loadEarningsStatus();
+    } catch (e: any) {
+      setBatchResult({ error: e?.response?.data?.detail || "Failed" });
+    }
+    setBatchStarting(false);
+  };
+
   const handleRunQuarterlyBatch = async () => {
     setBatchStarting(true);
     setBatchResult(null);
@@ -504,6 +522,14 @@ const FundDashboard: React.FC = () => {
               className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
             >
               {earningsChecking ? (isHe ? "בודק..." : "Checking...") : (isHe ? "בדוק עכשיו" : "Check Now")}
+            </button>
+            <button
+              onClick={handleRequeueReporters}
+              disabled={batchStarting}
+              className="text-xs bg-amber-700 hover:bg-amber-600 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
+              title={isHe ? "מחזיר לתור כל חברה שדיווחה ולא נותחה באמת (למשל בזמן נפילת מנוע)" : "Re-queue reporters that never got a real analysis"}
+            >
+              {batchStarting ? (isHe ? "בודק..." : "Checking...") : (isHe ? "נתח דוחות שלא נותחו" : "Re-queue reporters")}
             </button>
             <button
               onClick={handleRunQuarterlyBatch}

@@ -1209,6 +1209,18 @@ async def get_master_list(db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.post("/quarterly/requeue-reporters")
+async def requeue_unanalyzed_reporters_endpoint(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Admin: re-queue every earnings reporter that never got a REAL analysis
+    since its report (e.g. everything analyzed during a Claude outage)."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.workers.quarterly_scanner import requeue_unanalyzed_reporters
+    return await requeue_unanalyzed_reporters()
+
+
 @router.post("/quarterly/run-batch")
 async def run_quarterly_batch_now(
     current_user: User = Depends(get_current_active_user),

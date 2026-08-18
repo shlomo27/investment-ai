@@ -124,6 +124,80 @@ async def reprioritize_todo_with_earnings() -> dict:
         await redis_client.aclose()
 
 
+async def requeue_unanalyzed_reporters() -> dict:
+    """Find every confirmed earnings reporter that lacks a REAL analysis since
+    its report date, and push it to the FRONT of the quarterly queue.
+
+    Needed after an engine outage: companies analyzed while Claude was down got
+    a 0.0 'Analysis failed' row, which still marks them 'analyzed' in the
+    earnings panel and 'done' in the sweep — so they'd never be revisited this
+    cycle even though their fresh 10-Q was never actually read.
+    """
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.asset import Asset
+    from app.db.models.recommendation import Recommendation
+    from sqlalchemy import select, func as _f
+    import redis.asyncio as aioredis
+
+    redis_client = aioredis.from_url(settings.REDIS_URL)
+    try:
+        report_dates = await _earnings_report_dates(redis_client)
+        if not report_dates:
+            return {"requeued": 0, "reason": "no confirmed reporters tracked"}
+
+        syms = list(report_dates.keys())
+        async with AsyncSessionLocal() as db:
+            # Latest REAL analysis (confidence > 0 excludes engine-down fallbacks)
+            rows = await db.execute(
+                select(Recommendation.symbol, _f.max(Recommendation.created_at))
+                .where(Recommendation.symbol.in_(syms), Recommendation.confidence_score > 0)
+                .group_by(Recommendation.symbol)
+            )
+            last_real = {r[0]: r[1] for r in rows.all()}
+            # Only symbols we actually track can be analyzed
+            known = {r[0] for r in (await db.execute(
+                select(Asset.symbol).where(Asset.symbol.in_(syms))
+            )).all()}
+
+        needs = []
+        for sym, rdate in report_dates.items():
+            if sym not in known:
+                continue
+            la = last_real.get(sym)
+            if la is None:
+                needs.append(sym)                      # never really analyzed
+            else:
+                la_date = (la if la.tzinfo else la).date().isoformat()
+                if la_date < rdate:
+                    needs.append(sym)                  # analysis predates the report
+
+        if not needs:
+            return {"requeued": 0, "reason": "all reporters already analyzed since their report"}
+
+        # Oldest report first, then push to the front of the queue.
+        needs = _order_priority(needs, report_dates)
+        pending = {p.decode() if isinstance(p, bytes) else p
+                   for p in await redis_client.lrange(REDIS_PREFIX + "todo", 0, -1)}
+        requeued = 0
+        for sym in reversed(needs):        # reversed → rpop yields oldest-report first
+            await redis_client.srem(REDIS_PREFIX + "done", sym)
+            if sym not in pending:
+                await redis_client.rpush(REDIS_PREFIX + "todo", sym)
+                requeued += 1
+
+        # Make sure the sweep is active so the daily batch will consume them.
+        if not await redis_client.get(REDIS_PREFIX + "active"):
+            await redis_client.set(REDIS_PREFIX + "active", "1", ex=TTL_SECONDS)
+
+        logger.info(f"[quarterly_scanner] requeued {requeued} unanalyzed reporters "
+                    f"({len(needs)} needed analysis)")
+        return {"requeued": requeued, "needed": len(needs),
+                "queue_len": await redis_client.llen(REDIS_PREFIX + "todo")}
+    finally:
+        await redis_client.aclose()
+
+
 async def get_quarterly_scan_status() -> dict:
     from app.core.config import settings
     import redis.asyncio as aioredis
