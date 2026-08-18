@@ -77,10 +77,10 @@ const AssetCard: React.FC<Props> = ({ position: pos, isHe = false, onRemove }) =
           ) : (
             <button
               onClick={() => setConfirming(true)}
-              className="text-xs text-gray-500 hover:text-red-400 mt-1.5"
+              className="mt-2 text-xs border border-gray-700 text-gray-300 hover:text-red-300 hover:border-red-800/60 hover:bg-red-900/20 px-2.5 py-1 rounded-lg transition-colors"
               title={isHe ? "מכרת או סימנת בטעות? הסר מהתיק והתרעות ייפסקו" : "Sold or added by mistake? Remove and alerts stop"}
             >
-              {isHe ? "הסר מהתיק" : "Remove"}
+              🗑 {isHe ? "הסר מהתיק" : "Remove"}
             </button>
           )
         )}

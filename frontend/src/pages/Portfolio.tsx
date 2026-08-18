@@ -13,6 +13,11 @@ const Portfolio: React.FC = () => {
   const isHe = user?.preferred_language === "he";
   const [showRebalancing, setShowRebalancing] = useState(false);
 
+  // Currency follows the holdings: ₪ only if every position is TASE-listed.
+  const portfolioCurrency =
+    (summary?.positions?.length && summary.positions.every((p) => p.symbol.endsWith(".TA")))
+      ? "₪" : "$";
+
   const handleRemovePosition = async (symbol: string) => {
     await portfolioApi.removePosition(symbol);
     dispatch(fetchPortfolioSummary());
@@ -26,7 +31,7 @@ const Portfolio: React.FC = () => {
   }, [dispatch]);
 
   const formatCurrency = (v: number) =>
-    `₪${Math.abs(v).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    `${portfolioCurrency}${Math.abs(v).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
@@ -56,7 +61,6 @@ const Portfolio: React.FC = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { label_he: "שווי כולל", label_en: "Total Value", value: formatCurrency(summary.total_value), color: "text-white" },
-            { label_he: "מזומן", label_en: "Cash", value: formatCurrency(summary.cash_balance), color: "text-green-400" },
             { label_he: "רווח/הפסד", label_en: "P&L", value: `${summary.total_pnl >= 0 ? "+" : ""}${formatCurrency(summary.total_pnl)}`, color: summary.total_pnl >= 0 ? "text-green-400" : "text-red-400" },
             { label_he: "עמדות פתוחות", label_en: "Positions", value: String(summary.position_count), color: "text-blue-400" },
           ].map((item) => (
@@ -155,7 +159,7 @@ const Portfolio: React.FC = () => {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value: number) => [`₪${value.toLocaleString("en", { maximumFractionDigits: 0 })}`, ""]}
+                      formatter={(value: number) => [`${portfolioCurrency}${value.toLocaleString("en", { maximumFractionDigits: 0 })}`, ""]}
                       contentStyle={{ background: "#1f2937", border: "1px solid #374151", borderRadius: "8px", color: "#f9fafb" }}
                     />
                   </PieChart>
