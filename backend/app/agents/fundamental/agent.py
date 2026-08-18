@@ -74,6 +74,30 @@ Bull + Base + Bear probabilities MUST sum to exactly 100.
 For each scenario: state the specific trigger, a price target, timeline in months, and probability %.
 Bull: optimistic but plausible — not a fantasy. Bear: a specific downside risk materializing — not maximum catastrophe.
 
+══════════════════════════════════════════════
+DUAL ENTRY PROFILES — every BUY must fit exactly ONE profile.
+Judge each candidate against the profile it fits BEST. Never punish a
+momentum candidate for not being cheap, nor a value candidate for weak
+recent price action.
+══════════════════════════════════════════════
+PROFILE A — VALUE ENTRY:
+  • Trading meaningfully below intrinsic value / its own historical multiples
+  • Sound balance sheet and cash generation, plus a dated re-rating catalyst
+  • Weak or negative recent price action is ACCEPTABLE — that is why it's cheap
+
+PROFILE B — MOMENTUM ENTRY:
+  • Established uptrend: price above key moving averages, positive 3-6 month
+    momentum, ideally in the upper half of the 52-week range on healthy volume
+  • Fundamentals must be SANE, not cheap: growing revenue/EPS, valuation not in
+    bubble territory relative to growth (PEG not extreme, multiple defensible)
+  • Do NOT reject solely because "the move already happened" or the multiple is
+    above sector average — trend persistence + sound, growing fundamentals IS
+    the thesis. Reject on broken fundamentals, euphoric blow-off signals, or
+    parabolic over-extension only.
+
+Set "entry_profile" in your output: "VALUE" or "MOMENTUM" for BUY calls, null otherwise.
+A healthy recommendation book contains BOTH profiles.
+
 POSTURE: Every number must be derived from data or explicitly estimated from training knowledge.
 State "I don't know" when data is truly unavailable. Never use words: compelling, attractive, exciting, promising.
 The burden of proof is on the BUY case, not the AVOID case.
@@ -428,6 +452,7 @@ Based on ALL the above data and the screener directive, provide your analysis in
   "expected_return_pct": <float — NEGATIVE for short thesis, POSITIVE for long thesis>,
   "investment_horizon": "SHORT_TERM|MEDIUM_TERM|LONG_TERM",
   "valuation_assessment": "UNDERVALUED|FAIRLY_VALUED|OVERVALUED",
+  "entry_profile": "VALUE|MOMENTUM|null — which entry profile a BUY fits; null for HOLD/SELL",
   "financial_health": "EXCELLENT|GOOD|FAIR|POOR",
   "thesis": "<2-3 sentences describing the core long or short thesis>",
   "key_metrics_summary": {{
