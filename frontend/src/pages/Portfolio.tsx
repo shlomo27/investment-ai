@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../store";
 import { fetchPortfolioSummary, fetchPortfolioRisk, fetchRebalancingSuggestions } from "../store/slices/portfolioSlice";
+import { portfolioApi } from "../api/client";
 import RiskMeter from "../components/Portfolio/RiskMeter";
 import AssetCard from "../components/Portfolio/AssetCard";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
@@ -11,6 +12,12 @@ const Portfolio: React.FC = () => {
   const { summary, risk, rebalancingSuggestions, isLoading } = useAppSelector((state) => state.portfolio);
   const isHe = user?.preferred_language === "he";
   const [showRebalancing, setShowRebalancing] = useState(false);
+
+  const handleRemovePosition = async (symbol: string) => {
+    await portfolioApi.removePosition(symbol);
+    dispatch(fetchPortfolioSummary());
+    dispatch(fetchPortfolioRisk());
+  };
 
   useEffect(() => {
     dispatch(fetchPortfolioSummary());
@@ -96,7 +103,7 @@ const Portfolio: React.FC = () => {
           ) : summary?.positions && summary.positions.length > 0 ? (
             <div className="space-y-3">
               {summary.positions.map((pos) => (
-                <AssetCard key={pos.symbol} position={pos} isHe={isHe} />
+                <AssetCard key={pos.symbol} position={pos} isHe={isHe} onRemove={handleRemovePosition} />
               ))}
             </div>
           ) : (

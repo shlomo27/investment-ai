@@ -1,14 +1,31 @@
-import React from "react";
+import React, { useState } from "react";
 import { PortfolioPosition } from "../../types";
 
 interface Props {
   position: PortfolioPosition;
   isHe?: boolean;
+  onRemove?: (symbol: string) => Promise<void>;
 }
 
-const AssetCard: React.FC<Props> = ({ position: pos, isHe = false }) => {
+const AssetCard: React.FC<Props> = ({ position: pos, isHe = false, onRemove }) => {
+  // TASE prices are in ₪, US-listed stocks in $
+  const cur = pos.symbol.endsWith(".TA") ? "₪" : "$";
   const fmt = (v: number) =>
-    `₪${Math.abs(v).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    `${cur}${Math.abs(v).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const [confirming, setConfirming] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  const handleRemove = async () => {
+    if (!onRemove) return;
+    setRemoving(true);
+    try {
+      await onRemove(pos.symbol);
+    } finally {
+      setRemoving(false);
+      setConfirming(false);
+    }
+  };
 
   const pnlPos = pos.pnl >= 0;
 
@@ -40,6 +57,33 @@ const AssetCard: React.FC<Props> = ({ position: pos, isHe = false }) => {
         <p className="text-xs text-gray-500 mt-0.5">
           {isHe ? "חשיפה:" : "Exposure:"} {pos.exposure_percentage.toFixed(1)}%
         </p>
+        {onRemove && (
+          confirming ? (
+            <div className="flex items-center gap-2 justify-end mt-1.5">
+              <button
+                onClick={handleRemove}
+                disabled={removing}
+                className="text-xs bg-red-700 hover:bg-red-600 disabled:opacity-60 text-white px-2 py-1 rounded"
+              >
+                {removing ? "..." : (isHe ? "אשר הסרה" : "Confirm")}
+              </button>
+              <button
+                onClick={() => setConfirming(false)}
+                className="text-xs text-gray-400 hover:text-white px-2 py-1"
+              >
+                {isHe ? "ביטול" : "Cancel"}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirming(true)}
+              className="text-xs text-gray-500 hover:text-red-400 mt-1.5"
+              title={isHe ? "מכרת או סימנת בטעות? הסר מהתיק והתרעות ייפסקו" : "Sold or added by mistake? Remove and alerts stop"}
+            >
+              {isHe ? "הסר מהתיק" : "Remove"}
+            </button>
+          )
+        )}
       </div>
     </div>
   );

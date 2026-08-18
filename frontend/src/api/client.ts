@@ -224,6 +224,11 @@ export const portfolioApi = {
     return response.data;
   },
 
+  removePosition: async (symbol: string): Promise<{ removed: boolean; symbol: string }> => {
+    const response = await api.delete(`/portfolio/${symbol}`);
+    return response.data;
+  },
+
   getSummary: async (): Promise<PortfolioSummary> => {
     const response = await api.get<PortfolioSummary>("/portfolio/summary");
     return response.data;

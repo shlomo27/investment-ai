@@ -202,6 +202,39 @@ async def update_portfolio_settings(
     }
 
 
+@router.delete("/{asset_symbol}")
+async def remove_position(
+    asset_symbol: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a holding from the tracking portfolio.
+
+    This is a TRACKING portfolio — the user records what they hold at their
+    broker. They must be able to correct it: a position entered by mistake, or
+    one they've since sold, otherwise they keep receiving trend alerts for a
+    stock they no longer own and can't stop them.
+    """
+    symbol = asset_symbol.upper()
+    result = await db.execute(
+        select(Portfolio).where(
+            Portfolio.user_id == current_user.id,
+            Portfolio.symbol == symbol,
+        )
+    )
+    position = result.scalar_one_or_none()
+    if not position:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No position found for {symbol}",
+        )
+
+    await db.delete(position)
+    await db.flush()
+    logger.info("Portfolio position removed", user_id=current_user.id, symbol=symbol)
+    return {"removed": True, "symbol": symbol}
+
+
 @router.get("/{asset_symbol}", response_model=Optional[PortfolioPositionResponse])
 async def get_asset_position(
     asset_symbol: str,
