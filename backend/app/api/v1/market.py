@@ -552,10 +552,13 @@ async def universe_stats(
             for r in top_result.fetchall()
         ],
         "pool_changes": {
-            "ran_at":      churn.get("ran_at"),
-            "entered":     churn.get("entered", []),
-            "exited":      churn.get("exited", []),
-            "held_sticky": len(churn.get("held_sticky", [])),
+            "ran_at":        churn.get("ran_at"),
+            "entered":       churn.get("entered", []),
+            "exited":        churn.get("exited", []),
+            "held_sticky":   len(churn.get("held_sticky", [])),
+            "universe_size": churn.get("universe_size"),
+            "data_fetched":  churn.get("data_fetched"),
+            "passed_filter": churn.get("passed_filter"),
         },
     }
 

@@ -424,6 +424,32 @@ const FundDashboard: React.FC = () => {
                 {new Date(universeStats.pool_changes.ran_at).toLocaleString(isHe ? "he-IL" : "en-US")}
               </p>
 
+              {(() => {
+                const fetched = universeStats.pool_changes.data_fetched;
+                const size = universeStats.pool_changes.universe_size;
+                if (fetched == null || !size) return null;
+                const pct = Math.round((fetched / size) * 100);
+                const tone =
+                  pct >= 90 ? "text-green-400" : pct >= 70 ? "text-yellow-400" : "text-red-400";
+                return (
+                  <div className="border-b border-gray-700/60 pb-2">
+                    <p className="text-xs text-gray-400">
+                      {isHe ? "נתוני מחיר נמשכו עבור" : "Price data fetched for"}{" "}
+                      <span className={`font-bold ${tone}`}>
+                        {fetched}/{size} ({pct}%)
+                      </span>
+                    </p>
+                    {pct < 90 && (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {isHe
+                          ? "ספק הנתונים הגביל חלק מהבקשות — הדירוג נקבע על בסיס חלקי. מניה בלי נתוני מחיר אף פעם לא נכנסת למאגר."
+                          : "The data provider throttled some requests — the ranking was decided on partial data. A stock without price data is never activated into the pool."}
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
               <div>
                 <p className="text-xs text-green-400 mb-1">
                   {isHe ? "נכנסו" : "Entered"} ({universeStats.pool_changes.entered.length})

@@ -488,6 +488,9 @@ export interface UniverseStats {
     entered: string[];
     exited: string[];
     held_sticky: number;
+    universe_size?: number | null;
+    data_fetched?: number | null;
+    passed_filter?: number | null;
   };
 }
 

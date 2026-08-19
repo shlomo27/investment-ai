@@ -356,6 +356,13 @@ async def run_pre_screener(db) -> dict:
     await db.commit()
 
     churn["ran_at"] = datetime.now(timezone.utc).isoformat()
+    # Data coverage — how many of the universe symbols Yahoo actually returned
+    # prices for. A low number means the ranking was decided on partial data
+    # (Yahoo throttling), which is invisible otherwise: the pool still fills up
+    # and everything downstream looks normal.
+    churn["universe_size"] = len(all_symbols)
+    churn["data_fetched"]  = len(all_data)
+    churn["passed_filter"] = len(passed)
     await _save_churn(churn)
 
     return {
