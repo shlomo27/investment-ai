@@ -245,22 +245,23 @@ async def _run_news_watch() -> dict:
     except Exception as e:
         logger.warning(f"[news_watcher] social-buzz pass failed: {e}")
 
-    # Warn once a day if the Grok search cap was hit — otherwise a runaway
-    # loop only shows up as a surprise credit charge.
+    # Grok keeps running — but flag abnormal daily volume once, so a runaway
+    # loop surfaces as a message rather than as a surprise credit charge.
     try:
         from app.services.market_data.sentiment_service import (
-            grok_calls_today, grok_limit_reached,
+            grok_calls_today, grok_volume_is_abnormal,
         )
-        if await grok_limit_reached() and not await redis_client.get("investment_ai:grok_cap_alert"):
-            await redis_client.set("investment_ai:grok_cap_alert", "1", ex=20 * 3600)
+        if await grok_volume_is_abnormal() and not await redis_client.get("investment_ai:grok_vol_alert"):
+            await redis_client.set("investment_ai:grok_vol_alert", "1", ex=20 * 3600)
             from app.services.notifications.telegram_service import get_telegram_service
             used = await grok_calls_today()
             await get_telegram_service().send_admin_alert(
-                f"⚠️ <b>תקרת Grok יומית</b>\nבוצעו {used} חיפושי X בתשלום היום — "
-                f"המערכת מפסיקה לקרוא ל-Grok עד מחר. ניתוח המניות ממשיך כרגיל בלי נתוני X."
+                f"📊 <b>שימוש חריג ב-Grok</b>\nבוצעו {used} חיפושי X בתשלום היום — "
+                f"יותר מהצפוי. <b>המעקב ממשיך כרגיל ולא נחסם כלום.</b>\n"
+                f"שווה לבדוק את מספר המניות במעקב ואת יתרת הקרדיטים ב-xAI."
             )
     except Exception as e:
-        logger.debug(f"[news_watcher] grok cap check failed: {e}")
+        logger.debug(f"[news_watcher] grok volume check failed: {e}")
 
     await redis_client.aclose()
     return {"symbols_checked": len(symbols), "symbols_alerted": symbols_alerted,

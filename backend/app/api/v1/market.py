@@ -688,7 +688,7 @@ async def _probe_grok(sym: str) -> dict:
     from app.services.market_data.sentiment_service import grok_calls_today
     used = await grok_calls_today()
     limit = getattr(settings, "DAILY_GROK_CALL_LIMIT", 0)
-    spend = f" | חיפושים בתשלום היום: {used}" + (f"/{limit}" if limit else "")
+    spend = f" | חיפושים בתשלום היום: {used}" + (f"/{limit}" if limit else " (ללא הגבלה)")
     cnt = res.get("count", 0)
     return {
         "ok": cnt > 0,

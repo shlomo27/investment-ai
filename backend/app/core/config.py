@@ -97,11 +97,15 @@ class Settings(BaseSettings):
     DAILY_CLAUDE_BUDGET_USD: float = 0.0   # 0 = disabled; when >0, scans stop for the day once hit
     EST_COST_PER_FULL_ANALYSIS_USD: float = 0.20  # Claude+GPT+Grok per one full stock analysis
 
-    # Grok x_search is billed per live search, so an uncached loop over held
-    # symbols every 30 min drains credits fast. Results are cached for
-    # GROK_CACHE_TTL_MIN and the day is hard-capped at DAILY_GROK_CALL_LIMIT.
-    GROK_CACHE_TTL_MIN: int = 360          # 6h — X sentiment doesn't turn over faster
-    DAILY_GROK_CALL_LIMIT: int = 250       # 0 = disabled
+    # Grok x_search is billed per live search. Watching X in near-real-time is
+    # the point, so there is deliberately NO daily cap by default — a viral post
+    # must be caught while it matters, not hours later. What is controlled is
+    # waste: the cache window is kept just under the 30-minute watcher cadence,
+    # so it only collapses duplicate asks about the same symbol inside one cycle
+    # and never delays detection.
+    GROK_CACHE_TTL_MIN: int = 20
+    DAILY_GROK_CALL_LIMIT: int = 0         # 0 = no cap (default). Emergency brake only.
+    GROK_DAILY_ALERT_CALLS: int = 800      # alert-only: flags abnormal volume, never blocks
 
     # Twilio (SMS)
     TWILIO_ACCOUNT_SID: str = ""

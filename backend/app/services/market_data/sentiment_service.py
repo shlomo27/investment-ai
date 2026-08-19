@@ -31,9 +31,12 @@ BEARISH_WORDS = {
 
 
 # ─── Grok spend controls ─────────────────────────────────────────────────────
-# xAI bills x_search per live search, and the watcher jobs ask about the same
-# symbols every 30 minutes. Without a cache that is ~48 paid searches per symbol
-# per day for information that barely changes; with one it is ~4.
+# xAI bills x_search per live search. Watching X in near-real-time is the whole
+# point of this source, so the volume is NOT capped by default — a viral post
+# has to be caught while it still matters. What is eliminated is waste: asking
+# the same question twice inside one watcher cycle, and paying for an answer
+# that a cooldown guarantees will be discarded. Usage is counted so abnormal
+# volume is visible instead of arriving as a surprise charge.
 _GROK_CACHE_KEY = "investment_ai:grok_x:"        # + symbol
 _GROK_COUNT_KEY = "investment_ai:grok_calls:"    # + YYYY-MM-DD
 _GROK_COUNT_TTL = 60 * 60 * 30
@@ -58,10 +61,24 @@ async def grok_calls_today() -> int:
 
 
 async def grok_limit_reached() -> bool:
+    """Emergency brake only — disabled unless DAILY_GROK_CALL_LIMIT is set.
+
+    Deliberately off by default: capping the day would mean going blind to X
+    exactly when something is breaking. It exists so a runaway loop can be
+    stopped by config without a deploy.
+    """
     limit = int(getattr(settings, "DAILY_GROK_CALL_LIMIT", 0) or 0)
     if limit <= 0:
         return False
     return await grok_calls_today() >= limit
+
+
+async def grok_volume_is_abnormal() -> bool:
+    """True when today's search count passes the notify-only threshold."""
+    threshold = int(getattr(settings, "GROK_DAILY_ALERT_CALLS", 0) or 0)
+    if threshold <= 0:
+        return False
+    return await grok_calls_today() >= threshold
 
 
 async def _grok_record_call() -> int:
