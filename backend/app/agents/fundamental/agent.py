@@ -153,7 +153,7 @@ class FundamentalAnalystAgent:
         quant_models = self._compute_financial_models(market_data)
         logger.info("Quantitative models computed", symbol=market_data["symbol"], models=list(quant_models.keys()))
 
-        pre_exclusions = self._check_hard_exclusions_python(market_data)
+        pre_exclusions = self._check_hard_exclusions_python(market_data, direction_bias)
         if pre_exclusions:
             logger.info("Python pre-screening flags found", symbol=market_data["symbol"], flags=pre_exclusions)
 
@@ -168,7 +168,11 @@ class FundamentalAnalystAgent:
             logger.warning("Claude LLM unavailable (missing API key), returning fallback", symbol=market_data["symbol"])
             return self._fallback_analysis(market_data, "ANTHROPIC_API_KEY not configured", quant_models)
 
-        system_content = SYSTEM_PROMPT + self._language_instruction(language)
+        system_content = (
+            SYSTEM_PROMPT
+            + self._short_side_override(direction_bias)
+            + self._language_instruction(language)
+        )
 
         try:
             response = await asyncio.get_event_loop().run_in_executor(
@@ -211,8 +215,61 @@ class FundamentalAnalystAgent:
         return value if value is not None else default
 
     @staticmethod
-    def _check_hard_exclusions_python(data: MarketDataState) -> List[str]:
-        """Python-detectable hard exclusion pre-screening."""
+    def _short_side_override(direction_bias: Optional[str]) -> str:
+        """Invert the long-only hard exclusion rules for a SHORT candidate.
+
+        Without this the exclusion block disqualifies every short: it is written
+        to eliminate weak companies, and a short candidate is a weak company by
+        construction. The result was that the short book could never produce a
+        single recommendation.
+        """
+        if direction_bias != "SHORT":
+            return ""
+        return """
+
+══════════════════════════════════════════════
+SHORT-SIDE OVERRIDE — SUPERSEDES THE HARD EXCLUSION RULES ABOVE
+══════════════════════════════════════════════
+This stock was flagged as a SHORT candidate. The exclusion rules above are
+written for the long book — they eliminate a company for being weak. On the
+short side, weakness IS the thesis. For this analysis:
+
+DO NOT set auto_disqualified=true for any of the following. They are
+SUPPORTING EVIDENCE for the short. List each one you confirm in
+hard_exclusions_triggered prefixed with "SHORT-EVIDENCE: ":
+  • Revenue declining for consecutive quarters
+  • Analyst consensus of SELL / UNDERPERFORM
+  • Dividends exceeding free cash flow (yield trap)
+  • Negative free cash flow / cash burn
+  • Net Debt/EBITDA above 4.5x
+  • Litigation, investigation, or accounting restatement
+  • Insider selling
+
+SET auto_disqualified=true ONLY for a risk that makes the SHORT ITSELF unsafe:
+  ✗ Market cap below $500M — borrow is costly or unavailable, squeezes easily
+  ✗ Short interest above 20% of float with no explicit squeeze plan
+  ✗ A pending acquisition, takeover bid, or credible buyout rumour
+  ✗ The decline has already played out — price at or near the 52-week low with
+    the bear case visibly priced in and no further downside catalyst
+  ✗ Imminent positive catalyst that could force a squeeze
+
+recommendation_type must be SELL or STRONG_SELL if you confirm the short, or
+HOLD if you refute it. BUY is not a valid answer for a SHORT candidate.
+expected_return_pct must be NEGATIVE (the expected decline)."""
+
+    @staticmethod
+    def _check_hard_exclusions_python(
+        data: MarketDataState, direction_bias: Optional[str] = None
+    ) -> List[str]:
+        """Python-detectable hard exclusion pre-screening.
+
+        The long-side rules disqualify a company for being weak: declining
+        revenue, analyst SELL consensus, leverage, cash burn. Those are exactly
+        the traits that make a good SHORT — applying them to a short candidate
+        disqualifies every short before it is analyzed. For a SHORT bias we
+        screen instead for the risks specific to being short: a crowded trade,
+        a decline that already played out, and names too small to borrow safely.
+        """
         flags: List[str] = []
         market_cap = float(data.get("market_cap") or 0)
         fcf = float(data.get("free_cash_flow") or 0)
@@ -220,6 +277,37 @@ class FundamentalAnalystAgent:
         debt_to_equity = data.get("debt_to_equity")
         analyst_rec = (data.get("analyst_recommendation") or "").lower()
         price = float(data.get("price") or 0)
+
+        if direction_bias == "SHORT":
+            # Small caps are expensive/impossible to borrow and squeeze easily.
+            if 0 < market_cap < 500_000_000:
+                flags.append(
+                    f"SHORT RISK — MICRO-CAP: Market cap ${market_cap/1e6:.0f}M — borrow is "
+                    f"costly/unavailable and the name squeezes easily"
+                )
+
+            si = data.get("short_interest")
+            if si is not None:
+                try:
+                    si_pct = float(si)
+                    # Providers report either a fraction (0.23) or a percent (23).
+                    if si_pct <= 1:
+                        si_pct *= 100
+                    if si_pct > 20:
+                        flags.append(
+                            f"SHORT RISK — CROWDED SHORT: Short interest {si_pct:.0f}% of float "
+                            f"— squeeze risk, requires an explicit plan"
+                        )
+                except (TypeError, ValueError):
+                    pass
+
+            low_52 = float(data.get("fifty_two_week_low") or 0)
+            if price > 0 and low_52 > 0 and price <= low_52 * 1.15:
+                flags.append(
+                    f"SHORT RISK — LATE ENTRY: Price ${price:.2f} is within 15% of the 52-week "
+                    f"low ${low_52:.2f} — the decline may already be priced in"
+                )
+            return flags
 
         if 0 < market_cap < 500_000_000:
             flags.append(f"MICRO-CAP: Market cap ${market_cap/1e6:.0f}M is below $500M minimum threshold")
@@ -249,6 +337,7 @@ class FundamentalAnalystAgent:
     def _compute_ev_and_allocation(
         analysis: Dict[str, Any],
         price: float,
+        direction_bias: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Compute Expected Value and allocation recommendation from scenario analysis."""
         scenario = analysis.get("scenario_analysis") or {}
@@ -283,13 +372,27 @@ class FundamentalAnalystAgent:
         exclusions = analysis.get("hard_exclusions_triggered") or []
         confidence = float(analysis.get("confidence_score") or 0)
 
-        if auto_disq or [e for e in exclusions if not e.startswith("UNCERTAIN")]:
+        # Only a CONFIRMED exclusion blocks an allocation. An entry the analyst
+        # explicitly cleared, was unsure about, or logged as evidence for the
+        # short thesis is not a violation and must not zero the position.
+        _non_blocking = ("UNCERTAIN", "CLEARED", "SHORT-EVIDENCE", "SHORT RISK")
+        blocking = [
+            e for e in exclusions
+            if not str(e).upper().startswith(_non_blocking)
+        ]
+
+        # A short makes money when the price FALLS, so its expected value moves
+        # the other way. Score the short on the size of the expected decline —
+        # otherwise every short scores negative and lands in HOLD/0%.
+        ret_pct = None if ev_pct is None else (-ev_pct if direction_bias == "SHORT" else ev_pct)
+
+        if auto_disq or blocking:
             allocation, weight = "NONE", "0%"
-        elif ev_pct is not None and ev_pct >= 25 and confidence >= 75:
+        elif ret_pct is not None and ret_pct >= 25 and confidence >= 75:
             allocation, weight = "HIGH", "8-12%"
-        elif ev_pct is not None and ev_pct >= 15 and confidence >= 60:
+        elif ret_pct is not None and ret_pct >= 15 and confidence >= 60:
             allocation, weight = "MEDIUM", "4-7%"
-        elif ev_pct is not None and ev_pct >= 5 and confidence >= 40:
+        elif ret_pct is not None and ret_pct >= 5 and confidence >= 40:
             allocation, weight = "LOW", "2-3%"
         else:
             allocation, weight = "HOLD", "0%"
@@ -930,7 +1033,7 @@ CRITICAL RULES FOR JSON RESPONSE:
 
         # Compute Expected Value + Allocation recommendation from scenario analysis
         price = float(data.get("price") or 0)
-        analysis = self._compute_ev_and_allocation(analysis, price)
+        analysis = self._compute_ev_and_allocation(analysis, price, direction_bias)
 
         analysis["symbol"] = data["symbol"]
         analysis["direction_bias"] = direction_bias or "NEUTRAL"

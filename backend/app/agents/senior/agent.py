@@ -122,7 +122,11 @@ class SeniorCommitteeAgent:
             logger.warning("Claude LLM unavailable (missing API key), returning safe reject", symbol=raw_data["symbol"])
             return self._safe_reject(raw_data, "ANTHROPIC_API_KEY not configured")
 
-        system_content = SENIOR_SYSTEM_PROMPT + self._language_instruction(language)
+        system_content = (
+            SENIOR_SYSTEM_PROMPT
+            + self._short_side_override(direction_bias)
+            + self._language_instruction(language)
+        )
 
         try:
             response = await asyncio.get_event_loop().run_in_executor(
@@ -163,6 +167,46 @@ class SeniorCommitteeAgent:
     @staticmethod
     def _v(value: Any, default: Any = "N/A") -> Any:
         return value if value is not None else default
+
+    @staticmethod
+    def _short_side_override(direction_bias: Optional[str]) -> str:
+        """Re-orient the hard gates for a SHORT review.
+
+        The standing gates are written for the long book — they require the
+        expected value to sit ABOVE the current price and reject a large bear
+        case. For a short both are inverted: the thesis IS that the price
+        falls. Left unchanged, these gates reject every short automatically.
+        """
+        if direction_bias != "SHORT":
+            return ""
+        return """
+
+══════════════════════════════════════════════
+SHORT-SIDE OVERRIDE — SUPERSEDES THE HARD GATES ABOVE
+══════════════════════════════════════════════
+This review is for a SHORT candidate. A short profits when the price FALLS,
+so the following gates are REPLACED for this review:
+
+REPLACED — do not apply the long-side version:
+  • "Expected Value < current price → REJECT" becomes:
+    Probability-weighted EV must be at least 15% BELOW the current price.
+    An EV above the current price → REJECT the short.
+  • "Bear case downside > 50% with probability > 30% → REJECT" becomes:
+    A large, probable downside SUPPORTS the short. Instead reject when the
+    BULL case (upside) is larger than 30% with probability above 30% —
+    that is unbounded loss risk on a short.
+  • The analyst logging weak fundamentals (declining revenue, SELL consensus,
+    leverage, cash burn, litigation) as "SHORT-EVIDENCE:" entries is the
+    thesis being confirmed, NOT a hard exclusion. Do not reject for them.
+
+STILL IN FORCE for a short:
+  ✗ auto_disqualified=true → REJECT
+  ✗ No validated, dated negative catalyst → REJECT
+  ✗ Crowded short (>20% of float) with no squeeze plan → REJECT
+  ✗ Pending acquisition/takeover → REJECT
+  ✗ Stop-loss not defined ABOVE entry → REJECT
+
+final_recommendation must be SELL or STRONG_SELL to approve a short."""
 
     def _build_review_prompt(
         self,
