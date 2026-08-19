@@ -17,6 +17,7 @@ import {
   RiskProfile,
   TechnicalAnalysis,
   UniverseStats,
+  ScreenerStatus,
 } from "../types";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "";
@@ -441,6 +442,11 @@ export const marketApi = {
 
   runScreener: async (): Promise<any> => {
     const response = await api.post("/market/universe/screen");
+    return response.data;
+  },
+
+  getScreenerStatus: async (): Promise<ScreenerStatus> => {
+    const response = await api.get<ScreenerStatus>("/market/universe/screen-status");
     return response.data;
   },
 

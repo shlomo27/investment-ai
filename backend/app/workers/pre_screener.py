@@ -47,6 +47,13 @@ MAX_POOL        = 140  # ceiling so churn can't inflate the pool without bound
 _CHURN_KEY = "investment_ai:prescreener:churn"
 _CHURN_TTL = 60 * 60 * 24 * 8   # keep the last run's churn visible for a week
 
+# A full run downloads price history for ~900 symbols and takes minutes, far
+# longer than any HTTP request should hold open. The run is therefore started
+# in the background and its progress published here for the caller to poll.
+_STATUS_KEY = "investment_ai:prescreener:status"
+_STATUS_TTL = 60 * 60 * 24
+_STALE_RUN_SECONDS = 60 * 45   # a "running" flag older than this is a dead run
+
 
 @dataclass
 class StockMetrics:
@@ -265,6 +272,51 @@ async def _save_churn(churn: dict) -> None:
         logger.debug(f"[pre_screener] churn save failed: {exc}")
 
 
+async def _set_status(**fields) -> None:
+    """Merge fields into the published run status (best-effort)."""
+    try:
+        import redis.asyncio as aioredis
+        from app.core.config import settings
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        try:
+            raw = await r.get(_STATUS_KEY)
+            state = json.loads(raw) if raw else {}
+            state.update(fields)
+            await r.set(_STATUS_KEY, json.dumps(state), ex=_STATUS_TTL)
+        finally:
+            await r.aclose()
+    except Exception as exc:
+        logger.debug(f"[pre_screener] status write failed: {exc}")
+
+
+async def get_status() -> dict:
+    """Current/last run status. A run whose heartbeat went stale is reported
+    as failed rather than blocking the next run forever."""
+    default = {"running": False, "phase": None, "started_at": None,
+               "finished_at": None, "error": None, "result": None}
+    try:
+        import redis.asyncio as aioredis
+        from app.core.config import settings
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        try:
+            raw = await r.get(_STATUS_KEY)
+        finally:
+            await r.aclose()
+        if not raw:
+            return default
+        state = {**default, **json.loads(raw)}
+        if state.get("running") and state.get("started_at"):
+            started = datetime.fromisoformat(state["started_at"])
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - started).total_seconds() > _STALE_RUN_SECONDS:
+                state["running"] = False
+                state["error"] = "ההרצה נקטעה — לא הסתיימה בזמן סביר"
+        return state
+    except Exception:
+        return default
+
+
 async def get_last_churn() -> Optional[dict]:
     """Read the last recorded pool churn (None if the screener hasn't run)."""
     try:
@@ -301,10 +353,16 @@ async def run_pre_screener(db) -> dict:
         chunk = all_symbols[i: i + DOWNLOAD_CHUNK]
         chunk_data = await loop.run_in_executor(None, _download_chunk, chunk)
         all_data.update(chunk_data)
-        logger.info(f"[pre_screener] downloaded {min(i+DOWNLOAD_CHUNK, len(all_symbols))}/{len(all_symbols)}")
+        done = min(i + DOWNLOAD_CHUNK, len(all_symbols))
+        logger.info(f"[pre_screener] downloaded {done}/{len(all_symbols)}")
+        await _set_status(
+            phase=f"מוריד נתוני מחיר {done}/{len(all_symbols)}",
+            downloaded=done, universe_size=len(all_symbols),
+        )
         await asyncio.sleep(3)
 
     logger.info(f"[pre_screener] {len(all_data)}/{len(all_symbols)} symbols have data — computing metrics")
+    await _set_status(phase="מחשב ציוני מומנטום")
     metrics = []
     for sym in all_symbols:
         if sym in all_data:
@@ -352,6 +410,7 @@ async def run_pre_screener(db) -> dict:
     if top:
         logger.info(f"[pre_screener] top {len(top)} | score range {top[-1].score:.1f}–{top[0].score:.1f}")
 
+    await _set_status(phase="מעדכן את המאגר")
     churn = await _update_db(db, ranked, all_symbols)
     await db.commit()
 
@@ -377,3 +436,34 @@ async def run_pre_screener(db) -> dict:
         "held_sticky":    len(churn["held_sticky"]),
         "pool_size":      churn["pool_size"],
     }
+
+
+async def run_pre_screener_background() -> None:
+    """Run the screener on its own session and publish progress.
+
+    A full run takes minutes — far longer than an HTTP request can be held
+    open — so the API starts this as a background task and the caller polls
+    get_status(). Owns its own DB session because the request that started it
+    is long gone by the time this finishes.
+    """
+    from app.core.database import AsyncSessionLocal
+
+    await _set_status(
+        running=True, phase="מתחיל", error=None, result=None,
+        started_at=datetime.now(timezone.utc).isoformat(), finished_at=None,
+        downloaded=None,
+    )
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await run_pre_screener(db)
+        await _set_status(
+            running=False, phase="הושלם", result=result, error=None,
+            finished_at=datetime.now(timezone.utc).isoformat(),
+        )
+        logger.info(f"[pre_screener] background run complete: {result}")
+    except Exception as exc:
+        logger.exception("[pre_screener] background run failed")
+        await _set_status(
+            running=False, phase=None, error=f"{type(exc).__name__}: {exc}",
+            finished_at=datetime.now(timezone.utc).isoformat(),
+        )

@@ -478,6 +478,26 @@ export interface Recommendation {
   presented_at?: string;
 }
 
+export interface ScreenerStatus {
+  running: boolean;
+  phase?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error?: string | null;
+  downloaded?: number | null;
+  universe_size?: number | null;
+  result?: {
+    universe_size?: number;
+    data_fetched?: number;
+    passed_filter?: number;
+    selected?: number;
+    entered?: number;
+    exited?: number;
+    held_sticky?: number;
+    pool_size?: number;
+  } | null;
+}
+
 export interface UniverseStats {
   universe_total: number;
   seeded_pool: number;

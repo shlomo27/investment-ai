@@ -297,19 +297,15 @@ async def job_load_universe():
 
 
 async def job_run_prescreener():
-    """Daily 08:00 IL — score universe, activate top 80 LONG + 20 SHORT."""
-    from app.core.database import AsyncSessionLocal
-    from app.workers.pre_screener import run_pre_screener
+    """Daily 08:00 IL — score universe, activate top 80 LONG + 20 SHORT.
+
+    Shares run_pre_screener_background with the manual trigger so the daily
+    run publishes the same status the dashboard polls — a scheduled failure
+    is then visible instead of only landing in the logs.
+    """
+    from app.workers.pre_screener import run_pre_screener_background
     logger.info("[scheduler] pre_screener started")
-    try:
-        # No explicit transaction wrapper: run_pre_screener manages its own
-        # commits so the session doesn't idle in a transaction during the
-        # minutes-long download phase.
-        async with AsyncSessionLocal() as db:
-            result = await run_pre_screener(db)
-        logger.info(f"[scheduler] pre_screener done: {result}")
-    except Exception as exc:
-        logger.error(f"[scheduler] pre_screener failed: {exc}")
+    await run_pre_screener_background()
 
 
 async def job_run_full_scan():

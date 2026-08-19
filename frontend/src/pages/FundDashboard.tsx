@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { fetchPortfolioSummary, fetchPortfolioRisk } from "../store/slices/portfolioSlice";
 import { fetchRecommendations } from "../store/slices/notificationsSlice";
 import { marketApi } from "../api/client";
-import { UniverseStats, RecommendationType } from "../types";
+import { UniverseStats, ScreenerStatus, RecommendationType } from "../types";
 import PerformanceDashboard from "../components/Performance/PerformanceDashboard";
 import EarningsCalendar from "../components/EarningsCalendar";
 import SectorDashboard from "../components/SectorDashboard";
@@ -22,6 +22,8 @@ const FundDashboard: React.FC = () => {
   const [universeStats, setUniverseStats] = useState<UniverseStats | null>(null);
   const [screenerRunning, setScreenerRunning] = useState(false);
   const [screenerResult, setScreenerResult] = useState<any>(null);
+  const [screenerStatus, setScreenerStatus] = useState<ScreenerStatus | null>(null);
+  const screenerWasRunning = useRef(false);
   const [universeLoading, setUniverseLoading] = useState(false);
   const [universeResult, setUniverseResult] = useState<any>(null);
   const [scanRunning, setScanRunning] = useState(false);
@@ -82,12 +84,37 @@ const FundDashboard: React.FC = () => {
     loadUniverseStats();
     loadEarningsStatus();
     loadPaperStatus();
+    loadScreenerStatus();
   }, [dispatch]);
+
+  // The screener runs for minutes in the background. Poll while it is running
+  // so the panel shows live progress instead of an unexplained failure.
+  useEffect(() => {
+    if (!screenerStatus?.running) return;
+    const id = setInterval(loadScreenerStatus, 5000);
+    return () => clearInterval(id);
+  }, [screenerStatus?.running]);
 
   const loadUniverseStats = async () => {
     try {
       const stats = await marketApi.getUniverseStats();
       setUniverseStats(stats);
+    } catch {}
+  };
+
+  const loadScreenerStatus = async () => {
+    try {
+      const status = await marketApi.getScreenerStatus();
+      setScreenerStatus(status);
+      setScreenerRunning(status.running);
+      if (!status.running) {
+        if (status.error) setScreenerResult({ error: status.error });
+        else if (status.result) setScreenerResult(status.result);
+        // Only refresh the pool numbers on the run→done transition, so the
+        // idle poll doesn't refetch stats on every mount.
+        if (screenerWasRunning.current) await loadUniverseStats();
+      }
+      screenerWasRunning.current = status.running;
     } catch {}
   };
 
@@ -131,16 +158,27 @@ const FundDashboard: React.FC = () => {
   };
 
   const handleRunScreener = async () => {
-    setScreenerRunning(true);
     setScreenerResult(null);
     try {
-      const result = await marketApi.runScreener();
-      setScreenerResult(result);
-      await loadUniverseStats();
+      // Returns immediately — the run itself happens in the background and is
+      // followed via loadScreenerStatus polling.
+      const res = await marketApi.runScreener();
+      if (res?.started || res?.already_running) {
+        setScreenerRunning(true);
+        screenerWasRunning.current = true;
+        setScreenerStatus({ running: true, phase: res.phase || "מתחיל" });
+      } else {
+        setScreenerResult({ error: res?.message || "ההרצה לא התחילה" });
+      }
     } catch (e: any) {
-      setScreenerResult({ error: e?.response?.data?.detail || "Failed" });
+      setScreenerResult({
+        error:
+          e?.response?.data?.detail ||
+          (e?.code === "ECONNABORTED"
+            ? "הבקשה עברה את זמן ההמתנה"
+            : e?.message || "ההרצה נכשלה"),
+      });
     }
-    setScreenerRunning(false);
   };
 
   const handleLoadUniverse = async () => {
@@ -410,6 +448,34 @@ const FundDashboard: React.FC = () => {
               {screenerRunning ? (isHe ? "מריץ..." : "Running...") : (isHe ? "הרץ עכשיו" : "Run Now")}
             </button>
           </div>
+
+          {screenerStatus?.running && (
+            <div className="mb-4 p-3 rounded-xl bg-blue-900/20 border border-blue-900/40">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                <p className="text-xs text-blue-300">
+                  {screenerStatus.phase || (isHe ? "רץ..." : "Running...")}
+                </p>
+              </div>
+              {screenerStatus.downloaded != null && screenerStatus.universe_size ? (
+                <div className="mt-2 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 transition-all"
+                    style={{
+                      width: `${Math.round(
+                        (screenerStatus.downloaded / screenerStatus.universe_size) * 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+              ) : null}
+              <p className="text-xs text-gray-500 mt-2">
+                {isHe
+                  ? "ההרצה לוקחת כמה דקות ורצה בשרת — אפשר לעזוב את הדף ולחזור."
+                  : "The run takes a few minutes on the server — you can leave the page and come back."}
+              </p>
+            </div>
+          )}
           <p className="text-xs text-gray-400 mb-4">
             {isHe
               ? "מדרג כל בוקר את כל ~900 מניות היקום לפי מומנטום (50% מומנטום 3 חודשים, 30% מומנטום 6 חודשים, 20% נפח) ובוחר את המאגר הפעיל: 80 החזקות ביותר ללונג + 20 החלשות ביותר לשורט. מניה שנכנסה למאגר נשארת בו לפחות שבוע — כך היא מובטחת להיכלל בסריקה השבועית המעמיקה ולא נופלת בין הכיסאות."

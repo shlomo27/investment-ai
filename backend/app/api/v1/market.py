@@ -345,12 +345,40 @@ async def load_universe_endpoint(
 @router.post("/universe/screen")
 async def run_screener_endpoint(
     current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
 ):
-    """Run the pre-screener now: scores universe, activates top LONG/SHORT candidates."""
-    from app.workers.pre_screener import run_pre_screener
-    result = await run_pre_screener(db)
-    return result
+    """Start the pre-screener in the background.
+
+    Scoring ~900 symbols means downloading months of price history for each,
+    which takes minutes — far past any HTTP client timeout. The run is started
+    detached and its progress is polled via /universe/screen-status.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    import asyncio
+    from app.workers.pre_screener import get_status, run_pre_screener_background
+
+    status = await get_status()
+    if status.get("running"):
+        return {
+            "started": False,
+            "already_running": True,
+            "phase": status.get("phase"),
+            "message": "הסקרינר כבר רץ ברקע",
+        }
+
+    asyncio.create_task(run_pre_screener_background())
+    return {
+        "started": True,
+        "message": "הסקרינר רץ ברקע — ההתקדמות מתעדכנת כאן. זה לוקח כמה דקות.",
+    }
+
+
+@router.get("/universe/screen-status")
+async def screener_status(current_user: User = Depends(get_current_active_user)):
+    """Progress of the current (or last) pre-screener run."""
+    from app.workers.pre_screener import get_status
+    return await get_status()
 
 
 # ─── Redis-backed scan state ──────────────────────────────────────────────────
