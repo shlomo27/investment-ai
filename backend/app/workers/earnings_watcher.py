@@ -202,7 +202,9 @@ async def job_earnings_queue_check() -> dict:
         # Load universe candidates (skip recently analyzed in last 70 days)
         cutoff_analyzed = today - timedelta(days=70)
         async with AsyncSessionLocal() as db:
-            rows = await db.execute(select(Asset.symbol, Asset.last_analyzed_at))
+            rows = await db.execute(
+                select(Asset.symbol, Asset.last_analyzed_at).where(Asset.in_universe == True)
+            )
             universe_map = {r[0]: r[1] for r in rows.all()}
 
         candidates: set = set()

@@ -263,18 +263,25 @@ def _infer_exchange(symbol: str) -> Exchange:
 
 async def load_universe(db: AsyncSession) -> dict:
     """
-    Load S&P 500 + S&P 400 + TA-125 into universe.
+    Load S&P 500 + S&P 400 into the universe (US-only).
+
+    TA-125 is deliberately excluded for now: Israeli tickers get materially
+    thinner coverage from our data providers (Yahoo/Finnhub/FMP) and are
+    skipped by the X-sentiment and ex-dividend paths, so they were being
+    analyzed on partial data. Better a smaller universe analyzed properly.
+    Israeli/other markets return once they have a dedicated data source.
+
     New symbols are inserted; existing ones get in_universe=True updated.
     Runs blocking I/O in thread pool to avoid blocking the async event loop.
     Returns {inserted, updated, skipped, tase_added, total}.
     """
-    stocks_500, stocks_400, tase_stocks = await asyncio.gather(
+    stocks_500, stocks_400 = await asyncio.gather(
         asyncio.to_thread(_fetch_sp500),
         asyncio.to_thread(_fetch_sp400),
-        asyncio.to_thread(_build_ta125_list),
     )
+    tase_stocks: list[dict] = []   # TA-125 excluded — see docstring
     us_stocks = stocks_500 + stocks_400
-    logger.info(f"[universe] S&P 500+400: {len(us_stocks)}, TA-125: {len(tase_stocks)} stocks")
+    logger.info(f"[universe] S&P 500+400: {len(us_stocks)} stocks (TA-125 excluded)")
 
     existing_result = await db.execute(select(Asset.symbol, Asset.in_universe))
     existing = {row[0]: row[1] for row in existing_result.fetchall()}
@@ -342,7 +349,9 @@ async def load_universe(db: AsyncSession) -> dict:
     # the pool. Only runs when both fetches look complete, so a partial Wikipedia
     # failure never mass-deactivates the universe.
     deactivated = 0
-    if len(us_stocks) >= 700 and len(tase_stocks) >= 30:
+    # Retires anything no longer in the index lists — which now also sweeps out
+    # the previously-loaded TA-125 symbols on the next run.
+    if len(us_stocks) >= 700:
         result = await db.execute(
             update(Asset)
             .where(Asset.in_universe == True, Asset.symbol.not_in(list(all_symbols)))

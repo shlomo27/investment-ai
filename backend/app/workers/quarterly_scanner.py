@@ -63,7 +63,9 @@ async def trigger_quarterly_scan(quarter: str) -> dict:
             return {"started": False, "total": 0, "quarter": existing}
 
         async with AsyncSessionLocal() as db:
-            rows = await db.execute(select(Asset.symbol))
+            # Only the ACTIVE universe — retired symbols (delisted, or markets
+            # we've dropped) must not consume sweep budget.
+            rows = await db.execute(select(Asset.symbol).where(Asset.in_universe == True))
             symbols = [r[0] for r in rows.all()]
 
         if not symbols:
@@ -161,7 +163,7 @@ async def requeue_unanalyzed_reporters() -> dict:
             last_real = {r[0]: r[1] for r in rows.all()}
             # Only symbols we actually track can be analyzed
             known = {r[0] for r in (await db.execute(
-                select(Asset.symbol).where(Asset.symbol.in_(syms))
+                select(Asset.symbol).where(Asset.symbol.in_(syms), Asset.in_universe == True)
             )).all()}
 
         needs = []
