@@ -483,6 +483,12 @@ export interface UniverseStats {
   seeded_pool: number;
   active_pool: number;
   top_candidates: Array<{ symbol: string; score: number }>;
+  pool_changes?: {
+    ran_at?: string | null;
+    entered: string[];
+    exited: string[];
+    held_sticky: number;
+  };
 }
 
 export interface Notification {

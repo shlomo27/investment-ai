@@ -412,9 +412,61 @@ const FundDashboard: React.FC = () => {
           </div>
           <p className="text-xs text-gray-400 mb-4">
             {isHe
-              ? "מדרג כל בוקר את כל ~900 מניות היקום לפי מומנטום (50% מומנטום 3 חודשים, 30% מומנטום 6 חודשים, 20% נפח) ובוחר את המאגר הפעיל: 80 החזקות ביותר ללונג + 20 החלשות ביותר לשורט. הניתוח הטכני והסריקה השבועית עובדים על המאגר הזה."
-              : "Ranks all ~900 universe stocks every morning by momentum (50% 3-month, 30% 6-month, 20% volume) and selects the active pool: top 80 for LONG + weakest 20 for SHORT. The TA scanner and weekly scan work on this pool."}
+              ? "מדרג כל בוקר את כל ~900 מניות היקום לפי מומנטום (50% מומנטום 3 חודשים, 30% מומנטום 6 חודשים, 20% נפח) ובוחר את המאגר הפעיל: 80 החזקות ביותר ללונג + 20 החלשות ביותר לשורט. מניה שנכנסה למאגר נשארת בו לפחות שבוע — כך היא מובטחת להיכלל בסריקה השבועית המעמיקה ולא נופלת בין הכיסאות."
+              : "Ranks all ~900 universe stocks every morning by momentum (50% 3-month, 30% 6-month, 20% volume) and selects the active pool: top 80 for LONG + weakest 20 for SHORT. A stock that enters the pool is held for at least a week, so it is guaranteed to be covered by the weekly deep scan."}
           </p>
+
+          {universeStats?.pool_changes?.ran_at && (
+            <div className="mb-4 bg-gray-800/50 rounded-xl p-3 space-y-2">
+              <p className="text-xs text-gray-500 uppercase tracking-wide">
+                {isHe ? "שינויים בהרצה האחרונה" : "Last run changes"}
+                {" · "}
+                {new Date(universeStats.pool_changes.ran_at).toLocaleString(isHe ? "he-IL" : "en-US")}
+              </p>
+
+              <div>
+                <p className="text-xs text-green-400 mb-1">
+                  {isHe ? "נכנסו" : "Entered"} ({universeStats.pool_changes.entered.length})
+                </p>
+                {universeStats.pool_changes.entered.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {universeStats.pool_changes.entered.map((s) => (
+                      <span key={s} className="font-mono text-xs bg-green-900/25 text-green-300 rounded px-1.5 py-0.5">
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-600">{isHe ? "אין" : "None"}</p>
+                )}
+              </div>
+
+              <div>
+                <p className="text-xs text-red-400 mb-1">
+                  {isHe ? "יצאו" : "Exited"} ({universeStats.pool_changes.exited.length})
+                </p>
+                {universeStats.pool_changes.exited.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {universeStats.pool_changes.exited.map((s) => (
+                      <span key={s} className="font-mono text-xs bg-red-900/25 text-red-300 rounded px-1.5 py-0.5">
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-600">{isHe ? "אין" : "None"}</p>
+                )}
+              </div>
+
+              {universeStats.pool_changes.held_sticky > 0 && (
+                <p className="text-xs text-gray-500">
+                  {isHe
+                    ? `${universeStats.pool_changes.held_sticky} מניות ירדו מהדירוג אך מוחזקות במאגר עד שיושלם עליהן ניתוח מעמיק`
+                    : `${universeStats.pool_changes.held_sticky} stocks dropped out of the ranking but are held until their deep analysis completes`}
+                </p>
+              )}
+            </div>
+          )}
 
           {universeStats && universeStats.top_candidates?.length > 0 ? (
             <div className="space-y-2 mb-4">
@@ -452,8 +504,12 @@ const FundDashboard: React.FC = () => {
             <div className={`p-3 rounded-xl text-xs ${screenerResult.error ? "bg-red-900/20 text-red-400" : "bg-blue-900/20 text-blue-300"}`}>
               {screenerResult.error ? screenerResult.error : (
                 <span>
-                  {isHe ? "דורגו" : "Scored"} {screenerResult.scored} |{" "}
-                  <span className="text-blue-300">{isHe ? "נבחרו לסריקה" : "Selected for scan"}: {screenerResult.activated}</span>
+                  {isHe ? "דורגו" : "Scored"} {screenerResult.passed_filter ?? 0} |{" "}
+                  <span className="text-blue-300">
+                    {isHe ? "במאגר" : "In pool"}: {screenerResult.pool_size ?? screenerResult.selected ?? 0}
+                  </span>{" "}
+                  | <span className="text-green-400">+{screenerResult.entered ?? 0}</span>{" "}
+                  <span className="text-red-400">−{screenerResult.exited ?? 0}</span>
                 </span>
               )}
             </div>

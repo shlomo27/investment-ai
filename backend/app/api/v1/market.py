@@ -540,6 +540,9 @@ async def universe_stats(
         .limit(20)
     )
 
+    from app.workers.pre_screener import get_last_churn
+    churn = await get_last_churn() or {}
+
     return {
         "universe_total": total_universe.scalar(),
         "seeded_pool": seeded.scalar(),
@@ -548,6 +551,12 @@ async def universe_stats(
             {"symbol": r[0], "score": round(r[1], 1)}
             for r in top_result.fetchall()
         ],
+        "pool_changes": {
+            "ran_at":      churn.get("ran_at"),
+            "entered":     churn.get("entered", []),
+            "exited":      churn.get("exited", []),
+            "held_sticky": len(churn.get("held_sticky", [])),
+        },
     }
 
 
