@@ -245,6 +245,23 @@ async def _run_news_watch() -> dict:
     except Exception as e:
         logger.warning(f"[news_watcher] social-buzz pass failed: {e}")
 
+    # Warn once a day if the Grok search cap was hit — otherwise a runaway
+    # loop only shows up as a surprise credit charge.
+    try:
+        from app.services.market_data.sentiment_service import (
+            grok_calls_today, grok_limit_reached,
+        )
+        if await grok_limit_reached() and not await redis_client.get("investment_ai:grok_cap_alert"):
+            await redis_client.set("investment_ai:grok_cap_alert", "1", ex=20 * 3600)
+            from app.services.notifications.telegram_service import get_telegram_service
+            used = await grok_calls_today()
+            await get_telegram_service().send_admin_alert(
+                f"⚠️ <b>תקרת Grok יומית</b>\nבוצעו {used} חיפושי X בתשלום היום — "
+                f"המערכת מפסיקה לקרוא ל-Grok עד מחר. ניתוח המניות ממשיך כרגיל בלי נתוני X."
+            )
+    except Exception as e:
+        logger.debug(f"[news_watcher] grok cap check failed: {e}")
+
     await redis_client.aclose()
     return {"symbols_checked": len(symbols), "symbols_alerted": symbols_alerted,
             "buzz_alerts": buzz_alerts}
@@ -280,21 +297,25 @@ async def _social_buzz_pass(redis_client, notifier) -> int:
         if symbol.endswith(".TA"):
             continue  # Grok X search is US-focused
         try:
+            last_key = f"investment_ai:buzz_last:{symbol}"
+            cd_key = f"investment_ai:buzz_alert:{symbol}"
+            # Check the cooldown BEFORE asking Grok. A symbol still inside its
+            # 4h window cannot produce an alert whatever the answer is, so
+            # paying for the search would buy nothing.
+            if await redis_client.get(cd_key):
+                continue
+
             x = await svc._get_grok_x_sentiment(symbol)
             posts = int(x.get("count", 0) or 0)
             score = float(x.get("score", 0.0) or 0.0)
             if posts < 15 or abs(score) < 0.4:
                 continue  # not a strong buzz
 
-            # Spike + cooldown: only alert if this run's post count is a clear
-            # jump over the last seen, and not within the 4h cooldown.
-            last_key = f"investment_ai:buzz_last:{symbol}"
-            cd_key = f"investment_ai:buzz_alert:{symbol}"
+            # Spike check: only alert when this run's post count is a clear
+            # jump over the last seen.
             last_raw = await redis_client.get(last_key)
             last_posts = int(last_raw) if last_raw else 0
             await redis_client.set(last_key, posts, ex=24 * 3600)
-            if await redis_client.get(cd_key):
-                continue
             if last_posts and posts < last_posts * 1.5:
                 continue  # buzz didn't meaningfully grow — not a fresh spike
             await redis_client.set(cd_key, "1", ex=4 * 3600)

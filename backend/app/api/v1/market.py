@@ -685,11 +685,18 @@ async def _probe_grok(sym: str) -> dict:
         return {"ok": False, "detail": f"call raised: {str(e)[:140]}"}
     if res.get("error"):
         return {"ok": False, "detail": f"model='{settings.XAI_MODEL}' → {res['error']}"}
+    from app.services.market_data.sentiment_service import grok_calls_today
+    used = await grok_calls_today()
+    limit = getattr(settings, "DAILY_GROK_CALL_LIMIT", 0)
+    spend = f" | חיפושים בתשלום היום: {used}" + (f"/{limit}" if limit else "")
     cnt = res.get("count", 0)
     return {
         "ok": cnt > 0,
+        "grok_calls_today": used,
+        "grok_call_limit": limit,
         "detail": (f"model='{settings.XAI_MODEL}', posts={cnt}, score={res.get('score')}"
-                   if cnt else f"model='{settings.XAI_MODEL}' returned 0 posts (no X activity or search off)"),
+                   if cnt else f"model='{settings.XAI_MODEL}' returned 0 posts (no X activity or search off)")
+                  + (" (מהמטמון)" if res.get("cached") else "") + spend,
     }
 
 

@@ -97,6 +97,12 @@ class Settings(BaseSettings):
     DAILY_CLAUDE_BUDGET_USD: float = 0.0   # 0 = disabled; when >0, scans stop for the day once hit
     EST_COST_PER_FULL_ANALYSIS_USD: float = 0.20  # Claude+GPT+Grok per one full stock analysis
 
+    # Grok x_search is billed per live search, so an uncached loop over held
+    # symbols every 30 min drains credits fast. Results are cached for
+    # GROK_CACHE_TTL_MIN and the day is hard-capped at DAILY_GROK_CALL_LIMIT.
+    GROK_CACHE_TTL_MIN: int = 360          # 6h — X sentiment doesn't turn over faster
+    DAILY_GROK_CALL_LIMIT: int = 250       # 0 = disabled
+
     # Twilio (SMS)
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""

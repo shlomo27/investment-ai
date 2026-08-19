@@ -30,6 +30,54 @@ BEARISH_WORDS = {
 }
 
 
+# ─── Grok spend controls ─────────────────────────────────────────────────────
+# xAI bills x_search per live search, and the watcher jobs ask about the same
+# symbols every 30 minutes. Without a cache that is ~48 paid searches per symbol
+# per day for information that barely changes; with one it is ~4.
+_GROK_CACHE_KEY = "investment_ai:grok_x:"        # + symbol
+_GROK_COUNT_KEY = "investment_ai:grok_calls:"    # + YYYY-MM-DD
+_GROK_COUNT_TTL = 60 * 60 * 30
+
+
+async def _grok_redis():
+    import redis.asyncio as aioredis
+    return aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+
+
+async def grok_calls_today() -> int:
+    """How many paid Grok searches were made today."""
+    try:
+        r = await _grok_redis()
+        try:
+            val = await r.get(_GROK_COUNT_KEY + datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+        finally:
+            await r.aclose()
+        return int(val or 0)
+    except Exception:
+        return 0
+
+
+async def grok_limit_reached() -> bool:
+    limit = int(getattr(settings, "DAILY_GROK_CALL_LIMIT", 0) or 0)
+    if limit <= 0:
+        return False
+    return await grok_calls_today() >= limit
+
+
+async def _grok_record_call() -> int:
+    try:
+        r = await _grok_redis()
+        try:
+            key = _GROK_COUNT_KEY + datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            n = await r.incr(key)
+            await r.expire(key, _GROK_COUNT_TTL)
+            return int(n)
+        finally:
+            await r.aclose()
+    except Exception:
+        return 0
+
+
 def _score_text(text: str) -> float:
     """Simple keyword-based sentiment scoring."""
     text_lower = text.lower()
@@ -205,6 +253,30 @@ class SentimentService:
             return empty
         if symbol.endswith(".TA"):
             return empty
+
+        # Serve from cache before spending a search. Callers run every 30 min on
+        # the same symbols; X sentiment does not turn over that fast.
+        cache_key = _GROK_CACHE_KEY + symbol
+        try:
+            r = await _grok_redis()
+            try:
+                cached = await r.get(cache_key)
+            finally:
+                await r.aclose()
+            if cached:
+                data = json.loads(cached)
+                data["cached"] = True
+                return data
+        except Exception:
+            pass
+
+        if await grok_limit_reached():
+            logger.warning(
+                "Grok daily call limit reached — skipping X sentiment",
+                symbol=symbol, limit=settings.DAILY_GROK_CALL_LIMIT,
+            )
+            return {**empty, "error": "daily Grok call limit reached"}
+
         model = re.sub(r"[^A-Za-z0-9._\-/]", "", settings.XAI_MODEL or "") or "grok-4-fast"
         from_date = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%d")
         prompt = (
@@ -216,6 +288,7 @@ class SentimentService:
             '"summary": "<one concise sentence>", '
             '"themes": ["<short theme>", "<short theme>"]}'
         )
+        await _grok_record_call()
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(45.0)) as client:
                 # New Agent Tools API (/v1/responses) — the old search_parameters
@@ -252,12 +325,22 @@ class SentimentService:
             summary = str(data.get("summary", ""))[:200]
             themes = [str(t)[:40] for t in (data.get("themes") or [])][:5]
             posts = [{"platform": "x_grok", "text": summary, "score": score}] if summary else []
-            return {
+            result = {
                 "score": round(max(-1.0, min(1.0, score)), 4),
                 "count": count,
                 "posts": posts,
                 "themes": themes,
             }
+            try:
+                ttl = max(60, int(getattr(settings, "GROK_CACHE_TTL_MIN", 360)) * 60)
+                r = await _grok_redis()
+                try:
+                    await r.set(cache_key, json.dumps(result), ex=ttl)
+                finally:
+                    await r.aclose()
+            except Exception:
+                pass
+            return result
         except Exception as e:
             logger.debug("Grok X sentiment failed", symbol=symbol, error=str(e))
             return {**empty, "error": str(e)[:120]}
