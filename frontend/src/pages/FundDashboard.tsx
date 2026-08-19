@@ -198,6 +198,9 @@ const FundDashboard: React.FC = () => {
 
   const fmtPct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
 
+  // Still used by the holdings table further down this screen.
+  const positions = summary?.positions || [];
+
   // Compute approved recommendation breakdown
   // ACTIONED = the user marked it as bought at their broker — the
   // recommendation is still live and must count in the signal summary.
@@ -287,9 +290,9 @@ const FundDashboard: React.FC = () => {
         </div>
         <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
           <p className="text-xs text-gray-400 mb-1">{isHe ? "מניות ביקום" : "Universe"}</p>
-          <p className="text-2xl font-bold">{universeStats?.total_assets ?? "—"}</p>
+          <p className="text-2xl font-bold">{universeStats?.universe_total ?? "—"}</p>
           <p className="text-xs text-gray-500">
-            {universeStats?.active_in_pool ?? "—"} {isHe ? "במאגר הסריקה" : "in scan pool"}
+            {universeStats?.active_pool ?? "—"} {isHe ? "במאגר הסריקה" : "in scan pool"}
           </p>
         </div>
         <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
