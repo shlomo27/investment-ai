@@ -91,6 +91,30 @@ const RecommendationCard: React.FC<Props> = ({
               return null;
             })()}
             {(() => {
+              // Risk transparency: short positions and high-volatility stocks
+              // carry materially different risk — always label them, whatever
+              // the user's display filters are.
+              const rl = (rec.risk_level || "").toUpperCase();
+              const volatile = rl === "HIGH" || rl === "VERY_HIGH";
+              if (!isSell && !volatile) return null;
+              return (
+                <>
+                  {isSell && (
+                    <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-red-950/60 text-red-300 border border-red-800/50"
+                          title={isHe ? "הימור על ירידת מחיר — הפסד אפשרי בלתי מוגבל" : "Betting on a decline — unlimited downside"}>
+                      📉 {isHe ? "פוזיציית שורט" : "Short position"}
+                    </span>
+                  )}
+                  {volatile && (
+                    <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-orange-950/60 text-orange-300 border border-orange-800/50"
+                          title={isHe ? "תנודות מחיר חדות — סיכון גבוה מהממוצע" : "Sharp price swings — above-average risk"}>
+                      ⚡ {isHe ? "תנודתיות גבוהה" : "High volatility"}
+                    </span>
+                  )}
+                </>
+              );
+            })()}
+            {(() => {
               if (!approvedAt) return null;
               const ageDays = Math.floor((Date.now() - new Date(approvedAt).getTime()) / 86400000);
               if (ageDays < 3) {

@@ -6,7 +6,6 @@ import { fetchRecommendations } from "../store/slices/notificationsSlice";
 import { marketApi } from "../api/client";
 import { UniverseStats, RecommendationType } from "../types";
 import PerformanceDashboard from "../components/Performance/PerformanceDashboard";
-import RiskProfileModal from "../components/RiskProfileModal";
 import EarningsCalendar from "../components/EarningsCalendar";
 import SectorDashboard from "../components/SectorDashboard";
 import StockComparison from "../components/StockComparison";
@@ -66,8 +65,6 @@ const FundDashboard: React.FC = () => {
 
   // Dashboard tab state
   const [activeTab, setActiveTab] = useState<"fund" | "performance" | "sectors" | "earnings" | "compare">("fund");
-  const [showRiskModal, setShowRiskModal] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(user);
 
   // Paper trading state
   const [paperStatus, setPaperStatus] = useState<any>(null);
@@ -214,45 +211,15 @@ const FundDashboard: React.FC = () => {
     (r) => r.recommendation_type === RecommendationType.SELL || r.recommendation_type === RecommendationType.STRONG_SELL
   );
 
-  // Portfolio long vs short exposure from holdings
-  const positions = summary?.positions || [];
-  const longValue = positions.reduce((s, p) => s + p.current_value, 0);
-  const grossExposure = longValue; // currently only long positions tracked
-  const netExposure = longValue;
-
-  const totalPnl = summary?.total_pnl || 0;
-  const totalPnlPct = summary?.total_pnl_pct || 0;
-  const pnlPositive = totalPnl >= 0;
-
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
-      {showRiskModal && (
-        <RiskProfileModal
-          currentUser={currentUser}
-          isHebrew={isHe}
-          onClose={() => setShowRiskModal(false)}
-          onSaved={(updated) => setCurrentUser(updated)}
-        />
-      )}
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{isHe ? "לוח בקרה — התיק שלי" : "Portfolio Dashboard"}</h1>
+          <h1 className="text-2xl font-bold">{isHe ? "לוח ניהול מערכת" : "System Control Panel"}</h1>
           <p className="text-gray-400 text-sm mt-1">
-            {isHe ? "מעקב מקצועי אחר ההחזקות וההמלצות שלך" : "Professional view of your holdings & signals"}
+            {isHe ? "מצב הסריקות, המנועים וההמלצות" : "Scans, engines and signal status"}
           </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowRiskModal(true)}
-            className="text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg"
-          >
-            {isHe ? "פרופיל סיכון" : "Risk Profile"}
-          </button>
-          <Link to="/dashboard" className="text-sm text-gray-400 hover:text-gray-200">
-            {isHe ? "← דשבורד רגיל" : "← Standard Dashboard"}
-          </Link>
         </div>
       </div>
 
@@ -311,35 +278,40 @@ const FundDashboard: React.FC = () => {
       {/* Fund Operations Tab Content */}
       {activeTab === "fund" && (<>
 
-      {/* P&L + Exposure Summary */}
+      {/* Operational status — what an operator actually needs at a glance */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-          <p className="text-xs text-gray-400 mb-1">{isHe ? "שווי תיק" : "Portfolio NAV"}</p>
-          <p className="text-2xl font-bold">{fmt(summary?.total_value || 0)}</p>
-        </div>
-        <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-          <p className="text-xs text-gray-400 mb-1">{isHe ? "רווח/הפסד כולל" : "Total P&L"}</p>
-          <p className={`text-2xl font-bold ${pnlPositive ? "text-green-400" : "text-red-400"}`}>
-            {fmtPct(totalPnlPct)}
-          </p>
-          <p className={`text-sm ${pnlPositive ? "text-green-400" : "text-red-400"}`}>
-            {pnlPositive ? "+" : ""}{fmt(totalPnl)}
-          </p>
-        </div>
-        <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-          <p className="text-xs text-gray-400 mb-1">{isHe ? "חשיפה ברוטו (Long)" : "Gross Exposure (Long)"}</p>
-          <p className="text-2xl font-bold text-green-400">{fmt(grossExposure)}</p>
-          <p className="text-xs text-gray-500">{positions.length} {isHe ? "פוזיציות" : "positions"}</p>
-        </div>
         <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
           <p className="text-xs text-gray-400 mb-1">{isHe ? "המלצות פעילות" : "Active Signals"}</p>
           <p className="text-2xl font-bold text-blue-400">{approvedRecs.length}</p>
           <p className="text-xs text-gray-500">{isHe ? "בפיד הסיגנלים" : "in the signals feed"}</p>
         </div>
+        <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
+          <p className="text-xs text-gray-400 mb-1">{isHe ? "מניות ביקום" : "Universe"}</p>
+          <p className="text-2xl font-bold">{universeStats?.total_assets ?? "—"}</p>
+          <p className="text-xs text-gray-500">
+            {universeStats?.active_in_pool ?? "—"} {isHe ? "במאגר הסריקה" : "in scan pool"}
+          </p>
+        </div>
+        <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
+          <p className="text-xs text-gray-400 mb-1">{isHe ? "בתור לסריקה" : "Scan Queue"}</p>
+          <p className="text-2xl font-bold text-purple-300">{scanStatus?.remaining ?? "—"}</p>
+          <p className="text-xs text-gray-500">
+            {isHe ? "נותרו בסריקה הרבעונית" : "remaining this sweep"}
+          </p>
+        </div>
+        <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
+          <p className="text-xs text-gray-400 mb-1">{isHe ? "דוחות שנאספו" : "Earnings Collected"}</p>
+          <p className="text-2xl font-bold text-amber-300">{earningsStatus?.queue_count ?? "—"}</p>
+          <p className="text-xs text-gray-500">
+            {earningsStatus?.analyzed_count != null && earningsStatus?.companies?.length
+              ? `${earningsStatus.analyzed_count}/${earningsStatus.companies.length} ${isHe ? "נותחו" : "analyzed"}`
+              : (isHe ? "מחברות שדיווחו" : "from reporters")}
+          </p>
+        </div>
       </div>
 
       {/* AI Signal Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-gray-900 rounded-2xl p-5 border border-green-900/40">
           <div className="flex items-center gap-2 mb-3">
             <span className="w-2.5 h-2.5 bg-green-400 rounded-full" />
@@ -375,24 +347,6 @@ const FundDashboard: React.FC = () => {
               <span className="text-red-400">{r.confidence_score.toFixed(0)}%</span>
             </Link>
           ))}
-        </div>
-        <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-          <p className="text-xs text-gray-400 mb-3">{isHe ? "יחס Long/Short" : "L/S Ratio"}</p>
-          <p className="text-3xl font-bold text-white">
-            {shortRecs.length > 0 ? (longRecs.length / shortRecs.length).toFixed(1) : "—"}
-            <span className="text-base text-gray-400 ml-1">: 1</span>
-          </p>
-          <p className="text-xs text-gray-500 mt-1">{isHe ? "Long לכל Short" : "longs per short"}</p>
-          <div className="mt-3 flex gap-2">
-            <div className="flex-1 bg-green-900/30 rounded-lg p-2 text-center">
-              <p className="text-xs text-gray-400">Long</p>
-              <p className="font-bold text-green-400">{longRecs.length}</p>
-            </div>
-            <div className="flex-1 bg-red-900/30 rounded-lg p-2 text-center">
-              <p className="text-xs text-gray-400">Short</p>
-              <p className="font-bold text-red-400">{shortRecs.length}</p>
-            </div>
-          </div>
         </div>
       </div>
 

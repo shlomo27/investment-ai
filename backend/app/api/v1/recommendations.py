@@ -44,6 +44,7 @@ class RecommendationResponse(BaseModel):
     trigger_details: Optional[str] = None
     asset_name: Optional[str]
     sector: Optional[str]
+    risk_level: Optional[str] = None
     created_at: datetime
     approved_at: Optional[datetime]
     presented_at: Optional[datetime]
@@ -143,6 +144,7 @@ async def get_recommendations(
             trigger_type=rec.trigger_type,
             trigger_details=rec.trigger_details,
             asset_name=asset.name if asset else None,
+            risk_level=asset.risk_level.value if asset and asset.risk_level else None,
             sector=asset.sector if asset else None,
             created_at=rec.created_at,
             approved_at=rec.approved_at,
@@ -306,6 +308,7 @@ async def get_recommendation(
         trigger_type=rec.trigger_type,
         trigger_details=rec.trigger_details,
         asset_name=asset.name if asset else None,
+        risk_level=asset.risk_level.value if asset and asset.risk_level else None,
         sector=asset.sector if asset else None,
         created_at=rec.created_at,
         approved_at=rec.approved_at,

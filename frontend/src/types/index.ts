@@ -472,6 +472,7 @@ export interface Recommendation {
   trigger_details?: string;
   asset_name?: string;
   sector?: string;
+  risk_level?: string;
   created_at: string;
   approved_at?: string;
   presented_at?: string;
