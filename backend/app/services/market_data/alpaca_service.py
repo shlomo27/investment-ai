@@ -6,7 +6,7 @@ Alpaca Markets Service
   Set ALPACA_PAPER=true (default) for paper trading.
 """
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 import structlog
 import httpx
@@ -101,6 +101,70 @@ class AlpacaService:
         except Exception as e:
             logger.debug("Alpaca bars error", symbol=symbol, error=str(e))
             return None
+
+    async def get_bars_multi(
+        self, symbols: List[str], timeframe: str = "1Day", days: int = 200
+    ) -> Dict[str, List[Dict]]:
+        """Daily bars for MANY symbols per request → {symbol: [bars]}.
+
+        Alpaca's /v2/stocks/bars takes a symbol list, so a ~900-name universe
+        costs a handful of paginated requests instead of one per symbol. This
+        is the direct replacement for the bulk Yahoo download, which is
+        rate-limited to the point of returning nothing from cloud IPs.
+        """
+        headers = self._headers()
+        if not headers or not symbols:
+            return {}
+
+        start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+        out: Dict[str, List[Dict]] = {}
+        CHUNK = 200  # keep the query string well within limits
+
+        async with httpx.AsyncClient(timeout=45, headers=headers) as client:
+            for i in range(0, len(symbols), CHUNK):
+                batch = symbols[i: i + CHUNK]
+                page_token = None
+                while True:
+                    params = {
+                        "symbols": ",".join(batch),
+                        "timeframe": timeframe,
+                        "start": start,
+                        "limit": 10000,
+                        "adjustment": "split",
+                        "sort": "asc",
+                    }
+                    if page_token:
+                        params["page_token"] = page_token
+                    try:
+                        resp = await client.get(f"{DATA_BASE}/stocks/bars", params=params)
+                        if resp.status_code != 200:
+                            logger.warning(
+                                "Alpaca multi-bars non-200",
+                                status=resp.status_code, body=resp.text[:160],
+                            )
+                            break
+                        data = resp.json()
+                    except Exception as e:
+                        logger.warning("Alpaca multi-bars failed", error=str(e))
+                        break
+
+                    for sym, bars in (data.get("bars") or {}).items():
+                        out.setdefault(sym, []).extend(
+                            {
+                                "date":   b["t"][:10],
+                                "open":   b["o"], "high": b["h"],
+                                "low":    b["l"], "close": b["c"],
+                                "volume": b["v"],
+                            }
+                            for b in bars
+                        )
+
+                    page_token = data.get("next_page_token")
+                    if not page_token:
+                        break
+
+        logger.info(f"Alpaca multi-bars: {len(out)}/{len(symbols)} symbols returned data")
+        return out
 
     # ── Paper Account ────────────────────────────────────────────────────────
 

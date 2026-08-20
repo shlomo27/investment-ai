@@ -350,17 +350,43 @@ async def run_pre_screener(db) -> dict:
     loop = asyncio.get_event_loop()
     all_data: Dict[str, pd.DataFrame] = {}
 
-    for i in range(0, len(all_symbols), DOWNLOAD_CHUNK):
-        chunk = all_symbols[i: i + DOWNLOAD_CHUNK]
-        chunk_data = await loop.run_in_executor(None, _download_chunk, chunk)
-        all_data.update(chunk_data)
-        done = min(i + DOWNLOAD_CHUNK, len(all_symbols))
-        logger.info(f"[pre_screener] downloaded {done}/{len(all_symbols)}")
+    # Alpaca first. Yahoo's bulk download is rate-limited to the point of
+    # returning nothing at all from cloud IPs — which is what produced a 0/903
+    # run and, before the guard, a pool of 100 randomly chosen stocks. Alpaca
+    # serves the same daily bars for hundreds of symbols per request.
+    await _set_status(phase="מוריד נתוני מחיר (Alpaca)")
+    try:
+        from app.services.market_data.alpaca_service import get_alpaca_service
+        bars = await get_alpaca_service().get_bars_multi(all_symbols, days=200)
+        for sym, rows in bars.items():
+            if len(rows) >= 20:
+                all_data[sym] = pd.DataFrame(rows).rename(columns={
+                    "close": "Close", "open": "Open", "high": "High",
+                    "low": "Low", "volume": "Volume",
+                })
+        logger.info(f"[pre_screener] Alpaca supplied {len(all_data)}/{len(all_symbols)}")
         await _set_status(
-            phase=f"מוריד נתוני מחיר {done}/{len(all_symbols)}",
-            downloaded=done, universe_size=len(all_symbols),
+            phase=f"Alpaca החזיר {len(all_data)}/{len(all_symbols)}",
+            downloaded=len(all_data), universe_size=len(all_symbols),
         )
-        await asyncio.sleep(3)
+    except Exception as exc:
+        logger.warning(f"[pre_screener] Alpaca bulk fetch failed: {exc}")
+
+    # Yahoo fills whatever Alpaca could not supply.
+    missing = [s for s in all_symbols if s not in all_data]
+    if missing:
+        logger.info(f"[pre_screener] {len(missing)} symbols missing — falling back to Yahoo")
+        for i in range(0, len(missing), DOWNLOAD_CHUNK):
+            chunk = missing[i: i + DOWNLOAD_CHUNK]
+            chunk_data = await loop.run_in_executor(None, _download_chunk, chunk)
+            all_data.update(chunk_data)
+            done = min(i + DOWNLOAD_CHUNK, len(missing))
+            logger.info(f"[pre_screener] Yahoo backfill {done}/{len(missing)}")
+            await _set_status(
+                phase=f"משלים מ-Yahoo {done}/{len(missing)}",
+                downloaded=len(all_data), universe_size=len(all_symbols),
+            )
+            await asyncio.sleep(3)
 
     logger.info(f"[pre_screener] {len(all_data)}/{len(all_symbols)} symbols have data — computing metrics")
     await _set_status(phase="מחשב ציוני מומנטום")

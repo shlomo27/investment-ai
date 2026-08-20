@@ -72,6 +72,40 @@ def _fetch_movement(symbols: list[str]) -> dict:
     return out
 
 
+async def _fetch_movement_alpaca(symbols: list[str]) -> dict:
+    """Same shape as _fetch_movement, sourced from Alpaca daily bars.
+
+    Alpaca answers reliably from cloud IPs where Yahoo does not, and serves
+    hundreds of symbols per request.
+    """
+    try:
+        from app.services.market_data.alpaca_service import get_alpaca_service
+        bars = await get_alpaca_service().get_bars_multi(symbols, days=40)
+    except Exception as e:
+        logger.warning(f"[news_watcher] Alpaca movement fetch failed: {e}")
+        return {}
+
+    out: dict = {}
+    for sym, rows in bars.items():
+        if len(rows) < 5:
+            continue
+        closes = [r["close"] for r in rows if r.get("close")]
+        vols = [r["volume"] for r in rows if r.get("volume") is not None]
+        if len(closes) < 2:
+            continue
+        move = ((closes[-1] - closes[-2]) / closes[-2] * 100) if closes[-2] else 0.0
+        vol_mult = 0.0
+        if len(vols) >= 6:
+            prior = sorted(vols[:-1])
+            median = prior[len(prior) // 2]
+            if median > 0:
+                vol_mult = vols[-1] / median
+        out[sym] = {"move_pct": round(move, 2), "vol_mult": round(vol_mult, 2)}
+    if out:
+        logger.info(f"[news_watcher] Alpaca supplied movement for {len(out)}/{len(symbols)} symbols")
+    return out
+
+
 async def _fetch_movement_fmp(symbols: list[str]) -> dict:
     """Same shape as _fetch_movement, sourced from FMP batch quotes.
 
@@ -412,7 +446,10 @@ async def _social_buzz_pass(redis_client, notifier) -> int:
     if not movement:
         # Yahoo blocks bulk requests from cloud IPs often enough that a single
         # source here is not good enough — one outage would blind the trigger.
-        logger.warning("[news_watcher] Yahoo movement fetch empty — trying FMP batch quotes")
+        logger.warning("[news_watcher] Yahoo movement fetch empty — trying Alpaca")
+        movement = await _fetch_movement_alpaca(us_symbols)
+    if not movement:
+        logger.warning("[news_watcher] Alpaca empty too — trying FMP batch quotes")
         movement = await _fetch_movement_fmp(us_symbols)
     if not movement:
         logger.warning(
