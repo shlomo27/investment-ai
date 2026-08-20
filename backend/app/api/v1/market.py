@@ -587,6 +587,8 @@ async def universe_stats(
             "universe_size": churn.get("universe_size"),
             "data_fetched":  churn.get("data_fetched"),
             "passed_filter": churn.get("passed_filter"),
+            "aborted":       churn.get("aborted", False),
+            "abort_reason":  churn.get("abort_reason"),
         },
     }
 

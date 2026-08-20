@@ -511,6 +511,8 @@ export interface UniverseStats {
     universe_size?: number | null;
     data_fetched?: number | null;
     passed_filter?: number | null;
+    aborted?: boolean;
+    abort_reason?: string | null;
   };
 }
 

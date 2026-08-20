@@ -505,13 +505,20 @@ const FundDashboard: React.FC = () => {
                         {fetched}/{size} ({pct}%)
                       </span>
                     </p>
-                    {pct < 90 && (
+                    {universeStats.pool_changes.aborted ? (
+                      <p className="text-xs text-yellow-400 mt-0.5">
+                        {universeStats.pool_changes.abort_reason ||
+                          (isHe
+                            ? "לא היו מספיק נתונים לדירוג — המאגר נשאר ללא שינוי."
+                            : "Not enough data to rank — the pool was left unchanged.")}
+                      </p>
+                    ) : pct < 90 ? (
                       <p className="text-xs text-gray-500 mt-0.5">
                         {isHe
-                          ? "ספק הנתונים הגביל חלק מהבקשות — הדירוג נקבע על בסיס חלקי. מניה בלי נתוני מחיר אף פעם לא נכנסת למאגר."
-                          : "The data provider throttled some requests — the ranking was decided on partial data. A stock without price data is never activated into the pool."}
+                          ? "ספק הנתונים הגביל חלק מהבקשות — הדירוג נקבע על בסיס חלקי. מניה בלי נתוני מחיר לא נכנסת למאגר."
+                          : "The data provider throttled some requests — the ranking was decided on partial data. A stock without price data is not activated into the pool."}
                       </p>
-                    )}
+                    ) : null}
                   </div>
                 );
               })()}
@@ -557,6 +564,12 @@ const FundDashboard: React.FC = () => {
                     : `${universeStats.pool_changes.held_sticky} stocks dropped out of the ranking but are held until their deep analysis completes`}
                 </p>
               )}
+
+              <p className="text-xs text-gray-500 border-t border-gray-700/60 pt-2">
+                {isHe
+                  ? "⚠️ הרשימה הזאת היא תקציב סריקה בלבד — היא קובעת על אילו מניות מושקע ניתוח AI מעמיק השבוע. יציאה מהרשימה אינה המלצת מכירה. מניה שמשתמש מחזיק או שיש עליה המלצה פעילה ממשיכה להיות מנותחת גם מחוץ למאגר, והמלצת מכירה מגיעה רק מניתוח בפועל."
+                  : "⚠️ This list is a scanning budget only — it decides which stocks get deep AI analysis this week. Leaving it is NOT a sell signal. A stock a user holds, or one with a live recommendation, keeps being analyzed even outside the pool; a sell only ever comes from an actual analysis."}
+              </p>
             </div>
           )}
 

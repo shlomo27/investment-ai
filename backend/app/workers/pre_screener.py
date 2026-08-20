@@ -40,6 +40,7 @@ MIN_AVG_VOLUME = 100_000
 MIN_AVG_VOLUME_TASE = 10_000   # TASE shares often have lower daily volume counts
 DOWNLOAD_CHUNK = 200   # symbols per yf.download() call
 
+MIN_COVERAGE_PCT = 25  # below this, don't re-rank at all — keep the existing pool
 STICKY_DAYS     = 8    # min days in the pool — guarantees one weekly deep scan
 STICKY_MAX_DAYS = 21   # hard cap for a stock still never analyzed since entry
 MAX_POOL        = 140  # ceiling so churn can't inflate the pool without bound
@@ -377,6 +378,40 @@ async def run_pre_screener(db) -> dict:
             m = StockMetrics(symbol=sym)
         metrics.append(m)
 
+    # Too little price data to rank anything meaningfully. Keep the pool exactly
+    # as it is and stop.
+    #
+    # This path used to fill the pool with 100 RANDOMLY CHOSEN symbols to "keep
+    # the system alive". That was worse than doing nothing: it threw away a
+    # properly ranked pool, churned ~90 stocks in and out in one morning, and
+    # pointed the weekly deep scan — real Claude spend — at noise. Yesterday's
+    # ranking is always better than today's coin flip.
+    coverage_pct = (len(all_data) / len(all_symbols) * 100) if all_symbols else 0
+    if coverage_pct < MIN_COVERAGE_PCT:
+        msg = (
+            f"ספק הנתונים החזיר מחירים ל-{len(all_data)}/{len(all_symbols)} מניות בלבד "
+            f"({coverage_pct:.0f}%) — המאגר נשאר ללא שינוי ולא בוצע דירוג חדש."
+        )
+        logger.warning(f"[pre_screener] aborting: only {coverage_pct:.1f}% coverage — pool untouched")
+        await _save_churn({
+            "entered": [], "exited": [], "held_sticky": [], "pool_size": None,
+            "ran_at": datetime.now(timezone.utc).isoformat(),
+            "universe_size": len(all_symbols), "data_fetched": len(all_data),
+            "passed_filter": 0, "aborted": True, "abort_reason": msg,
+        })
+        try:
+            from app.services.notifications.telegram_service import get_telegram_service
+            await get_telegram_service().send_admin_alert(
+                f"⚠️ <b>הפרה-סקרינר לא רץ</b>\n{msg}\nהמאגר הקודם ממשיך לעבוד כרגיל."
+            )
+        except Exception:
+            pass
+        return {
+            "universe_size": len(all_symbols), "data_fetched": len(all_data),
+            "passed_filter": 0, "selected": 0, "long": 0, "short": 0,
+            "aborted": True, "abort_reason": msg,
+        }
+
     passed = [m for m in metrics if m.passes_filter]
     logger.info(f"[pre_screener] {len(passed)}/{len(metrics)} passed filters")
 
@@ -394,14 +429,6 @@ async def run_pre_screener(db) -> dict:
             f"[pre_screener] only {len(existing)} passed filters — rescued {len(rescued)} "
             f"symbols with price data (total {len(passed)})"
         )
-        if not passed:
-            # Yahoo fully blocked: keep the system alive with arbitrary symbols;
-            # Claude does the real analysis in full_scan.
-            logger.warning("[pre_screener] no price data at all — falling back to arbitrary symbols")
-            fallback = [StockMetrics(symbol=s, passes_filter=True, score=0.0) for s in all_symbols]
-            import random
-            random.shuffle(fallback)
-            passed = fallback[:TOP_N]
 
     _score_all(metrics)
     ranked = sorted(passed, key=lambda m: m.score, reverse=True)
