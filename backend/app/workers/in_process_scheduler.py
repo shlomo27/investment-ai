@@ -167,6 +167,110 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
             await r.aclose()
 
 
+async def notify_entry_state_on_follow(user_id: int, symbol: str) -> bool:
+    """Tell a user who just started following a stock whether it is AT a good
+    entry right now.
+
+    Technical alerts fire on transitions only, and a transition is consumed
+    once: if nobody was following when the signal flipped positive, that moment
+    is gone and the next one may be weeks away. So somebody who follows a feed
+    recommendation the day after its signal turned would hear nothing, despite
+    the entry being open. This closes that hole — following late no longer
+    costs the user the entry.
+
+    Only fires when the signal is actionable NOW. A stock still waiting stays
+    silent: the card in the feed already shows its entry-readiness badge, and
+    the transition alert will reach them when it turns.
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.notification import NotificationType
+    from app.db.models.asset import Asset
+    from app.db.models.recommendation import (
+        Recommendation, RecommendationStatus, RecommendationType,
+    )
+    from app.services.notifications.service import NotificationService
+    from app.agents.workflow import run_technical_workflow
+    from app.core.config import settings
+    from sqlalchemy import select
+    import redis.asyncio as aioredis
+
+    # Once per user per symbol per day — toggling follow off and on again must
+    # not become a way to generate repeated alerts.
+    guard_key = f"investment_ai:follow_entry:{user_id}:{symbol}"
+    r = None
+    try:
+        r = aioredis.from_url(settings.REDIS_URL)
+        if await r.get(guard_key):
+            return False
+        await r.set(guard_key, "1", ex=24 * 3600)
+    except Exception:
+        pass
+    finally:
+        if r is not None:
+            try:
+                await r.aclose()
+            except Exception:
+                pass
+
+    try:
+        async with AsyncSessionLocal() as db:
+            asset = (await db.execute(
+                select(Asset).where(Asset.symbol == symbol)
+            )).scalar_one_or_none()
+            exchange = asset.exchange.value if asset else "NASDAQ"
+
+            live_buy = (await db.execute(
+                select(Recommendation.id).where(
+                    Recommendation.symbol == symbol,
+                    Recommendation.recommendation_type.in_(
+                        [RecommendationType.BUY, RecommendationType.STRONG_BUY]
+                    ),
+                    Recommendation.status.in_([
+                        RecommendationStatus.APPROVED,
+                        RecommendationStatus.PRESENTED_TO_USER,
+                        RecommendationStatus.ACTIONED,
+                    ]),
+                ).limit(1)
+            )).first()
+
+        result = await run_technical_workflow(symbol=symbol, exchange=exchange)
+        ta = (result or {}).get("technical_analysis") or {}
+        signal = ta.get("timing_signal", "WAIT")
+        if signal not in ACTIONABLE:
+            return False
+
+        score = ta.get("technical_score", 0)
+        price = ta.get("current_price")
+        price_str = f" | מחיר נוכחי: ${price:.2f}" if price else ""
+
+        if live_buy is not None and signal in ("BUY_NOW", "STRONG_BUY"):
+            title = (
+                f"🟢 {symbol} נוספה למעקב — והיא כבר בנקודת כניסה. "
+                f"ההמלצה (קנייה) והסיגנל הטכני מסכימים ברגע זה"
+                f"{price_str} (ציון טכני {score:.0f}/100). 👈 בדוק במערכת."
+            )
+        else:
+            label = SIGNAL_LABELS.get(signal, signal)
+            title = (
+                f"{label} — {symbol} נוספה למעקב והסיגנל הטכני שלה כבר פעיל כרגע"
+                f"{price_str} (ציון טכני {score:.0f}/100)."
+            )
+
+        async with AsyncSessionLocal() as db:
+            await NotificationService().send_notification(
+                user_id=user_id, recommendation_id=None,
+                internal_detail={"symbol": symbol, "signal": signal,
+                                 "technical_score": score, "current_price": price,
+                                 "trigger": "FOLLOW_ENTRY_CHECK"},
+                db=db, notification_type=NotificationType.ALERT, title=title,
+            )
+        logger.info(f"[follow_entry] {symbol}: {signal} → notified user {user_id}")
+        return True
+    except Exception as e:
+        logger.warning(f"[follow_entry] {symbol} check failed: {e}")
+        return False
+
+
 # ─── Job functions ────────────────────────────────────────────────────────────
 
 async def job_daily_ta_scan():

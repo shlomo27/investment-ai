@@ -156,6 +156,14 @@ async def add_to_watchlist(
     db.add(watchlist_item)
     await db.flush()
 
+    # Tell the user right away if this stock is already at a good entry.
+    # Technical alerts fire on transitions only, so following after the signal
+    # turned would otherwise mean silence until the next flip.
+    if watchlist_item.alert_on_technical_signal:
+        import asyncio
+        from app.workers.in_process_scheduler import notify_entry_state_on_follow
+        asyncio.create_task(notify_entry_state_on_follow(current_user.id, symbol))
+
     return WatchlistItemResponse(
         id=watchlist_item.id,
         symbol=watchlist_item.symbol,
@@ -269,10 +277,18 @@ async def update_watchlist_settings(
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Watchlist item not found")
 
+    was_off = not item.alert_on_technical_signal
     item.alert_on_technical_signal = alert_on_technical_signal
     if notes is not None:
         item.notes = notes
     await db.flush()
+
+    # Switching alerts ON is the same moment as following: check the entry
+    # state now rather than leaving the user waiting for the next transition.
+    if alert_on_technical_signal and was_off:
+        import asyncio
+        from app.workers.in_process_scheduler import notify_entry_state_on_follow
+        asyncio.create_task(notify_entry_state_on_follow(current_user.id, item.symbol))
 
     return {"message": "Watchlist settings updated", "id": watchlist_id}
 
