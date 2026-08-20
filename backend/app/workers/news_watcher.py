@@ -72,6 +72,31 @@ def _fetch_movement(symbols: list[str]) -> dict:
     return out
 
 
+async def _fetch_movement_fmp(symbols: list[str]) -> dict:
+    """Same shape as _fetch_movement, sourced from FMP batch quotes.
+
+    Used when Yahoo returns nothing. FMP gives today's move and volume against
+    its own average directly, so no history maths is needed.
+    """
+    try:
+        from app.services.market_data.fmp_service import get_fmp_service
+        quotes = await get_fmp_service().get_batch_quotes(symbols)
+    except Exception as e:
+        logger.warning(f"[news_watcher] FMP movement fetch failed: {e}")
+        return {}
+
+    out: dict = {}
+    for sym, q in quotes.items():
+        vol, avg = q.get("volume") or 0, q.get("avg_volume") or 0
+        out[sym] = {
+            "move_pct": round(float(q.get("change_pct") or 0), 2),
+            "vol_mult": round(vol / avg, 2) if avg > 0 else 0.0,
+        }
+    if out:
+        logger.info(f"[news_watcher] FMP supplied movement for {len(out)}/{len(symbols)} symbols")
+    return out
+
+
 def _should_check_x(sym: str, movement: dict, last_checked_iso) -> tuple[bool, str]:
     """Decide whether this symbol earns a paid X search right now."""
     m = movement.get(sym)
@@ -385,8 +410,14 @@ async def _social_buzz_pass(redis_client, notifier) -> int:
         None, _fetch_movement, us_symbols
     )
     if not movement:
+        # Yahoo blocks bulk requests from cloud IPs often enough that a single
+        # source here is not good enough — one outage would blind the trigger.
+        logger.warning("[news_watcher] Yahoo movement fetch empty — trying FMP batch quotes")
+        movement = await _fetch_movement_fmp(us_symbols)
+    if not movement:
         logger.warning(
-            "[news_watcher] no movement data — X search limited to the daily floor"
+            "[news_watcher] no movement data from any source — "
+            "X search limited to the daily floor"
         )
 
     alerts = 0

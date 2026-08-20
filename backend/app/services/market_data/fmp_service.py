@@ -176,6 +176,42 @@ class FMPService:
         ]
 
 
+    async def get_batch_quotes(self, symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Quotes for many symbols at once → {symbol: {price, previous_close, volume,
+        avg_volume, change_pct}}.
+
+        FMP's /quote endpoint takes a comma-separated list, so a whole watchlist
+        costs one request. This backs the bulk paths (movement detection,
+        screening) where the per-symbol fallback chain would be far too many
+        calls. Returns {} when unconfigured or on failure — callers must treat
+        that as "no data", never as "nothing moved".
+        """
+        if not self._key() or not symbols:
+            return {}
+        out: Dict[str, Dict[str, Any]] = {}
+        # Keep URLs sane; FMP accepts long lists but proxies may not.
+        CHUNK = 100
+        async with httpx.AsyncClient(timeout=20) as client:
+            for i in range(0, len(symbols), CHUNK):
+                joined = ",".join(symbols[i: i + CHUNK])
+                data = await self._get(client, f"/quote/{joined}", {})
+                if not isinstance(data, list):
+                    continue
+                for q in data:
+                    sym = q.get("symbol")
+                    price = q.get("price")
+                    if not sym or not price:
+                        continue
+                    out[sym] = {
+                        "price":          float(price),
+                        "previous_close": float(q.get("previousClose") or 0) or None,
+                        "volume":         float(q.get("volume") or 0),
+                        "avg_volume":     float(q.get("avgVolume") or 0),
+                        "change_pct":     float(q.get("changesPercentage") or 0),
+                    }
+        return out
+
+
 _fmp_service: Optional[FMPService] = None
 
 

@@ -37,6 +37,28 @@ async def node_fetch_data(state: AgentWorkflowState) -> AgentWorkflowState:
             symbol=state["asset_symbol"],
             exchange=state["exchange"],
         )
+
+        # No verified price → no analysis. When every market-data source fails
+        # the fetcher still returns a well-formed dict with price 0.0, which
+        # used to flow straight into the committee: it would reason about
+        # targets, stops and upside for a stock whose current price it did not
+        # know, and the saved recommendation would carry
+        # current_price_at_recommendation = 0, breaking P&L and outcome
+        # tracking afterwards. A missing price is a data outage, not a verdict.
+        price = float((market_data or {}).get("price") or 0)
+        if price <= 0:
+            logger.error(
+                "All market data sources returned no price — aborting analysis",
+                symbol=state["asset_symbol"],
+            )
+            return {
+                **state,
+                "data_fetcher_output": market_data,
+                "data_fetcher_error": "no_price",
+                "workflow_status": "failed",
+                "error": "No price available from any market data source",
+            }
+
         return {
             **state,
             "data_fetcher_output": market_data,
@@ -542,7 +564,16 @@ async def node_log_rejection(state: AgentWorkflowState) -> AgentWorkflowState:
                 # fallback) that overturned a live BUY/SELL, supersede the
                 # stale rec and tell holders it's no longer recommended.
                 fconf = fundamental.get("confidence_score")
-                genuine = not (fconf == 0.0 and str(fundamental.get("analyst_notes", "")).startswith("Analysis failed"))
+                engine_down = (
+                    fconf == 0.0
+                    and str(fundamental.get("analyst_notes", "")).startswith("Analysis failed")
+                )
+                # A data outage is not a verdict either. Without this, a stock
+                # whose price we simply could not fetch would have its live
+                # recommendation cancelled and its holders told it "no longer
+                # meets the criteria" — on no evidence at all.
+                data_outage = bool(state.get("data_fetcher_error"))
+                genuine = not (engine_down or data_outage)
                 downgraded_from = None
                 if genuine:
                     from sqlalchemy import update as sa_update
