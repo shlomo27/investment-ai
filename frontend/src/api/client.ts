@@ -521,6 +521,28 @@ export const marketApi = {
     throw new Error("AI engines check timed out (still running after 5 min)");
   },
 
+  // Downloads a full data backup (one CSV per table, zipped). Railway keeps
+  // volume backups behind the Pro plan, so this is the actual safety net.
+  downloadBackup: async (): Promise<any> => {
+    const response = await api.get("/backup/export", { responseType: "blob" });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const a = document.createElement("a");
+    a.href = url;
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "");
+    a.download = `investment-ai-backup-${stamp}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    const mb = (response.data.size / (1024 * 1024)).toFixed(2);
+    return { downloaded: true, size_mb: mb };
+  },
+
+  getBackupStatus: async (): Promise<any> => {
+    const response = await api.get("/backup/status");
+    return response.data;
+  },
+
   // Probes each price provider individually — free, no AI, answers "is it one
   // provider blocking us or are we down to nothing?"
   checkPriceSources: async (symbol: string): Promise<any> => {

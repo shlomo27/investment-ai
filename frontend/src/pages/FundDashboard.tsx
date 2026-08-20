@@ -1193,6 +1193,15 @@ const FundDashboard: React.FC = () => {
                 : `Probes Yahoo, Alpaca, FMP, Finnhub and Polygon one by one on ${simSymbol} and shows which return a price. Free and instant — no AI.`,
               action: async () => marketApi.checkPriceSources(simSymbol),
             },
+            {
+              step: 9,
+              icon: "💾",
+              title: isHe ? "הורד גיבוי מלא" : "Download Full Backup",
+              desc: isHe
+                ? "מוריד את כל הנתונים (קובץ CSV לכל טבלה, בתוך ZIP) למחשב שלך. Railway מספקת גיבויים רק במסלול Pro — זו רשת הביטחון בפועל. הרץ לפני כל שינוי במסד הנתונים."
+                : "Downloads all data (one CSV per table, zipped) to your machine. Railway only offers backups on the Pro plan — this is the actual safety net. Run it before any database change.",
+              action: async () => marketApi.downloadBackup(),
+            },
           ].map(({ step, icon, title, desc, action, removeAction }: any) => (
             <div key={step} className="flex items-start gap-4 bg-gray-800/40 rounded-xl p-4 border border-gray-700/40">
               <div className="flex flex-col items-center gap-1 shrink-0">

@@ -735,18 +735,27 @@ async def price_source_diagnostics(
     from app.core.config import settings
     sym = symbol.upper().strip()
 
+    # Each probe is capped so one hanging provider cannot stall the whole
+    # report. A provider that will not answer in 8s is a failed provider for
+    # our purposes anyway — and a diagnostic that times out tells you nothing.
+    PROBE_TIMEOUT = 8
+
     async def _probe(name, configured, call, hint):
         if not configured:
             return {"source": name, "configured": False, "ok": False,
                     "price": None, "detail": "מפתח API לא מוגדר", "hint": hint}
         try:
-            data = await call()
+            data = await asyncio.wait_for(call(), timeout=PROBE_TIMEOUT)
             price = float((data or {}).get("price") or 0)
             if price > 0:
                 return {"source": name, "configured": True, "ok": True,
                         "price": round(price, 2), "detail": f"מחיר ${price:,.2f}", "hint": ""}
             return {"source": name, "configured": True, "ok": False, "price": None,
                     "detail": "הגיב אך בלי מחיר (חסימה או מכסה שנגמרה)", "hint": hint}
+        except asyncio.TimeoutError:
+            return {"source": name, "configured": True, "ok": False, "price": None,
+                    "detail": f"לא הגיב תוך {PROBE_TIMEOUT} שניות (חסום או איטי מדי)",
+                    "hint": hint}
         except Exception as e:
             return {"source": name, "configured": True, "ok": False, "price": None,
                     "detail": f"שגיאה: {str(e)[:110]}", "hint": hint}
@@ -779,9 +788,14 @@ async def price_source_diagnostics(
     # A batch quote is what the bulk paths (screener, movement detection) need;
     # a working per-symbol chain does not imply a working bulk path.
     batch_ok = 0
+    batch_note = ""
     try:
-        batch = await fmp.get_batch_quotes([sym, "MSFT", "NVDA"])
+        batch = await asyncio.wait_for(
+            fmp.get_batch_quotes([sym, "MSFT", "NVDA"]), timeout=PROBE_TIMEOUT
+        )
         batch_ok = len(batch)
+    except asyncio.TimeoutError:
+        batch_note = f" (לא הגיב תוך {PROBE_TIMEOUT} שניות)"
     except Exception:
         pass
 
@@ -801,7 +815,8 @@ async def price_source_diagnostics(
             "ok": batch_ok > 0,
             "detail": (f"FMP החזיר {batch_ok}/3 ציטוטים — המסלולים ההמוניים מכוסים"
                        if batch_ok else
-                       "FMP לא מחזיר ציטוטים מרובים — הפרה-סקרינר תלוי ב-Yahoo בלבד"),
+                       f"FMP לא מחזיר ציטוטים מרובים{batch_note} — "
+                       f"הפרה-סקרינר תלוי ב-Yahoo בלבד"),
         },
     }
 
