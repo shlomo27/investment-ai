@@ -718,6 +718,94 @@ def _claude_detail(claude_ok: bool, senior: dict) -> str:
     return f"fundamental+senior OK — {rec}"
 
 
+@router.get("/diagnostics/price-sources")
+async def price_source_diagnostics(
+    symbol: str = "AAPL",
+    current_user: User = Depends(get_current_active_user),
+):
+    """Probe every price provider individually and report which ones answer.
+
+    Free and instant — no AI is involved. Answers the only question that
+    matters when prices come back empty: is this one provider blocking us, or
+    are we actually down to nothing?
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    from app.core.config import settings
+    sym = symbol.upper().strip()
+
+    async def _probe(name, configured, call, hint):
+        if not configured:
+            return {"source": name, "configured": False, "ok": False,
+                    "price": None, "detail": "מפתח API לא מוגדר", "hint": hint}
+        try:
+            data = await call()
+            price = float((data or {}).get("price") or 0)
+            if price > 0:
+                return {"source": name, "configured": True, "ok": True,
+                        "price": round(price, 2), "detail": f"מחיר ${price:,.2f}", "hint": ""}
+            return {"source": name, "configured": True, "ok": False, "price": None,
+                    "detail": "הגיב אך בלי מחיר (חסימה או מכסה שנגמרה)", "hint": hint}
+        except Exception as e:
+            return {"source": name, "configured": True, "ok": False, "price": None,
+                    "detail": f"שגיאה: {str(e)[:110]}", "hint": hint}
+
+    from app.services.market_data.yahoo_service import YahooFinanceService
+    from app.services.market_data.alpaca_service import get_alpaca_service
+    from app.services.market_data.fmp_service import get_fmp_service
+    from app.services.market_data.finnhub_service import get_finnhub_service
+    from app.services.market_data.polygon_service import get_polygon_service
+
+    alpaca, fmp = get_alpaca_service(), get_fmp_service()
+    finnhub, polygon = get_finnhub_service(), get_polygon_service()
+
+    results = await asyncio.gather(*[
+        _probe("Yahoo Finance", True,
+               lambda: YahooFinanceService().get_stock_info(sym, force_refresh=True),
+               "חינמי — חוסם לעיתים כתובות של שרתי ענן"),
+        _probe("Alpaca", alpaca._headers() is not None,
+               lambda: alpaca.get_snapshot(sym),
+               "ALPACA_API_KEY + ALPACA_API_SECRET"),
+        _probe("FMP", fmp._key() is not None,
+               lambda: fmp.get_stock_info(sym), "FMP_API_KEY"),
+        _probe("Finnhub", finnhub.is_configured(),
+               lambda: finnhub.get_stock_info(sym), "FINNHUB_API_KEY"),
+        _probe("Polygon", polygon.is_configured(),
+               lambda: polygon.get_stock_info(sym), "POLYGON_API_KEY"),
+    ], return_exceptions=False)
+
+    working = [r for r in results if r["ok"]]
+    # A batch quote is what the bulk paths (screener, movement detection) need;
+    # a working per-symbol chain does not imply a working bulk path.
+    batch_ok = 0
+    try:
+        batch = await fmp.get_batch_quotes([sym, "MSFT", "NVDA"])
+        batch_ok = len(batch)
+    except Exception:
+        pass
+
+    if not working:
+        verdict = "🔴 אף מקור לא מחזיר מחיר — המערכת לא תנתח כלום עד שזה ייפתר."
+    elif len(working) == 1:
+        verdict = f"🟡 רק מקור אחד עובד ({working[0]['source']}) — אין רשת ביטחון."
+    else:
+        verdict = f"🟢 {len(working)} מקורות עובדים."
+
+    return {
+        "symbol": sym,
+        "verdict": verdict,
+        "working_count": len(working),
+        "sources": results,
+        "batch_quotes": {
+            "ok": batch_ok > 0,
+            "detail": (f"FMP החזיר {batch_ok}/3 ציטוטים — המסלולים ההמוניים מכוסים"
+                       if batch_ok else
+                       "FMP לא מחזיר ציטוטים מרובים — הפרה-סקרינר תלוי ב-Yahoo בלבד"),
+        },
+    }
+
+
 async def _build_ai_check_report(sym: str, state: dict) -> dict:
     def _engine(analysis, label_field=None):
         analysis = analysis or {}

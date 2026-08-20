@@ -521,6 +521,15 @@ export const marketApi = {
     throw new Error("AI engines check timed out (still running after 5 min)");
   },
 
+  // Probes each price provider individually — free, no AI, answers "is it one
+  // provider blocking us or are we down to nothing?"
+  checkPriceSources: async (symbol: string): Promise<any> => {
+    const response = await api.get("/market/diagnostics/price-sources", {
+      params: { symbol },
+    });
+    return response.data;
+  },
+
   simulateCreatePosition: async (symbol: string, quantity = 10, price = 100): Promise<any> => {
     const response = await api.post("/market/simulate/create-test-position", null, {
       params: { symbol, quantity, price },

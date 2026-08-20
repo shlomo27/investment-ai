@@ -1184,6 +1184,15 @@ const FundDashboard: React.FC = () => {
                 : "Sends a test message to the admin channel and shows today's estimated spend + cap",
               action: async () => marketApi.simulateTestAdminAlert(),
             },
+            {
+              step: 8,
+              icon: "📡",
+              title: isHe ? "בדיקת מקורות מחיר" : "Price Sources Check",
+              desc: isHe
+                ? `בודק אחד-אחד את Yahoo, Alpaca, FMP, Finnhub ו-Polygon על ${simSymbol} ומראה מי מחזיר מחיר. חינם ומיידי — בלי AI.`
+                : `Probes Yahoo, Alpaca, FMP, Finnhub and Polygon one by one on ${simSymbol} and shows which return a price. Free and instant — no AI.`,
+              action: async () => marketApi.checkPriceSources(simSymbol),
+            },
           ].map(({ step, icon, title, desc, action, removeAction }: any) => (
             <div key={step} className="flex items-start gap-4 bg-gray-800/40 rounded-xl p-4 border border-gray-700/40">
               <div className="flex flex-col items-center gap-1 shrink-0">
@@ -1196,7 +1205,41 @@ const FundDashboard: React.FC = () => {
                 <p className="text-sm font-medium text-white">{title}</p>
                 <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
                 {simStep[step] && (
-                  step === 6 && simStep[step].engines ? (
+                  step === 8 && simStep[step].sources ? (
+                    <div className="mt-2 space-y-1.5">
+                      <p className="text-sm font-medium text-white">{simStep[step].verdict}</p>
+                      {(simStep[step].sources as any[]).map((s) => (
+                        <div
+                          key={s.source}
+                          className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${
+                            s.ok
+                              ? "bg-green-900/20 text-green-300"
+                              : s.configured
+                              ? "bg-red-900/20 text-red-300"
+                              : "bg-gray-800/60 text-gray-500"
+                          }`}
+                        >
+                          <span>{s.ok ? "✅" : s.configured ? "❌" : "⚪"}</span>
+                          <span className="font-medium whitespace-nowrap">{s.source}</span>
+                          <span className="truncate">{s.detail}</span>
+                          {!s.ok && s.hint && (
+                            <span className="text-gray-500 whitespace-nowrap">· {s.hint}</span>
+                          )}
+                        </div>
+                      ))}
+                      <div
+                        className={`text-xs px-2 py-1 rounded ${
+                          simStep[step].batch_quotes?.ok
+                            ? "bg-green-900/20 text-green-300"
+                            : "bg-yellow-900/20 text-yellow-300"
+                        }`}
+                      >
+                        {simStep[step].batch_quotes?.ok ? "✅" : "⚠️"}{" "}
+                        {isHe ? "ציטוטים מרובים (פרה-סקרינר): " : "Batch quotes (screener): "}
+                        {simStep[step].batch_quotes?.detail}
+                      </div>
+                    </div>
+                  ) : step === 6 && simStep[step].engines ? (
                     <div className="mt-2 space-y-1.5">
                       {Object.entries(simStep[step].engines as Record<string, { ok: boolean; detail: string }>).map(([engine, res]) => {
                         const labels: Record<string, string> = {
