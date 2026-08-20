@@ -216,6 +216,38 @@ async def job_earnings_queue_check() -> dict:
                 if last_utc < cutoff_analyzed:
                     candidates.add(sym)
 
+        # A stock someone actually holds, or that carries a live recommendation,
+        # is always an earnings candidate — regardless of index membership or
+        # how recently it was analyzed. Its quarterly report is exactly the
+        # event that can invalidate the thesis the holder is acting on, and
+        # waiting for the weekly scan could cost them days.
+        try:
+            from app.db.models.portfolio import Portfolio
+            from app.db.models.recommendation import Recommendation, RecommendationStatus
+            async with AsyncSessionLocal() as db:
+                held = await db.execute(
+                    select(Portfolio.symbol).where(Portfolio.quantity > 0).distinct()
+                )
+                live = await db.execute(
+                    select(Recommendation.symbol).where(
+                        Recommendation.status.in_([
+                            RecommendationStatus.APPROVED,
+                            RecommendationStatus.PRESENTED_TO_USER,
+                            RecommendationStatus.ACTIONED,
+                        ])
+                    ).distinct()
+                )
+                committed = {r[0] for r in held.all()} | {r[0] for r in live.all()}
+            added = committed - candidates
+            candidates |= committed
+            if added:
+                logger.info(
+                    f"[earnings_watcher] +{len(added)} held/live-rec symbols always tracked "
+                    f"({sorted(added)})"
+                )
+        except Exception as exc:
+            logger.warning(f"[earnings_watcher] held/live-rec lookup failed: {exc}")
+
         if not candidates:
             logger.info("[earnings_watcher] all stocks recently analyzed — skipping")
             return {"candidates": 0, "past_confirmed": 0, "newly_pending": 0}
