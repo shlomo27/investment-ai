@@ -527,7 +527,7 @@ async def job_run_full_scan():
 
         logger.info(f"[scheduler] full_scan: scanning {len(assets)} stocks")
         BATCH = 3
-        approved = rejected = errors = 0
+        approved = rejected = errors = no_price = 0
         stopped_on_budget = False
         engine_fail_streak = 0
 
@@ -555,6 +555,7 @@ async def job_run_full_scan():
                 return_exceptions=True,
             )
             batch_engine_down = False
+            from app.workers.cost_guard import is_no_price_result
             for r in results:
                 if isinstance(r, Exception):
                     errors += 1
@@ -562,6 +563,11 @@ async def job_run_full_scan():
                 elif isinstance(r, dict):
                     if is_engine_down_result(r):
                         batch_engine_down = True
+                        continue
+                    if is_no_price_result(r):
+                        # Never judged — no price came back from any provider.
+                        # Counting it as rejected would misreport the scan.
+                        no_price += 1
                         continue
                     status = r.get("workflow_status", "")
                     if status in ("completed", "saved"):
@@ -590,8 +596,20 @@ async def job_run_full_scan():
 
         logger.info(
             f"[scheduler] full_scan done: scanned={approved + rejected + errors}, "
-            f"approved={approved}, rejected={rejected}, errors={errors}"
+            f"approved={approved}, rejected={rejected}, errors={errors}, "
+            f"no_price={no_price}"
         )
+
+        # Silence caused by missing prices must not look like a quiet week.
+        # Nothing here was judged — the stocks simply had no price to judge.
+        if no_price and no_price >= max(3, (approved + rejected + errors + no_price) // 2):
+            from app.workers.cost_guard import mark_market_data_down
+            await mark_market_data_down()
+            await get_telegram_service().send_admin_alert(
+                f"⛔ <b>אין נתוני מחיר</b>\n{no_price} מניות לא נותחו בסריקה השבועית "
+                f"כי אף ספק לא החזיר מחיר.\n\n<b>אלה לא דחיות — הן פשוט לא נבדקו.</b>\n"
+                f"בדוק את מפתחות ה-API והמכסות (Yahoo/Alpaca/FMP/Finnhub/Polygon)."
+            )
 
         # Engine-down heuristic: a healthy scan produces a mix; if nearly
         # everything errored or fell through, a provider is likely down/out of

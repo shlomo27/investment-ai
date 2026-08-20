@@ -105,3 +105,46 @@ def is_engine_down_result(result: dict) -> bool:
     fa = (result or {}).get("fundamental_analysis") or {}
     return fa.get("confidence_score", None) == 0.0 and \
         str(fa.get("analyst_notes", "")).startswith("Analysis failed")
+
+
+# ─── Market-data outage gate ──────────────────────────────────────────────────
+# Refusing to analyse a stock with no verified price is correct, but on its own
+# it is dangerous: if every provider is blocked, each queued symbol would abort,
+# be counted as "rejected", be marked done and be dropped from the queue — the
+# whole universe consumed in silence with nothing actually analysed. So a
+# no-price result is treated exactly like an engine outage: requeue, don't
+# charge, halt after a short streak, and shout.
+_DATA_DOWN_KEY = "investment_ai:market_data_down"
+
+
+async def mark_market_data_down(ttl: int = 1800) -> None:
+    try:
+        r = await _redis()
+        await r.set(_DATA_DOWN_KEY, "1", ex=ttl)
+        await r.aclose()
+    except Exception:
+        pass
+
+
+async def is_market_data_down() -> bool:
+    try:
+        r = await _redis()
+        v = await r.get(_DATA_DOWN_KEY)
+        await r.aclose()
+        return bool(v)
+    except Exception:
+        return False
+
+
+async def clear_market_data_down() -> None:
+    try:
+        r = await _redis()
+        await r.delete(_DATA_DOWN_KEY)
+        await r.aclose()
+    except Exception:
+        pass
+
+
+def is_no_price_result(result: dict) -> bool:
+    """True if the workflow aborted because no source returned a price."""
+    return (result or {}).get("data_fetcher_error") == "no_price"

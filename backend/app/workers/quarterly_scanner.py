@@ -312,10 +312,13 @@ async def job_quarterly_scan_batch() -> dict:
         quarter = (await redis_client.get(REDIS_PREFIX + "quarter") or b"").decode()
         logger.info(f"[quarterly_scanner] batch for {quarter}")
 
-        from app.workers.cost_guard import is_decision_engine_down
+        from app.workers.cost_guard import is_decision_engine_down, is_market_data_down
         if await is_decision_engine_down():
             logger.warning("[quarterly_scanner] decision engine DOWN — skipping batch")
             return {"skipped": True, "reason": "decision engine down"}
+        if await is_market_data_down():
+            logger.warning("[quarterly_scanner] market data DOWN — skipping batch")
+            return {"skipped": True, "reason": "market data down"}
 
         # Bump freshly-reported companies to the front every run (oldest report
         # first), so the automatic scan prioritizes them without the admin
@@ -421,6 +424,7 @@ async def job_quarterly_scan_batch() -> dict:
         processed = []
         skipped_fresh = 0
         engine_fail_streak = 0  # consecutive analyses that failed on a dead engine
+        data_fail_streak   = 0  # consecutive analyses aborted for want of a price
 
         for _ in range(BATCH_PER_DAY):
             if await budget_exceeded():
@@ -441,6 +445,7 @@ async def job_quarterly_scan_batch() -> dict:
                 skipped_fresh += 1
                 continue
             engine_down = False
+            no_price = False
             try:
                 async with AsyncSessionLocal() as db:
                     asset = (await db.execute(select(Asset).where(Asset.symbol==symbol))).scalar_one_or_none()
@@ -453,7 +458,12 @@ async def job_quarterly_scan_batch() -> dict:
                 # / down). That's NOT a real rejection — don't record it.
                 fa = (result or {}).get("fundamental_analysis") or {}
                 notes = str(fa.get("analyst_notes", ""))
-                if fa.get("confidence_score", None) == 0.0 and notes.startswith("Analysis failed"):
+                from app.workers.cost_guard import is_no_price_result
+                if is_no_price_result(result):
+                    # No provider returned a price. Also not a rejection — the
+                    # company was never actually judged.
+                    no_price = True
+                elif fa.get("confidence_score", None) == 0.0 and notes.startswith("Analysis failed"):
                     engine_down = True
                 elif status in ("completed", "saved"):
                     approved += 1
@@ -462,6 +472,32 @@ async def job_quarterly_scan_batch() -> dict:
             except Exception as exc:
                 errors += 1
                 logger.warning(f"[quarterly_scanner] {symbol}: {exc}")
+
+            if no_price:
+                # Same treatment as an engine outage: back in the queue, not
+                # marked done, not charged.
+                await redis_client.rpush(REDIS_PREFIX + "todo", symbol)
+                data_fail_streak += 1
+                if data_fail_streak >= 3:
+                    logger.error("[quarterly_scanner] halting batch — market data appears DOWN")
+                    from app.workers.cost_guard import mark_market_data_down
+                    await mark_market_data_down()
+                    from app.services.notifications.telegram_service import get_telegram_service
+                    await get_telegram_service().send_admin_alert(
+                        "⛔ <b>הסריקה נעצרה — אין נתוני מחיר</b>\n\n"
+                        "אף אחד מספקי הנתונים לא מחזיר מחיר (Yahoo, Alpaca, FMP, "
+                        "Finnhub, Polygon). המערכת עצרה את הסריקה כדי לא לנתח "
+                        "מניות בלי מחיר — החברות נשארות בתור וינותחו כשהנתונים "
+                        "יחזרו.\n\n<b>לא בוצע ניתוח כלשהו.</b> בדוק את מפתחות ה-API "
+                        "ואת המכסות שלהם."
+                    )
+                    break
+                await asyncio.sleep(2)
+                continue
+
+            data_fail_streak = 0
+            from app.workers.cost_guard import clear_market_data_down
+            await clear_market_data_down()
 
             if engine_down:
                 # Put the symbol back at the front and DON'T mark it done —
