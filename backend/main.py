@@ -160,6 +160,7 @@ async def lifespan(app: FastAPI):
 
         SCHEDULER_LOCK_KEY = 931_702  # arbitrary app-wide constant
         logged_waiting = False
+        did_maintenance = False
         while True:
             conn = None
             try:
@@ -171,6 +172,7 @@ async def lifespan(app: FastAPI):
                 ).scalar()
                 if got_lock:
                     sched_state["conn"] = conn  # hold connection = hold lock
+                    held_pid = (await conn.execute(text("SELECT pg_backend_pid()"))).scalar()
                     sync_db_url = settings.DATABASE_URL.replace(
                         "postgresql+asyncpg://", "postgresql+psycopg2://"
                     )
@@ -197,9 +199,50 @@ async def lifespan(app: FastAPI):
                             pass
                     # One-shot maintenance: restore bought-then-hidden recs,
                     # then collapse duplicate live recommendations.
-                    await restore_actioned_recommendations()
-                    await dedupe_live_recommendations()
-                    return
+                    if not did_maintenance:
+                        await restore_actioned_recommendations()
+                        await dedupe_live_recommendations()
+                        did_maintenance = True
+                    logged_waiting = False
+
+                    # Hold the lock and KEEP VERIFYING it. Postgres releases a
+                    # session-scoped advisory lock the moment the session dies,
+                    # which happens on every database restart — a managed
+                    # security patch, a failover, a connection reaper. This used
+                    # to `return` here, so the winner never noticed: its
+                    # scheduler kept running while the freed lock was picked up
+                    # by another worker within 60s, leaving TWO schedulers alive
+                    # and firing every job twice — double AI spend and duplicate
+                    # alerts, exactly what the lock exists to prevent.
+                    while True:
+                        await asyncio.sleep(60)
+                        try:
+                            pid = (await conn.execute(text("SELECT pg_backend_pid()"))).scalar()
+                            # A silently re-established connection is a NEW
+                            # backend, and the lock did not survive with it.
+                            if pid != held_pid:
+                                raise RuntimeError(f"backend changed {held_pid}→{pid}")
+                        except Exception as hb_exc:
+                            logger.warning(
+                                "Scheduler lock lost (database restart?) — stopping this "
+                                "scheduler and re-entering the election",
+                                error=str(hb_exc),
+                            )
+                            break
+
+                    try:
+                        if scheduler.running:
+                            scheduler.shutdown(wait=False)
+                    except Exception:
+                        pass
+                    sched_state["scheduler"] = None
+                    try:
+                        await conn.close()
+                    except Exception:
+                        pass
+                    sched_state["conn"] = None
+                    await asyncio.sleep(5)
+                    continue
                 await conn.close()
                 if not logged_waiting:
                     logger.info("Scheduler lock held elsewhere — will keep retrying every 60s")
