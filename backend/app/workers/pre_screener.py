@@ -475,6 +475,17 @@ async def run_pre_screener(db) -> dict:
     churn["universe_size"] = len(all_symbols)
     churn["data_fetched"]  = len(all_data)
     churn["passed_filter"] = len(passed)
+    # Name the symbols nobody could price. Guessing why coverage is short is
+    # what the diagnostics are meant to replace — the pattern in this list
+    # (class shares, recent IPOs, delistings) is the answer.
+    no_data = sorted(s for s in all_symbols if s not in all_data)
+    churn["no_data_count"]  = len(no_data)
+    churn["no_data_sample"] = no_data[:40]
+    if no_data:
+        logger.warning(
+            f"[pre_screener] no price data for {len(no_data)} symbols: "
+            f"{', '.join(no_data[:40])}{' …' if len(no_data) > 40 else ''}"
+        )
     await _save_churn(churn)
 
     return {

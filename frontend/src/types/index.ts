@@ -513,6 +513,8 @@ export interface UniverseStats {
     passed_filter?: number | null;
     aborted?: boolean;
     abort_reason?: string | null;
+    no_data_count?: number | null;
+    no_data_sample?: string[];
   };
 }
 

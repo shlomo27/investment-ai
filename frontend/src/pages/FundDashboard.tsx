@@ -513,11 +513,29 @@ const FundDashboard: React.FC = () => {
                             : "Not enough data to rank — the pool was left unchanged.")}
                       </p>
                     ) : pct < 90 ? (
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {isHe
-                          ? "ספק הנתונים הגביל חלק מהבקשות — הדירוג נקבע על בסיס חלקי. מניה בלי נתוני מחיר לא נכנסת למאגר."
-                          : "The data provider throttled some requests — the ranking was decided on partial data. A stock without price data is not activated into the pool."}
-                      </p>
+                      <div className="mt-0.5 space-y-1">
+                        <p className="text-xs text-gray-500">
+                          {isHe
+                            ? "ספק הנתונים הגביל חלק מהבקשות — הדירוג נקבע על בסיס חלקי. מניה בלי נתוני מחיר לא נכנסת למאגר."
+                            : "The data provider throttled some requests — the ranking was decided on partial data. A stock without price data is not activated into the pool."}
+                        </p>
+                        {(universeStats.pool_changes.no_data_sample?.length ?? 0) > 0 && (
+                          <details className="text-xs">
+                            <summary className="cursor-pointer text-gray-500 hover:text-gray-400">
+                              {isHe
+                                ? `אילו מניות חסרות? (${universeStats.pool_changes.no_data_count})`
+                                : `Which stocks are missing? (${universeStats.pool_changes.no_data_count})`}
+                            </summary>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {universeStats.pool_changes.no_data_sample!.map((s) => (
+                                <span key={s} className="font-mono bg-gray-800 text-gray-400 rounded px-1.5 py-0.5">
+                                  {s}
+                                </span>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </div>
                     ) : null}
                   </div>
                 );

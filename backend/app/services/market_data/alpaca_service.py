@@ -116,13 +116,20 @@ class AlpacaService:
         if not headers or not symbols:
             return {}
 
+        # The universe stores Yahoo-style class shares (BRK-B, BF-B); Alpaca
+        # wants BRK.B. Without translating, every dual-class ticker silently
+        # returns no bars. Results are mapped back to the caller's spelling.
+        to_alpaca = {s: s.replace("-", ".") if "-" in s else s for s in symbols}
+        from_alpaca = {v: k for k, v in to_alpaca.items()}
+        query_symbols = list(to_alpaca.values())
+
         start = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
         out: Dict[str, List[Dict]] = {}
         CHUNK = 200  # keep the query string well within limits
 
         async with httpx.AsyncClient(timeout=45, headers=headers) as client:
-            for i in range(0, len(symbols), CHUNK):
-                batch = symbols[i: i + CHUNK]
+            for i in range(0, len(query_symbols), CHUNK):
+                batch = query_symbols[i: i + CHUNK]
                 page_token = None
                 while True:
                     params = {
@@ -149,7 +156,8 @@ class AlpacaService:
                         break
 
                     for sym, bars in (data.get("bars") or {}).items():
-                        out.setdefault(sym, []).extend(
+                        key = from_alpaca.get(sym, sym)
+                        out.setdefault(key, []).extend(
                             {
                                 "date":   b["t"][:10],
                                 "open":   b["o"], "high": b["h"],
