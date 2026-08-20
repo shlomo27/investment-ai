@@ -13,8 +13,87 @@ Every 30 minutes:
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
+
+# ─── Event-triggered X search ────────────────────────────────────────────────
+# Asking Grok about every watched symbol every 30 minutes costs real money per
+# search and almost always answers "nothing happening". Price and volume come
+# free from Yahoo, and a post that genuinely moves a stock moves them too — so
+# they decide when an X search is worth paying for. Pre/post-market bars are
+# included, which is exactly when a tweet lands before the open.
+MOVE_PCT_TRIGGER   = 3.0   # % move vs previous close
+VOLUME_MULT_TRIGGER = 2.0  # recent volume vs its own normal
+DAILY_FLOOR_HOURS  = 20    # every symbol still gets one check per ~day
+
+
+def _fetch_movement(symbols: list[str]) -> dict:
+    """One bulk Yahoo download for all symbols → {symbol: {move_pct, vol_mult}}.
+
+    Free, one HTTP round trip regardless of symbol count. Returns {} on failure;
+    the caller treats that as "no movement data" rather than as "check nothing",
+    so a Yahoo outage can't silently turn the watcher into a spender again.
+    """
+    try:
+        import yfinance as yf
+        data = yf.download(
+            symbols, period="5d", interval="1h", prepost=True,
+            group_by="ticker", auto_adjust=False, progress=False, threads=False,
+        )
+    except Exception as e:
+        logger.warning(f"[news_watcher] movement fetch failed: {e}")
+        return {}
+
+    out: dict = {}
+    for sym in symbols:
+        try:
+            df = data[sym] if len(symbols) > 1 else data
+            df = df.dropna(subset=["Close"])
+            if len(df) < 8:
+                continue
+            closes = df["Close"]
+            last = float(closes.iloc[-1])
+            # Reference = close ~1 trading day back (7 hourly bars ≈ one session)
+            ref = float(closes.iloc[-8])
+            move_pct = ((last - ref) / ref * 100) if ref else 0.0
+
+            vol_mult = 0.0
+            if "Volume" in df.columns:
+                vols = df["Volume"].dropna()
+                if len(vols) >= 10:
+                    recent = float(vols.iloc[-2:].mean())
+                    normal = float(vols.iloc[:-2].median())
+                    if normal > 0:
+                        vol_mult = recent / normal
+            out[sym] = {"move_pct": round(move_pct, 2), "vol_mult": round(vol_mult, 2)}
+        except Exception:
+            continue
+    return out
+
+
+def _should_check_x(sym: str, movement: dict, last_checked_iso) -> tuple[bool, str]:
+    """Decide whether this symbol earns a paid X search right now."""
+    m = movement.get(sym)
+    if m:
+        if abs(m["move_pct"]) >= MOVE_PCT_TRIGGER:
+            return True, f"תזוזת מחיר {m['move_pct']:+.1f}%"
+        if m["vol_mult"] >= VOLUME_MULT_TRIGGER:
+            return True, f"נפח מסחר ×{m['vol_mult']:.1f}"
+
+    # Floor: never let a symbol go more than ~a day without any X read, so a
+    # slow-building story isn't missed just because price hasn't moved yet.
+    if not last_checked_iso:
+        return True, "בדיקה יומית"
+    try:
+        last = datetime.fromisoformat(last_checked_iso)
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if (datetime.now(timezone.utc) - last).total_seconds() >= DAILY_FLOOR_HOURS * 3600:
+            return True, "בדיקה יומית"
+    except Exception:
+        return True, "בדיקה יומית"
+    return False, ""
 
 _COMBINED = {
     ("BUY",  "STRONG_BUY"):  ("🚀", "קנה חזק"),
@@ -272,7 +351,11 @@ async def _social_buzz_pass(redis_client, notifier) -> int:
     """Alert holders/watchlisters on a STRONG, FRESH X buzz spike — even with
     no news. Strong = >=15 posts AND |sentiment| >= 0.4. A per-symbol 4h
     cooldown plus a spike check (buzz notably higher than last seen) keeps it
-    from firing on persistent chatter."""
+    from firing on persistent chatter.
+
+    X is searched only for symbols whose price or volume actually moved (plus a
+    once-a-day floor per symbol), because each search is billed and a post that
+    moves a stock moves its tape too."""
     from app.core.database import AsyncSessionLocal
     from app.db.models.portfolio import Portfolio
     from app.db.models.watchlist import Watchlist
@@ -292,19 +375,46 @@ async def _social_buzz_pass(redis_client, notifier) -> int:
     if not symbols:
         return 0
 
+    us_symbols = [s for s in symbols if not s.endswith(".TA")]
+    if not us_symbols:
+        return 0
+
+    # One free bulk price/volume read for the whole list decides who is worth a
+    # paid X search this cycle.
+    movement = await asyncio.get_event_loop().run_in_executor(
+        None, _fetch_movement, us_symbols
+    )
+    if not movement:
+        logger.warning(
+            "[news_watcher] no movement data — X search limited to the daily floor"
+        )
+
     alerts = 0
+    checked = 0
     svc = SentimentService()
-    for symbol in symbols:
-        if symbol.endswith(".TA"):
-            continue  # Grok X search is US-focused
+    for symbol in us_symbols:
         try:
             last_key = f"investment_ai:buzz_last:{symbol}"
             cd_key = f"investment_ai:buzz_alert:{symbol}"
+            seen_key = f"investment_ai:buzz_seen:{symbol}"
             # Check the cooldown BEFORE asking Grok. A symbol still inside its
             # 4h window cannot produce an alert whatever the answer is, so
             # paying for the search would buy nothing.
             if await redis_client.get(cd_key):
                 continue
+
+            last_checked = await redis_client.get(seen_key)
+            if isinstance(last_checked, bytes):
+                last_checked = last_checked.decode()
+            do_check, reason = _should_check_x(symbol, movement, last_checked)
+            if not do_check:
+                continue
+
+            checked += 1
+            await redis_client.set(
+                seen_key, datetime.now(timezone.utc).isoformat(), ex=3 * 24 * 3600
+            )
+            logger.info(f"[news_watcher] X search for {symbol} — {reason}")
 
             x = await svc._get_grok_x_sentiment(symbol)
             posts = int(x.get("count", 0) or 0)
@@ -343,6 +453,7 @@ async def _social_buzz_pass(redis_client, notifier) -> int:
             lines = [
                 f"📣 {symbol}: באזz חריג ברשת X",
                 f"פעילות חריגה: {posts} פוסטים · {mood} ({score:+.2f})",
+                f"מה הפעיל את הבדיקה: {reason}",
                 f"{direction}. פעמים רבות התנועה בטוויטר מקדימה את החדשות.",
             ]
             posts_list = x.get("posts") or []
@@ -365,6 +476,10 @@ async def _social_buzz_pass(redis_client, notifier) -> int:
         except Exception as e:
             logger.debug(f"[news_watcher] buzz check {symbol} failed: {e}")
         await asyncio.sleep(1)
+    logger.info(
+        f"[news_watcher] buzz pass: {checked}/{len(us_symbols)} symbols warranted "
+        f"a paid X search, {alerts} alerts"
+    )
     return alerts
 
 
