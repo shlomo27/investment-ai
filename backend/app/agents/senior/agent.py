@@ -122,8 +122,10 @@ class SeniorCommitteeAgent:
             logger.warning("Claude LLM unavailable (missing API key), returning safe reject", symbol=raw_data["symbol"])
             return self._safe_reject(raw_data, "ANTHROPIC_API_KEY not configured")
 
+        from app.agents.time_context import current_date_block
         system_content = (
             SENIOR_SYSTEM_PROMPT
+            + current_date_block((raw_data or {}).get("fetch_timestamp"))
             + self._short_side_override(direction_bias)
             + self._language_instruction(language)
         )

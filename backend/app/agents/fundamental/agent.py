@@ -168,8 +168,10 @@ class FundamentalAnalystAgent:
             logger.warning("Claude LLM unavailable (missing API key), returning fallback", symbol=market_data["symbol"])
             return self._fallback_analysis(market_data, "ANTHROPIC_API_KEY not configured", quant_models)
 
+        from app.agents.time_context import current_date_block
         system_content = (
             SYSTEM_PROMPT
+            + current_date_block(market_data.get("fetch_timestamp"))
             + self._short_side_override(direction_bias)
             + self._language_instruction(language)
         )
@@ -412,8 +414,12 @@ expected_return_pct must be NEGATIVE (the expected decline)."""
         pre_exclusions: Optional[List[str]] = None,
     ) -> str:
         v = self._v
+        # Dates matter: without them the model cannot tell a headline from this
+        # week apart from one a year old, and will happily build a "current"
+        # thesis on stale news.
         news_summary = "\n".join([
-            f"  - [{n.get('sentiment', 0):+.2f}] {n['title']} ({n['source']})"
+            f"  - [{(n.get('published_at') or '')[:10] or 'undated'}] "
+            f"[{n.get('sentiment', 0):+.2f}] {n['title']} ({n['source']})"
             for n in data.get("news_items", [])[:8]
         ])
 

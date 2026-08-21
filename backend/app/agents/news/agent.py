@@ -13,6 +13,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.config import settings
 from app.agents.state import MarketDataState
+from app.agents.time_context import current_date_block
 
 logger = structlog.get_logger(__name__)
 
@@ -64,7 +65,7 @@ class NewsAnalystAgent:
             response = await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: llm.invoke([
-                    SystemMessage(content=SYSTEM_PROMPT),
+                    SystemMessage(content=SYSTEM_PROMPT + current_date_block()),
                     HumanMessage(content=prompt),
                 ])
             )
