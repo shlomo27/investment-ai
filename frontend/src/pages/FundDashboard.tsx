@@ -801,7 +801,9 @@ const FundDashboard: React.FC = () => {
                 ? (isHe ? `דולג: ${earningsCheckResult.reason}` : `Skipped: ${earningsCheckResult.reason}`)
                 : (isHe
                     ? `נמצאו ${earningsCheckResult.past_confirmed ?? earningsCheckResult.fresh_this_run ?? 0} דוחות חדשים | סה"כ חברות שדיווחו הרבעון: ${earningsCheckResult.queued_total}`
-                    : `Found ${earningsCheckResult.past_confirmed ?? earningsCheckResult.fresh_this_run ?? 0} new | Reporters this quarter: ${earningsCheckResult.queued_total}`)
+                      + (earningsCheckResult.demoted ? ` | ${earningsCheckResult.demoted} הוחזרו ל"עתידיים" (טרם פרסמו תוצאות)` : "")
+                    : `Found ${earningsCheckResult.past_confirmed ?? earningsCheckResult.fresh_this_run ?? 0} new | Reporters this quarter: ${earningsCheckResult.queued_total}`
+                      + (earningsCheckResult.demoted ? ` | ${earningsCheckResult.demoted} moved back to upcoming (no results published)` : ""))
             )}
           </div>
         )}

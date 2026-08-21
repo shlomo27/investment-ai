@@ -289,6 +289,9 @@ async def job_earnings_queue_check() -> dict:
         past_confirmed = 0
         scheduled_only = 0
         newly_syms: set = set()
+        # What the calendar says about each symbol, kept for the repair pass
+        # below: True = results published, False = listed but nothing published.
+        nasdaq_seen: dict = {}
         for days_back in range(1, 15):
             check_date = today - timedelta(days=days_back)
             # Skip weekends (markets closed)
@@ -297,6 +300,8 @@ async def job_earnings_queue_check() -> dict:
             date_str = check_date.strftime("%Y-%m-%d")
             reporters = await _nasdaq_reporters_for_date(date_str, candidates)
             for sym, has_actuals in reporters.items():
+                # A later date carrying actuals wins over an earlier projection.
+                nasdaq_seen[sym] = nasdaq_seen.get(sym, False) or has_actuals
                 if not has_actuals:
                     # Listed for that date but no results published — a
                     # projection, not a report. Keep it in the upcoming list so
@@ -395,13 +400,54 @@ async def job_earnings_queue_check() -> dict:
             except Exception as e:
                 logger.warning(f"[earnings_watcher] Alpha Vantage failed: {e}")
 
+        CONFIRM_GRACE_DAYS = 4
+        verified = {s.upper() for s in (fh_reporters or {})}
+
+        # ── Repair: demote companies confirmed without ever reporting ─────────
+        # Requiring evidence stops NEW false confirmations, but entries already
+        # recorded under the old rule stay wrong forever — nothing revisits
+        # them. Demote a confirmed symbol only on positive evidence that it has
+        # not reported: the calendar lists it with no published results, and no
+        # source verified it. Silence is never treated as evidence.
+        demoted = 0
+        for sym_b in await redis_client.smembers(REDIS_KEY_QUEUE):
+            sym = sym_b.decode() if isinstance(sym_b, bytes) else str(sym_b)
+            if sym.upper() in verified or nasdaq_seen.get(sym) is not False:
+                continue
+            raw = await redis_client.hget(REDIS_KEY_DETAILS, sym)
+            try:
+                recorded = json.loads(raw)["earnings_date"] if raw else None
+            except Exception:
+                recorded = None
+            # Past the grace period we assume it did report and the calendar is
+            # simply not carrying the result — same reasoning as confirmation.
+            if recorded:
+                try:
+                    rd = datetime.strptime(recorded, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                    if rd + timedelta(days=CONFIRM_GRACE_DAYS) <= today:
+                        continue
+                except ValueError:
+                    continue
+            await redis_client.srem(REDIS_KEY_QUEUE, sym)
+            await redis_client.hdel(REDIS_KEY_DETAILS, sym)
+            await redis_client.hset(
+                REDIS_KEY_PENDING, sym,
+                json.dumps({"report_date": recorded or today.strftime("%Y-%m-%d"),
+                            "added_at": today.isoformat(), "unverified": True}),
+            )
+            await redis_client.expire(REDIS_KEY_PENDING, REDIS_TTL)
+            demoted += 1
+        if demoted:
+            logger.info(
+                f"[earnings_watcher] demoted {demoted} companies back to upcoming — "
+                f"listed on the calendar but no results published"
+            )
+
         # ── Move pending whose date passed → CONFIRMED ────────────────────────
         # A scheduled date passing is NOT proof that the company reported —
         # dates slip all the time. Confirm on evidence: Finnhub's epsActual, or
         # failing that a grace period, so that a missing/After-hours data source
         # cannot freeze the pipeline entirely.
-        CONFIRM_GRACE_DAYS = 4
-        verified = {s.upper() for s in (fh_reporters or {})}
         all_pending = await redis_client.hgetall(REDIS_KEY_PENDING)
         newly_confirmed = 0
         for sym, val in all_pending.items():
@@ -438,6 +484,8 @@ async def job_earnings_queue_check() -> dict:
         result = {
             "candidates":       len(candidates),
             "past_confirmed":   past_confirmed,
+            "scheduled_only":   scheduled_only,
+            "demoted":          demoted,
             "newly_pending":    newly_pending,
             "newly_confirmed":  newly_confirmed,
             "queued_total":     int(queued_total),
