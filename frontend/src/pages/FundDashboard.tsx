@@ -739,8 +739,8 @@ const FundDashboard: React.FC = () => {
             <h2 className="font-bold">{isHe ? "מעקב דוחות כספיים" : "Earnings Monitoring"}</h2>
             <p className="text-xs text-gray-400 mt-0.5">
               {isHe
-                ? "בודק כל יום ב-07:30 — כשמגיעים ≥20 דוחות חדשים מתחילה סריקה רבעונית אוטומטית"
-                : "Checks daily at 07:30 — when ≥20 fresh earnings arrive, quarterly scan triggers automatically"}
+                ? "בודק כל יום ב-07:30. כל חברה שמפרסמת דוח מנותחת מיד — זה המנוע העיקרי. סריקה מלאה על כל היקום רצה כרשת ביטחון כל ~80 יום."
+                : "Checks daily at 07:30. Every company that reports is analyzed immediately — that's the primary engine. A full-universe sweep runs as a safety net every ~80 days."}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -800,8 +800,8 @@ const FundDashboard: React.FC = () => {
               earningsCheckResult.skipped
                 ? (isHe ? `דולג: ${earningsCheckResult.reason}` : `Skipped: ${earningsCheckResult.reason}`)
                 : (isHe
-                    ? `נמצאו ${earningsCheckResult.past_confirmed ?? earningsCheckResult.fresh_this_run ?? 0} דוחות חדשים | סה"כ בתור: ${earningsCheckResult.queued_total}/${earningsCheckResult.trigger_at}`
-                    : `Found ${earningsCheckResult.past_confirmed ?? earningsCheckResult.fresh_this_run ?? 0} new | Queue: ${earningsCheckResult.queued_total}/${earningsCheckResult.trigger_at}`)
+                    ? `נמצאו ${earningsCheckResult.past_confirmed ?? earningsCheckResult.fresh_this_run ?? 0} דוחות חדשים | סה"כ חברות שדיווחו הרבעון: ${earningsCheckResult.queued_total}`
+                    : `Found ${earningsCheckResult.past_confirmed ?? earningsCheckResult.fresh_this_run ?? 0} new | Reporters this quarter: ${earningsCheckResult.queued_total}`)
             )}
           </div>
         )}
@@ -817,32 +817,45 @@ const FundDashboard: React.FC = () => {
               </div>
             )}
 
-            {/* Progress bar */}
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-sm font-medium">
-                  {isHe ? "דוחות שנאספו" : "Earnings collected"}
-                </span>
-                <span className="text-sm font-bold">
-                  {earningsStatus.queue_count}
-                  <span className="text-gray-500 font-normal"> / {earningsStatus.trigger_at}</span>
-                </span>
-              </div>
-              <div className="w-full bg-gray-800 rounded-full h-2.5">
-                <div
-                  className={`h-2.5 rounded-full transition-all ${
-                    earningsStatus.scan_triggered
-                      ? "bg-green-500"
-                      : earningsStatus.queue_count >= earningsStatus.trigger_at
-                      ? "bg-orange-500"
-                      : "bg-blue-500"
-                  }`}
-                  style={{
-                    width: `${Math.min(100, (earningsStatus.queue_count / earningsStatus.trigger_at) * 100)}%`,
-                  }}
-                />
-              </div>
-            </div>
+            {/* Analysis progress. Previously this tracked reports collected
+                against a 20-report trigger threshold — but that threshold was
+                removed when earnings-driven analysis became the primary engine,
+                so the bar measured progress toward something that no longer
+                happens. What matters now is how many reporters were analysed. */}
+            {(() => {
+              const total = earningsStatus.queue_count ?? 0;
+              const done = earningsStatus.analyzed_count ?? 0;
+              const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+              return (
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-sm font-medium">
+                      {isHe ? "דוחות שנותחו" : "Reporters analyzed"}
+                    </span>
+                    <span className="text-sm font-bold">
+                      {done}
+                      <span className="text-gray-500 font-normal"> / {total}</span>
+                      <span className="text-gray-500 font-normal"> ({pct}%)</span>
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-800 rounded-full h-2.5">
+                    <div
+                      className={`h-2.5 rounded-full transition-all ${
+                        pct >= 95 ? "bg-green-500" : pct >= 60 ? "bg-blue-500" : "bg-amber-500"
+                      }`}
+                      style={{ width: `${Math.min(100, pct)}%` }}
+                    />
+                  </div>
+                  {total > done && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {isHe
+                        ? `${total - done} חברות שדיווחו עדיין ממתינות לניתוח`
+                        : `${total - done} reporters still waiting for analysis`}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Status badge */}
             <div className="mb-4">
@@ -853,17 +866,12 @@ const FundDashboard: React.FC = () => {
                     ? `סריקה רבעונית הושקה — ${earningsStatus.scan_triggered}`
                     : `Quarterly scan triggered — ${earningsStatus.scan_triggered}`}
                 </div>
-              ) : earningsStatus.queue_count >= earningsStatus.trigger_at ? (
-                <div className="inline-flex items-center gap-2 bg-orange-900/30 border border-orange-800/50 rounded-lg px-3 py-1.5 text-xs text-orange-300">
-                  <span className="w-2 h-2 bg-orange-400 rounded-full animate-pulse" />
-                  {isHe ? "מוכן — מעל לסף, ממתין להשקה" : "Ready — above threshold, pending trigger"}
-                </div>
               ) : (
                 <div className="inline-flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1.5 text-xs text-gray-400">
                   <span className="w-2 h-2 bg-gray-500 rounded-full" />
                   {isHe
-                    ? `אוסף דוחות... (${earningsStatus.trigger_at - earningsStatus.queue_count} נדרשים עוד)`
-                    : `Collecting... (${earningsStatus.trigger_at - earningsStatus.queue_count} more needed)`}
+                    ? "אין סריקה מלאה פעילה — דוחות חדשים מנותחים מיד עם פרסומם"
+                    : "No full sweep running — new reports are analyzed as they arrive"}
                 </div>
               )}
             </div>
