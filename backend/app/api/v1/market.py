@@ -720,6 +720,74 @@ def _claude_detail(claude_ok: bool, senior: dict) -> str:
     return f"fundamental+senior OK — {rec}"
 
 
+@router.get("/universe/pool")
+async def universe_pool(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every stock currently in the scan pool, each with its latest analysis.
+
+    The dashboard could only show the top 20 by score with no way to reach the
+    rest, and no way to see what the system had actually concluded about any of
+    them. Most pool members have never been analysed — they are queued, not
+    judged — so that state is reported explicitly rather than left blank.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    from app.db.models.asset import Asset
+    from app.db.models.recommendation import Recommendation
+
+    rows = await db.execute(
+        select(Asset.symbol, Asset.name, Asset.long_score, Asset.direction_bias,
+               Asset.last_analyzed_at)
+        .where(Asset.is_active_in_pool == True)
+        .order_by(Asset.long_score.desc(), Asset.symbol.asc())
+    )
+    pool = rows.all()
+    symbols = [r[0] for r in pool]
+    if not symbols:
+        return {"count": 0, "stocks": []}
+
+    # DISTINCT ON gives the newest row per symbol in one pass — cheaper and
+    # more honest than picking a winner in Python from an unbounded fetch.
+    latest = await db.execute(
+        select(
+            Recommendation.symbol, Recommendation.id,
+            Recommendation.recommendation_type, Recommendation.status,
+            Recommendation.confidence_score, Recommendation.created_at,
+        )
+        .where(Recommendation.symbol.in_(symbols))
+        .distinct(Recommendation.symbol)
+        .order_by(Recommendation.symbol, Recommendation.created_at.desc())
+    )
+    by_symbol = {r[0]: r for r in latest.all()}
+
+    stocks = []
+    for symbol, name, score, bias, analyzed_at in pool:
+        rec = by_symbol.get(symbol)
+        stocks.append({
+            "symbol": symbol,
+            "name": name,
+            "score": round(score or 0, 1),
+            "direction_bias": bias,
+            "last_analyzed_at": analyzed_at.isoformat() if analyzed_at else None,
+            "analysis": None if rec is None else {
+                "recommendation_id": rec[1],
+                "recommendation_type": rec[2].value if hasattr(rec[2], "value") else rec[2],
+                "status": rec[3].value if hasattr(rec[3], "value") else rec[3],
+                "confidence": round(rec[4] or 0, 1),
+                "created_at": rec[5].isoformat() if rec[5] else None,
+            },
+        })
+
+    return {
+        "count": len(stocks),
+        "analyzed": sum(1 for s in stocks if s["analysis"]),
+        "stocks": stocks,
+    }
+
+
 @router.get("/diagnostics/price-sources")
 async def price_source_diagnostics(
     symbol: str = "AAPL",

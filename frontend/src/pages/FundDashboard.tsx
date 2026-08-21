@@ -4,7 +4,7 @@ import { useAppDispatch, useAppSelector } from "../store";
 import { fetchPortfolioSummary, fetchPortfolioRisk } from "../store/slices/portfolioSlice";
 import { fetchRecommendations } from "../store/slices/notificationsSlice";
 import { marketApi } from "../api/client";
-import { UniverseStats, ScreenerStatus, RecommendationType } from "../types";
+import { UniverseStats, UniversePool, ScreenerStatus, RecommendationType } from "../types";
 import PerformanceDashboard from "../components/Performance/PerformanceDashboard";
 import EarningsCalendar from "../components/EarningsCalendar";
 import SectorDashboard from "../components/SectorDashboard";
@@ -24,6 +24,9 @@ const FundDashboard: React.FC = () => {
   const [screenerResult, setScreenerResult] = useState<any>(null);
   const [screenerStatus, setScreenerStatus] = useState<ScreenerStatus | null>(null);
   const screenerWasRunning = useRef(false);
+  const [pool, setPool] = useState<UniversePool | null>(null);
+  const [poolOpen, setPoolOpen] = useState(false);
+  const [poolLoading, setPoolLoading] = useState(false);
   const [universeLoading, setUniverseLoading] = useState(false);
   const [universeResult, setUniverseResult] = useState<any>(null);
   const [scanRunning, setScanRunning] = useState(false);
@@ -100,6 +103,18 @@ const FundDashboard: React.FC = () => {
       const stats = await marketApi.getUniverseStats();
       setUniverseStats(stats);
     } catch {}
+  };
+
+  // Fetched on demand — the full pool is ~140 rows with a per-symbol analysis
+  // lookup, not worth loading for everyone who opens the dashboard.
+  const openPool = async () => {
+    setPoolOpen(true);
+    if (pool) return;
+    setPoolLoading(true);
+    try {
+      setPool(await marketApi.getUniversePool());
+    } catch {}
+    setPoolLoading(false);
   };
 
   const loadScreenerStatus = async () => {
@@ -596,19 +611,96 @@ const FundDashboard: React.FC = () => {
               <p className="text-xs text-gray-500 uppercase tracking-wide">
                 {isHe ? `מניות לסריקת היום (${universeStats.active_pool} נבחרו)` : `Today's Scan Queue (${universeStats.active_pool} selected)`}
               </p>
-              <div className="grid grid-cols-5 gap-1">
-                {universeStats.top_candidates.map((c) => (
-                  <span key={c.symbol} className="font-mono font-bold text-white text-xs bg-gray-800 rounded px-1.5 py-1 text-center">
-                    {c.symbol}
-                  </span>
-                ))}
-              </div>
-              {universeStats.active_pool > universeStats.top_candidates.length && (
-                <p className="text-xs text-gray-600">
-                  {isHe
-                    ? `+ ${universeStats.active_pool - universeStats.top_candidates.length} מניות נוספות`
-                    : `+ ${universeStats.active_pool - universeStats.top_candidates.length} more stocks`}
-                </p>
+              {!poolOpen ? (
+                <>
+                  <div className="grid grid-cols-5 gap-1">
+                    {universeStats.top_candidates.map((c) => (
+                      <span key={c.symbol} className="font-mono font-bold text-white text-xs bg-gray-800 rounded px-1.5 py-1 text-center">
+                        {c.symbol}
+                      </span>
+                    ))}
+                  </div>
+                  {universeStats.active_pool > universeStats.top_candidates.length && (
+                    <button
+                      onClick={openPool}
+                      className="text-xs text-blue-400 hover:text-blue-300 underline"
+                    >
+                      {isHe
+                        ? `+ ${universeStats.active_pool - universeStats.top_candidates.length} מניות נוספות — הצג את כולן`
+                        : `+ ${universeStats.active_pool - universeStats.top_candidates.length} more — show all`}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-gray-500">
+                      {poolLoading
+                        ? (isHe ? "טוען..." : "Loading...")
+                        : isHe
+                        ? `${pool?.analyzed ?? 0} מתוך ${pool?.count ?? 0} כבר נותחו`
+                        : `${pool?.analyzed ?? 0} of ${pool?.count ?? 0} already analyzed`}
+                    </p>
+                    <button
+                      onClick={() => setPoolOpen(false)}
+                      className="text-xs text-gray-400 hover:text-gray-300"
+                    >
+                      {isHe ? "סגור" : "Collapse"}
+                    </button>
+                  </div>
+
+                  <div className="max-h-96 overflow-y-auto space-y-1 pe-1">
+                    {(pool?.stocks || []).map((s) => {
+                      const a = s.analysis;
+                      const buySide = a && ["BUY", "STRONG_BUY"].includes(a.recommendation_type);
+                      const sellSide = a && ["SELL", "STRONG_SELL"].includes(a.recommendation_type);
+                      const verdict = !a
+                        ? (isHe ? "טרם נותחה" : "not analyzed yet")
+                        : a.status === "REJECTED"
+                        ? (isHe ? "נדחתה בוועדה" : "rejected")
+                        : a.recommendation_type;
+                      return (
+                        <div
+                          key={s.symbol}
+                          className="flex items-center gap-2 text-xs bg-gray-800/50 rounded px-2 py-1.5"
+                        >
+                          <span className="font-mono font-bold text-white w-16 shrink-0">{s.symbol}</span>
+                          <span className="text-gray-500 truncate flex-1 min-w-0">{s.name}</span>
+                          {s.direction_bias === "SHORT" && (
+                            <span className="text-orange-400 shrink-0">📉</span>
+                          )}
+                          <span
+                            className={`shrink-0 ${
+                              buySide ? "text-green-400" : sellSide ? "text-red-400" : "text-gray-500"
+                            }`}
+                          >
+                            {verdict}
+                          </span>
+                          {a ? (
+                            <div className="flex gap-1 shrink-0">
+                              <Link
+                                to={`/research/${a.recommendation_id}`}
+                                className="px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-300 hover:bg-blue-900/70"
+                              >
+                                {isHe ? "כלכלי" : "Fundamental"}
+                              </Link>
+                              <Link
+                                to={`/technical/${a.recommendation_id}`}
+                                className="px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300 hover:bg-purple-900/70"
+                              >
+                                {isHe ? "טכני" : "Technical"}
+                              </Link>
+                            </div>
+                          ) : (
+                            <span className="text-gray-600 shrink-0">
+                              {isHe ? "בתור לסריקה" : "queued"}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
             </div>
           ) : universeStats ? (

@@ -17,6 +17,7 @@ import {
   RiskProfile,
   TechnicalAnalysis,
   UniverseStats,
+  UniversePool,
   ScreenerStatus,
 } from "../types";
 
@@ -437,6 +438,12 @@ export const marketApi = {
 
   getUniverseStats: async (): Promise<UniverseStats> => {
     const response = await api.get<UniverseStats>("/market/universe/stats");
+    return response.data;
+  },
+
+  // Every stock in the scan pool with whatever analysis it already has.
+  getUniversePool: async (): Promise<UniversePool> => {
+    const response = await api.get<UniversePool>("/market/universe/pool");
     return response.data;
   },
 

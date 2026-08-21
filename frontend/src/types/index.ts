@@ -478,6 +478,27 @@ export interface Recommendation {
   presented_at?: string;
 }
 
+export interface PoolStock {
+  symbol: string;
+  name: string;
+  score: number;
+  direction_bias: string;
+  last_analyzed_at?: string | null;
+  analysis: {
+    recommendation_id: number;
+    recommendation_type: string;
+    status: string;
+    confidence: number;
+    created_at?: string | null;
+  } | null;
+}
+
+export interface UniversePool {
+  count: number;
+  analyzed: number;
+  stocks: PoolStock[];
+}
+
 export interface ScreenerStatus {
   running: boolean;
   phase?: string | null;
