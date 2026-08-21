@@ -1290,23 +1290,29 @@ async def earnings_status(
         last_check     = await r.get("investment_ai:earnings_last_check")
         scan_triggered = await r.get("investment_ai:earnings_scan_triggered")
 
-        # Analysis status per reporter: has it been scanned yet?
-        #  - in the quarterly "done" set  → analyzed this quarter
-        #  - has a Recommendation row     → analyzed (any path)
-        #  - still in the "todo" list     → queued, awaiting analysis
-        done_set  = set(await r.smembers("investment_ai:quarterly_scan:done"))
+        # Analysis status per reporter: has THIS report been analyzed yet?
         todo_list = set(await r.lrange("investment_ai:quarterly_scan:todo", 0, -1))
 
+        # "Analyzed" has to mean "analyzed SINCE this report", not "has ever
+        # been analyzed". Reading it as the latter marked a company green off
+        # an analysis from months earlier — the whole point of tracking the
+        # report is that its numbers were not yet known back then. Engine-down
+        # fallbacks (confidence 0.0) don't count as an analysis either.
         from app.db.models.recommendation import Recommendation
-        from sqlalchemy import select as _sel
-        analyzed_syms = set()
+        from sqlalchemy import select as _sel, func as _func
+        last_real: dict = {}
         try:
             reporter_syms = list(details_raw.keys())
             if reporter_syms:
                 rows = await db.execute(
-                    _sel(Recommendation.symbol).where(Recommendation.symbol.in_(reporter_syms)).distinct()
+                    _sel(Recommendation.symbol, _func.max(Recommendation.created_at))
+                    .where(
+                        Recommendation.symbol.in_(reporter_syms),
+                        Recommendation.confidence_score > 0,
+                    )
+                    .group_by(Recommendation.symbol)
                 )
-                analyzed_syms = {row[0] for row in rows.all()}
+                last_real = {row[0]: row[1] for row in rows.all()}
         except Exception:
             pass
 
@@ -1314,13 +1320,21 @@ async def earnings_status(
         for sym, val in details_raw.items():
             try:
                 d = _json.loads(val)
-                is_analyzed = sym in done_set or sym in analyzed_syms
+                report_date = d.get("earnings_date")
+                analyzed_at = last_real.get(sym)
+                is_analyzed = False
+                if analyzed_at is not None:
+                    if report_date:
+                        is_analyzed = analyzed_at.date().isoformat() >= report_date
+                    else:
+                        is_analyzed = True
                 confirmed.append({
                     "symbol": sym,
-                    "earnings_date": d.get("earnings_date"),
+                    "earnings_date": report_date,
                     "added_at": d.get("added_at"),
                     "status": "confirmed",
                     "analyzed": is_analyzed,
+                    "analyzed_at": analyzed_at.date().isoformat() if analyzed_at else None,
                     "queued": (not is_analyzed) and (sym in todo_list),
                 })
             except Exception:

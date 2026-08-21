@@ -900,7 +900,19 @@ const FundDashboard: React.FC = () => {
                     return (
                       <div key={c.symbol} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 border ${done ? "bg-green-900/10 border-green-900/30" : "bg-gray-800/30 border-gray-800"}`}>
                         <span className="font-mono font-bold text-xs text-white w-14">{c.symbol}</span>
-                        <span className="text-xs text-gray-500">{c.earnings_date}</span>
+                        <span className="text-xs text-gray-500" title={isHe ? "תאריך הדוח" : "report date"}>
+                          {c.earnings_date}
+                        </span>
+                        {/* The analysis date makes the claim checkable: it has
+                            to fall on or after the report date to count. */}
+                        {c.analyzed_at && (
+                          <span
+                            className="text-[10px] text-gray-600"
+                            title={isHe ? "תאריך הניתוח" : "analysis date"}
+                          >
+                            ← {c.analyzed_at}
+                          </span>
+                        )}
                         <span className={`text-[10px] px-1.5 py-0.5 rounded border ml-auto ${badge.cls}`}>{badge.txt}</span>
                       </div>
                     );
