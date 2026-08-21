@@ -12,6 +12,58 @@ import StockComparison from "../components/StockComparison";
 import PerformanceComparisonChart from "../components/Charts/PerformanceComparisonChart";
 import PerformanceTimelineChart from "../components/Charts/PerformanceTimelineChart";
 
+/** One side of the signal summary. The two cards were identical apart from
+ *  colour, and both truncated at three rows with no way to reach the rest. */
+const SignalSummaryCard: React.FC<{
+  title: string;
+  recs: any[];
+  tone: "long" | "short";
+  subtitle: string;
+  isHe: boolean;
+}> = ({ title, recs, tone, subtitle, isHe }) => {
+  const [expanded, setExpanded] = useState(false);
+  const COLLAPSED = 3;
+  const visible = expanded ? recs : recs.slice(0, COLLAPSED);
+  const c = tone === "long"
+    ? { border: "border-green-900/40", dot: "bg-green-400", label: "text-green-300", num: "text-green-400", pct: "text-green-400" }
+    : { border: "border-red-900/40",   dot: "bg-red-400",   label: "text-red-300",   num: "text-red-400",   pct: "text-red-400" };
+
+  return (
+    <div className={`bg-gray-900 rounded-2xl p-5 border ${c.border}`}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className={`w-2.5 h-2.5 ${c.dot} rounded-full`} />
+        <p className={`text-sm font-medium ${c.label}`}>{title}</p>
+      </div>
+      <p className={`text-3xl font-bold ${c.num}`}>{recs.length}</p>
+      <p className="text-xs text-gray-400 mt-1">{subtitle}</p>
+
+      <div className={expanded ? "max-h-72 overflow-y-auto pe-1" : ""}>
+        {visible.map((r) => (
+          <Link
+            key={r.id}
+            to={`/research/${r.id}`}
+            className="flex items-center justify-between mt-2 text-xs text-gray-300 hover:text-white"
+          >
+            <span className="font-mono font-bold">{r.symbol}</span>
+            <span className={c.pct}>{r.confidence_score.toFixed(0)}%</span>
+          </Link>
+        ))}
+      </div>
+
+      {recs.length > COLLAPSED && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-2 text-xs text-blue-400 hover:text-blue-300 underline"
+        >
+          {expanded
+            ? (isHe ? "הצג פחות" : "Show less")
+            : (isHe ? `הצג את כל ${recs.length} ההמלצות` : `Show all ${recs.length}`)}
+        </button>
+      )}
+    </div>
+  );
+};
+
 const FundDashboard: React.FC = () => {
   const dispatch = useAppDispatch();
   const { summary } = useAppSelector((s) => s.portfolio);
@@ -368,42 +420,20 @@ const FundDashboard: React.FC = () => {
 
       {/* AI Signal Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-gray-900 rounded-2xl p-5 border border-green-900/40">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="w-2.5 h-2.5 bg-green-400 rounded-full" />
-            <p className="text-sm font-medium text-green-300">{isHe ? "המלצות LONG" : "LONG Signals"}</p>
-          </div>
-          <p className="text-3xl font-bold text-green-400">{longRecs.length}</p>
-          <p className="text-xs text-gray-400 mt-1">{isHe ? "המלצות BUY/STRONG_BUY פעילות" : "Active BUY/STRONG_BUY"}</p>
-          {longRecs.slice(0, 3).map((r) => (
-            <Link
-              key={r.id}
-              to={`/research/${r.id}`}
-              className="flex items-center justify-between mt-2 text-xs text-gray-300 hover:text-white"
-            >
-              <span className="font-mono font-bold">{r.symbol}</span>
-              <span className="text-green-400">{r.confidence_score.toFixed(0)}%</span>
-            </Link>
-          ))}
-        </div>
-        <div className="bg-gray-900 rounded-2xl p-5 border border-red-900/40">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="w-2.5 h-2.5 bg-red-400 rounded-full" />
-            <p className="text-sm font-medium text-red-300">{isHe ? "המלצות SHORT" : "SHORT Signals"}</p>
-          </div>
-          <p className="text-3xl font-bold text-red-400">{shortRecs.length}</p>
-          <p className="text-xs text-gray-400 mt-1">{isHe ? "המלצות SELL/STRONG_SELL פעילות" : "Active SELL/STRONG_SELL"}</p>
-          {shortRecs.slice(0, 3).map((r) => (
-            <Link
-              key={r.id}
-              to={`/research/${r.id}`}
-              className="flex items-center justify-between mt-2 text-xs text-gray-300 hover:text-white"
-            >
-              <span className="font-mono font-bold">{r.symbol}</span>
-              <span className="text-red-400">{r.confidence_score.toFixed(0)}%</span>
-            </Link>
-          ))}
-        </div>
+        <SignalSummaryCard
+          title={isHe ? "המלצות LONG" : "LONG Signals"}
+          recs={longRecs}
+          tone="long"
+          subtitle={isHe ? "המלצות BUY/STRONG_BUY פעילות" : "Active BUY/STRONG_BUY"}
+          isHe={isHe}
+        />
+        <SignalSummaryCard
+          title={isHe ? "המלצות SHORT" : "SHORT Signals"}
+          recs={shortRecs}
+          tone="short"
+          subtitle={isHe ? "המלצות SELL/STRONG_SELL פעילות" : "Active SELL/STRONG_SELL"}
+          isHe={isHe}
+        />
       </div>
 
       {/* Universe & Pre-Screener */}
