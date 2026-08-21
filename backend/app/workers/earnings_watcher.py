@@ -199,22 +199,25 @@ async def job_earnings_queue_check() -> dict:
 
     redis_client = aioredis.from_url(settings.REDIS_URL)
     try:
-        # Load universe candidates (skip recently analyzed in last 70 days)
-        cutoff_analyzed = today - timedelta(days=70)
+        # DETECTION covers the whole universe. It used to skip anything analysed
+        # in the last 70 days, which conflated two different questions: "did
+        # this company report?" and "is it worth re-analysing?". A stock last
+        # looked at 40 days ago was not a candidate, so its new report was never
+        # recorded — and with no report date on file, the weekly scan's
+        # "reported since the last analysis" trigger could not fire either. The
+        # report simply vanished until the 70 days elapsed.
+        #
+        # Detection is free: _nasdaq_reporters_for_date filters an
+        # already-fetched calendar against this set, so widening it costs no
+        # extra API calls. Whether to spend an analysis is decided downstream,
+        # where the freshness rules belong.
         async with AsyncSessionLocal() as db:
             rows = await db.execute(
                 select(Asset.symbol, Asset.last_analyzed_at).where(Asset.in_universe == True)
             )
             universe_map = {r[0]: r[1] for r in rows.all()}
 
-        candidates: set = set()
-        for sym, last in universe_map.items():
-            if last is None:
-                candidates.add(sym)
-            else:
-                last_utc = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
-                if last_utc < cutoff_analyzed:
-                    candidates.add(sym)
+        candidates: set = set(universe_map.keys())
 
         # A stock someone actually holds, or that carries a live recommendation,
         # is always an earnings candidate — regardless of index membership or
