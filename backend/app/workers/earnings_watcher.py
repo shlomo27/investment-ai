@@ -77,6 +77,40 @@ async def _finnhub_reporters(from_date: str, to_date: str, universe: set) -> dic
     return out
 
 
+async def _finnhub_upcoming(universe: set, days_ahead: int = 45) -> dict:
+    """symbol -> date for companies SCHEDULED to report but that have not yet
+    (epsActual still null), within the window.
+
+    This is the evidence that a company marked "reported" has in fact not
+    reported: a forward calendar still listing it. Looking only at past dates
+    cannot establish this — once a projected date slips, the company simply
+    stops appearing under the old date, and absence proves nothing.
+    """
+    from app.core.config import settings as _settings
+    if not (_settings.FINNHUB_API_KEY or "").strip():
+        return {}
+    import httpx as _httpx
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    to_str = (datetime.now(timezone.utc) + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+    out: dict = {}
+    try:
+        async with _httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://finnhub.io/api/v1/calendar/earnings",
+                params={"from": today_str, "to": to_str, "token": _settings.FINNHUB_API_KEY},
+            )
+            if resp.status_code != 200:
+                return {}
+            for item in resp.json().get("earningsCalendar", []):
+                sym = (item.get("symbol") or "").upper()
+                date = item.get("date") or ""
+                if sym in universe and item.get("epsActual") is None and date > today_str:
+                    out[sym] = date
+    except Exception as e:
+        logger.debug(f"[earnings_watcher] Finnhub upcoming failed: {e}")
+    return out
+
+
 async def _analyze_reporters_now(syms: list) -> int:
     """Run a full analysis on each freshly-reported company immediately (used
     when no quarterly sweep will cover it). Budget-guarded — stops at the daily
@@ -406,42 +440,53 @@ async def job_earnings_queue_check() -> dict:
         # ── Repair: demote companies confirmed without ever reporting ─────────
         # Requiring evidence stops NEW false confirmations, but entries already
         # recorded under the old rule stay wrong forever — nothing revisits
-        # them. Demote a confirmed symbol only on positive evidence that it has
-        # not reported: the calendar lists it with no published results, and no
-        # source verified it. Silence is never treated as evidence.
+        # them. Demotion needs positive evidence, and there are two kinds:
+        #   1. a forward calendar STILL lists the company as due to report
+        #      (the strong signal — this is what catches a slipped date, since
+        #      the company vanishes from the old date rather than lingering);
+        #   2. the past calendar lists it with no published results.
+        # Absence from every calendar proves nothing and is left alone.
+        upcoming = await _finnhub_upcoming(set(universe_map.keys()))
         demoted = 0
         for sym_b in await redis_client.smembers(REDIS_KEY_QUEUE):
             sym = sym_b.decode() if isinstance(sym_b, bytes) else str(sym_b)
-            if sym.upper() in verified or nasdaq_seen.get(sym) is not False:
+            if sym.upper() in verified:
                 continue
+            future_date = upcoming.get(sym.upper())
+            if not future_date and nasdaq_seen.get(sym) is not False:
+                continue
+
             raw = await redis_client.hget(REDIS_KEY_DETAILS, sym)
             try:
                 recorded = json.loads(raw)["earnings_date"] if raw else None
             except Exception:
                 recorded = None
-            # Past the grace period we assume it did report and the calendar is
-            # simply not carrying the result — same reasoning as confirmation.
-            if recorded:
+            # A confirmed future date overrules the grace period: the company
+            # is telling us it has not reported yet, however old our entry is.
+            if not future_date and recorded:
                 try:
                     rd = datetime.strptime(recorded, "%Y-%m-%d").replace(tzinfo=timezone.utc)
                     if rd + timedelta(days=CONFIRM_GRACE_DAYS) <= today:
                         continue
                 except ValueError:
                     continue
+
             await redis_client.srem(REDIS_KEY_QUEUE, sym)
             await redis_client.hdel(REDIS_KEY_DETAILS, sym)
             await redis_client.hset(
                 REDIS_KEY_PENDING, sym,
-                json.dumps({"report_date": recorded or today.strftime("%Y-%m-%d"),
+                json.dumps({"report_date": future_date or recorded or today.strftime("%Y-%m-%d"),
                             "added_at": today.isoformat(), "unverified": True}),
             )
             await redis_client.expire(REDIS_KEY_PENDING, REDIS_TTL)
             demoted += 1
+            if future_date:
+                logger.info(
+                    f"[earnings_watcher] {sym}: still scheduled for {future_date} — "
+                    f"moved back to upcoming (was recorded as reported {recorded})"
+                )
         if demoted:
-            logger.info(
-                f"[earnings_watcher] demoted {demoted} companies back to upcoming — "
-                f"listed on the calendar but no results published"
-            )
+            logger.info(f"[earnings_watcher] demoted {demoted} companies back to upcoming")
 
         # ── Move pending whose date passed → CONFIRMED ────────────────────────
         # A scheduled date passing is NOT proof that the company reported —
