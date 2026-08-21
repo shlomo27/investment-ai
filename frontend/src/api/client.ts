@@ -550,6 +550,13 @@ export const marketApi = {
     return response.data;
   },
 
+  // What every earnings calendar says about one symbol, plus the verdict the
+  // watcher reaches — explains a row that looks stuck.
+  checkEarningsForSymbol: async (symbol: string): Promise<any> => {
+    const response = await api.get(`/market/diagnostics/earnings/${symbol}`);
+    return response.data;
+  },
+
   // Probes each price provider individually — free, no AI, answers "is it one
   // provider blocking us or are we down to nothing?"
   checkPriceSources: async (symbol: string): Promise<any> => {

@@ -1334,6 +1334,15 @@ const FundDashboard: React.FC = () => {
                 : "Downloads all data (one CSV per table, zipped) to your machine. Railway only offers backups on the Pro plan — this is the actual safety net. Run it before any database change.",
               action: async () => marketApi.downloadBackup(),
             },
+            {
+              step: 10,
+              icon: "🔎",
+              title: isHe ? "בדיקת דוח לחברה" : "Earnings Check for a Symbol",
+              desc: isHe
+                ? `מראה מה כל לוח הדוחות אומר על ${simSymbol} — מה רשום אצלנו, מה Finnhub אומר על העבר ועל העתיד, ומה נאסד"ק אומר — ואיזו מסקנה המערכת מסיקה. חינם ומיידי.`
+                : `Shows what every earnings calendar says about ${simSymbol} — what we stored, what Finnhub says about past and future, what Nasdaq says — and the verdict the watcher reaches. Free and instant.`,
+              action: async () => marketApi.checkEarningsForSymbol(simSymbol),
+            },
           ].map(({ step, icon, title, desc, action, removeAction }: any) => (
             <div key={step} className="flex items-start gap-4 bg-gray-800/40 rounded-xl p-4 border border-gray-700/40">
               <div className="flex flex-col items-center gap-1 shrink-0">
@@ -1346,7 +1355,28 @@ const FundDashboard: React.FC = () => {
                 <p className="text-sm font-medium text-white">{title}</p>
                 <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
                 {simStep[step] && (
-                  step === 8 && simStep[step].sources ? (
+                  step === 10 && simStep[step].verdict ? (
+                    <div className="mt-2 space-y-1 text-xs">
+                      <p className="text-sm font-medium text-white">{simStep[step].verdict}</p>
+                      {[
+                        [isHe ? "רשום אצלנו כדיווחה" : "stored as reported",
+                         String(simStep[step].stored?.in_reported_set)],
+                        [isHe ? "תאריך הדוח שרשום אצלנו" : "recorded report date",
+                         simStep[step].recorded_date || "—"],
+                        [isHe ? "Finnhub — עתידי" : "Finnhub — upcoming",
+                         simStep[step].finnhub_upcoming],
+                        [isHe ? "Finnhub — כבר דיווחה" : "Finnhub — already reported",
+                         simStep[step].finnhub_reported],
+                        [isHe ? "נאסד\"ק בתאריך הרשום" : "Nasdaq on recorded date",
+                         simStep[step].nasdaq_on_recorded_date || "—"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="flex gap-2 px-2 py-1 rounded bg-gray-800/40">
+                          <span className="text-gray-400 whitespace-nowrap">{label}:</span>
+                          <span className="text-gray-300 break-all">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : step === 8 && simStep[step].sources ? (
                     <div className="mt-2 space-y-1.5">
                       <p className="text-sm font-medium text-white">{simStep[step].verdict}</p>
                       {(simStep[step].sources as any[]).map((s) => (

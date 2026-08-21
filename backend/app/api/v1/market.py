@@ -788,6 +788,74 @@ async def universe_pool(
     }
 
 
+@router.get("/diagnostics/earnings/{symbol}")
+async def earnings_diagnostics(
+    symbol: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """What every source says about one company's earnings, plus the verdict
+    the watcher's repair logic reaches — so a stuck row can be explained
+    instead of guessed at."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    import redis.asyncio as aioredis
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    from app.core.config import settings
+    from app.workers.earnings_watcher import (
+        _finnhub_upcoming, _finnhub_reporters, _nasdaq_reporters_for_date,
+        REDIS_KEY_QUEUE, REDIS_KEY_DETAILS, REDIS_KEY_PENDING,
+    )
+
+    sym = symbol.upper().strip()
+    today = _dt.now(_tz.utc)
+    out: dict = {"symbol": sym}
+
+    r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    try:
+        out["stored"] = {
+            "in_reported_set": bool(await r.sismember(REDIS_KEY_QUEUE, sym)),
+            "details": await r.hget(REDIS_KEY_DETAILS, sym),
+            "pending": await r.hget(REDIS_KEY_PENDING, sym),
+        }
+    finally:
+        await r.aclose()
+
+    upcoming = await _finnhub_upcoming({sym})
+    out["finnhub_upcoming"] = upcoming.get(sym) or "not listed as upcoming"
+
+    past = await _finnhub_reporters(
+        (today - _td(days=21)).strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"), {sym}
+    )
+    out["finnhub_reported"] = past.get(sym) or "no published result in the last 21 days"
+
+    # What Nasdaq says for the date we have on file
+    recorded = None
+    try:
+        recorded = _json.loads(out["stored"]["details"] or "{}").get("earnings_date")
+    except Exception:
+        pass
+    if recorded:
+        rows = await _nasdaq_reporters_for_date(recorded, {sym})
+        out["nasdaq_on_recorded_date"] = (
+            "listed WITH published results" if rows.get(sym) is True
+            else "listed but NO results published" if rows.get(sym) is False
+            else "not listed on that date at all"
+        )
+    out["recorded_date"] = recorded
+
+    if sym in past:
+        verdict = "✅ reported — stays in the reported table"
+    elif upcoming.get(sym):
+        verdict = f"⬅️ has NOT reported — due {upcoming[sym]}; should move back to upcoming"
+    elif recorded and _dt.strptime(recorded, "%Y-%m-%d").replace(tzinfo=_tz.utc) + _td(days=4) <= today:
+        verdict = "kept — no source contradicts it and the date is past the grace period"
+    else:
+        verdict = "kept — no source has evidence either way"
+    out["verdict"] = verdict
+    return out
+
+
 @router.get("/diagnostics/price-sources")
 async def price_source_diagnostics(
     symbol: str = "AAPL",
