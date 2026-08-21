@@ -146,29 +146,59 @@ async def _requeue_for_rescan(redis_client, sym: str) -> None:
         pass
 
 
-async def _nasdaq_reporters_for_date(date_str: str, universe: set) -> list:
+# Fields Nasdaq populates only once a company has actually reported. A row
+# carrying any of these is proof; a row with only a forecast is a SCHEDULE.
+_NASDAQ_ACTUAL_FIELDS = ("eps", "surprise", "epsActual", "reportedEPS")
+
+
+def _nasdaq_row_has_actuals(row: dict) -> bool:
+    for key in _NASDAQ_ACTUAL_FIELDS:
+        val = row.get(key)
+        if val in (None, "", "N/A", "-"):
+            continue
+        # Nasdaq renders values as strings like "$1.23" or "12.5%".
+        cleaned = str(val).strip().lstrip("$").rstrip("%").replace(",", "")
+        if cleaned and cleaned not in ("0", "0.0"):
+            return True
+        try:
+            float(cleaned)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+async def _nasdaq_reporters_for_date(date_str: str, universe: set) -> dict:
+    """Companies listed on Nasdaq's calendar for a date, split by whether they
+    ACTUALLY reported.
+
+    Appearing on the calendar is not proof of reporting: the calendar carries
+    projected dates, and a projection that slips leaves the company listed
+    under a date it never reported on. Treating that as "reported" pulls the
+    company out of the upcoming list, spends an analysis on the PREVIOUS
+    quarter's numbers, and loses the real date — so the actual report is then
+    missed. WDAY was listed for 2026-08-20 while its real date, per the
+    company's own announcement, was 2026-08-27.
+
+    Returns {symbol: True if it reported, False if this is only a schedule}.
     """
-    Fetch companies that reported earnings on a specific date from Nasdaq.
-    Returns list of symbols found in our universe.
-    """
-    url = f"https://api.nasdaq.com/api/calendar/earnings"
-    params = {"date": date_str}
+    url = "https://api.nasdaq.com/api/calendar/earnings"
     try:
         async with httpx.AsyncClient(timeout=15, headers=NASDAQ_HEADERS) as client:
-            resp = await client.get(url, params=params)
+            resp = await client.get(url, params={"date": date_str})
             if resp.status_code != 200:
-                return []
+                return {}
             data = resp.json()
         rows = (data.get("data") or {}).get("rows") or []
-        found = []
+        found: dict = {}
         for row in rows:
             sym = (row.get("symbol") or "").upper().strip()
             if sym and sym in universe:
-                found.append(sym)
+                found[sym] = _nasdaq_row_has_actuals(row)
         return found
     except Exception as e:
         logger.debug(f"[earnings_watcher] Nasdaq {date_str}: {e}")
-        return []
+        return {}
 
 
 async def _fetch_alpha_vantage_earnings(api_key: str) -> list:
@@ -257,6 +287,7 @@ async def job_earnings_queue_check() -> dict:
 
         # ── Past reporters: Nasdaq calendar for last 14 days ──────────────────
         past_confirmed = 0
+        scheduled_only = 0
         newly_syms: set = set()
         for days_back in range(1, 15):
             check_date = today - timedelta(days=days_back)
@@ -265,7 +296,22 @@ async def job_earnings_queue_check() -> dict:
                 continue
             date_str = check_date.strftime("%Y-%m-%d")
             reporters = await _nasdaq_reporters_for_date(date_str, candidates)
-            for sym in reporters:
+            for sym, has_actuals in reporters.items():
+                if not has_actuals:
+                    # Listed for that date but no results published — a
+                    # projection, not a report. Keep it in the upcoming list so
+                    # the real date can still be picked up.
+                    scheduled_only += 1
+                    if not await redis_client.sismember(REDIS_KEY_QUEUE, sym):
+                        if not await redis_client.hget(REDIS_KEY_PENDING, sym):
+                            await redis_client.hset(
+                                REDIS_KEY_PENDING, sym,
+                                json.dumps({"report_date": date_str,
+                                            "added_at": today.isoformat(),
+                                            "unverified": True}),
+                            )
+                            await redis_client.expire(REDIS_KEY_PENDING, REDIS_TTL)
+                    continue
                 already = await redis_client.sismember(REDIS_KEY_QUEUE, sym)
                 if not already:
                     await redis_client.sadd(REDIS_KEY_QUEUE, sym)
@@ -280,11 +326,17 @@ async def job_earnings_queue_check() -> dict:
                     newly_syms.add(sym)
                     await _requeue_for_rescan(redis_client, sym)
 
-        logger.info(f"[earnings_watcher] Nasdaq past lookback: {past_confirmed} new confirmed")
+        logger.info(
+            f"[earnings_watcher] Nasdaq past lookback: {past_confirmed} confirmed, "
+            f"{scheduled_only} listed without published results (kept as upcoming)"
+        )
 
         # ── Second source: Finnhub earnings calendar (past 14 days) ───────────
         # Nasdaq's feed has gaps (it missed IBM). Finnhub cross-checks so a
-        # reporter detected by EITHER source is caught.
+        # reporter detected by EITHER source is caught. It only reports symbols
+        # whose epsActual is populated, which also makes it the verification
+        # source for confirming a scheduled date actually happened.
+        fh_reporters: dict = {}
         try:
             fh_reporters = await _finnhub_reporters(
                 (today - timedelta(days=14)).strftime("%Y-%m-%d"),
@@ -344,6 +396,12 @@ async def job_earnings_queue_check() -> dict:
                 logger.warning(f"[earnings_watcher] Alpha Vantage failed: {e}")
 
         # ── Move pending whose date passed → CONFIRMED ────────────────────────
+        # A scheduled date passing is NOT proof that the company reported —
+        # dates slip all the time. Confirm on evidence: Finnhub's epsActual, or
+        # failing that a grace period, so that a missing/After-hours data source
+        # cannot freeze the pipeline entirely.
+        CONFIRM_GRACE_DAYS = 4
+        verified = {s.upper() for s in (fh_reporters or {})}
         all_pending = await redis_client.hgetall(REDIS_KEY_PENDING)
         newly_confirmed = 0
         for sym, val in all_pending.items():
@@ -352,6 +410,10 @@ async def job_earnings_queue_check() -> dict:
                 report_date = datetime.strptime(d["report_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
             except Exception:
                 continue
+            sym_u = sym.decode().upper() if isinstance(sym, bytes) else str(sym).upper()
+            past_grace = report_date + timedelta(days=CONFIRM_GRACE_DAYS) <= today
+            if report_date <= today and not (sym_u in verified or past_grace):
+                continue  # date reached but nothing published yet — keep waiting
             if report_date <= today:
                 await redis_client.sadd(REDIS_KEY_QUEUE, sym)
                 await redis_client.expire(REDIS_KEY_QUEUE, REDIS_TTL)
