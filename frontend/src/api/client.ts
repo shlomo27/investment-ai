@@ -590,10 +590,6 @@ export const marketApi = {
     return response.data;
   },
 
-  getPaperTradingStatus: async (): Promise<any> => {
-    const response = await api.get("/market/paper-trading/status");
-    return response.data;
-  },
 };
 
 // ─── Watchlist API ────────────────────────────────────────────────────────────
