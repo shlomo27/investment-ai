@@ -829,12 +829,28 @@ async def job_engine_health_check():
 
     def _diagnose(err: str) -> str:
         e = err.lower()
+        # Anthropic returns three very different failures that all look like a
+        # quota problem. Telling them apart matters: one clears in seconds, one
+        # is blocked until the 1st of next month, and one is a setting we chose.
+        # Spend and rate limits are enforced per ORGANIZATION, so another app
+        # sharing this account consumes the same allowance.
+        if "enforced_spend_limit_reached" in e or "monthly api usage threshold" in e:
+            return ("🚫 <b>נגמרה תקרת ההוצאה החודשית של החשבון</b> — חסום עד ה-1 בחודש הבא. "
+                    "ניסיונות חוזרים ייכשלו. הפתרון: העלאת ה-tier בעמוד Rate limits ב-Console. "
+                    "שים לב: התקרה משותפת לכל האפליקציות באותו חשבון.")
+        if "specified workspace api usage limits" in e:
+            return ("⚙️ הגעת לתקרת ההוצאה שהגדרת ל-Workspace הזה — לא תקלה, זו הגדרה שלך. "
+                    "העלה או הסר אותה ב-Console → Settings → Billing.")
+        if "specified api usage limits" in e:
+            return ("⚙️ הגעת לתקרת ההוצאה שהגדרת לחשבון — לא תקלה, זו הגדרה שלך. "
+                    "העלה או הסר אותה ב-Console → Settings → Billing.")
         if any(k in e for k in ("insufficient", "credit", "billing", "payment", "402", "balance")):
             return "💳 נגמרו הקרדיטים או בעיית חיוב — היכנס לחשבון הספק וטען/עדכן אמצעי תשלום"
         if any(k in e for k in ("invalid api key", "invalid x-api-key", "unauthorized", "authentication", "401", "403", "permission")):
             return "🔑 מפתח ה-API לא תקין או נחסם — בדוק את המשתנה ב-Railway מול המפתח אצל הספק"
         if any(k in e for k in ("429", "rate limit", "quota", "resource_exhausted", "resource exhausted")):
-            return "⏳ חריגת מכסה/קצב — ייתכן שנגמרה המכסה (בגרסה חינמית) או עומס זמני; לרוב חולף תוך שעות"
+            return ("⏳ חריגת קצב זמנית (בקשות/טוקנים לדקה) — חולף תוך שניות עד דקות. "
+                    "הקצב משותף לכל האפליקציות באותו חשבון, אז אפליקציה אחרת עמוסה יכולה לגרום לזה.")
         if any(k in e for k in ("not found", "404", "no such model", "decommissioned", "deprecated")):
             return "🏷️ שם המודל לא קיים אצל הספק — ייתכן שהוצא משימוש וצריך לעדכן את שם המודל"
         if any(k in e for k in ("timeout", "timed out", "connection", "unavailable", "overloaded", "500", "502", "503", "529")):
