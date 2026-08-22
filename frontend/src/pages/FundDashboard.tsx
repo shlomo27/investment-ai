@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
-import { fetchPortfolioSummary, fetchPortfolioRisk } from "../store/slices/portfolioSlice";
 import { fetchRecommendations } from "../store/slices/notificationsSlice";
 import { marketApi } from "../api/client";
 import { UniverseStats, UniversePool, ScreenerStatus, RecommendationType } from "../types";
@@ -66,7 +65,6 @@ const SignalSummaryCard: React.FC<{
 
 const FundDashboard: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { summary } = useAppSelector((s) => s.portfolio);
   const { recommendations } = useAppSelector((s) => s.notifications);
   const { user } = useAppSelector((s) => s.auth);
   const isHe = user?.preferred_language === "he";
@@ -133,8 +131,6 @@ const FundDashboard: React.FC = () => {
   const [simLoading, setSimLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    dispatch(fetchPortfolioSummary());
-    dispatch(fetchPortfolioRisk());
     dispatch(fetchRecommendations({}));
     loadUniverseStats();
     loadEarningsStatus();
@@ -297,14 +293,6 @@ const FundDashboard: React.FC = () => {
       setScanRunning(false);
     }
   };
-
-  const fmt = (v: number, prefix = "$") =>
-    `${prefix}${Math.abs(v).toLocaleString("en", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-
-  const fmtPct = (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
-
-  // Still used by the holdings table further down this screen.
-  const positions = summary?.positions || [];
 
   // Compute approved recommendation breakdown
   // ACTIONED = the user marked it as bought at their broker — the
@@ -1075,45 +1063,6 @@ const FundDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Top Holdings with P&L */}
-      <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-bold">{isHe ? "פוזיציות פעילות" : "Active Positions"}</h2>
-          <Link to="/portfolio" className="text-xs text-blue-400 hover:text-blue-300">
-            {isHe ? "פורטפוליו מלא" : "Full Portfolio"}
-          </Link>
-        </div>
-        {positions.length === 0 ? (
-          <p className="text-gray-500 text-sm text-center py-6">{isHe ? "אין פוזיציות" : "No positions"}</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-gray-500 border-b border-gray-800">
-                  <th className="text-left py-2">{isHe ? "מניה" : "Symbol"}</th>
-                  <th className="text-right py-2">{isHe ? "כמות" : "Qty"}</th>
-                  <th className="text-right py-2">{isHe ? "שווי" : "Value"}</th>
-                  <th className="text-right py-2">{isHe ? "רווח/הפסד" : "P&L"}</th>
-                  <th className="text-right py-2">{isHe ? "חשיפה" : "Exposure"}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800/50">
-                {positions.map((pos) => (
-                  <tr key={pos.symbol} className="hover:bg-gray-800/30">
-                    <td className="py-2.5 font-mono font-bold">{pos.symbol}</td>
-                    <td className="py-2.5 text-right text-gray-300">{pos.quantity.toFixed(2)}</td>
-                    <td className="py-2.5 text-right">{fmt(pos.current_value)}</td>
-                    <td className={`py-2.5 text-right font-medium ${pos.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      {fmtPct(pos.pnl_percentage)}
-                    </td>
-                    <td className="py-2.5 text-right text-gray-400">{pos.exposure_percentage.toFixed(1)}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
 
       {/* Alpaca Paper Trading Panel */}
       <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
