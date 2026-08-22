@@ -997,8 +997,8 @@ const FundDashboard: React.FC = () => {
             <h2 className="font-bold mb-1">{isHe ? "סריקת AI מלאה" : "Run Full AI Scan"}</h2>
             <p className="text-xs text-gray-400 mb-2">
               {isHe
-                ? "מריץ AI מלא על כל 100 המניות הפעילות היומיות (80 LONG + 20 SHORT) — 3 במקביל עד סיום. מחזור של 9 ימים לכיסוי כל ה-S&P500+S&P400."
-                : "Runs full AI on all 100 active stocks (80 LONG + 20 SHORT) — 3 concurrent until done. 9-day cycle covers all S&P500+S&P400."}
+                ? "מריץ ניתוח AI מלא על המניות שבמאגר הסריקה (80 LONG + 20 SHORT, ועד 140 עם המניות המוחזקות) — 3 במקביל עד סיום. מניה שנותחה ב-14 הימים האחרונים מדולגת, אלא אם פרסמה דוח מאז. כיסוי כל היקום נעשה בסריקה הרבעונית, לא כאן."
+                : "Runs full AI analysis on the stocks in the scan pool (80 LONG + 20 SHORT, up to 140 with sticky holds) — 3 concurrent until done. A stock analyzed in the last 14 days is skipped unless it has reported since. Full-universe coverage comes from the quarterly sweep, not from here."}
             </p>
             <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-800/50 rounded-lg px-3 py-2 w-fit flex-wrap">
               <span className="text-blue-400">1.</span>
@@ -1048,7 +1048,9 @@ const FundDashboard: React.FC = () => {
 
             {!scanRunning && !scanResult && (
               <p className="text-xs text-gray-600 mt-3">
-                {isHe ? "הסריקה רצה אוטומטית כל יום ב-09:00 שעון ישראל" : "Scan runs automatically every day at 09:00 Israel time"}
+                {isHe
+                  ? "הסריקה רצה אוטומטית כל יום רביעי ב-09:00 שעון ישראל"
+                  : "Scan runs automatically every Wednesday at 09:00 Israel time"}
               </p>
             )}
 
