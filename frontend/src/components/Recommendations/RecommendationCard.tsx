@@ -153,7 +153,13 @@ const RecommendationCard: React.FC<Props> = ({
         {/* Key Metrics */}
         <div className="grid grid-cols-4 gap-4 mt-4">
           <div>
-            <p className="text-xs text-gray-400">{isHe ? "מחיר נוכחי" : "Current Price"}</p>
+            {/* This is the price the analysis was written against, frozen at
+                approval — not a live quote. Labelling it "current" told a
+                reader looking at a two-week-old card that the stock trades
+                there today, and the target percentage is measured from it. */}
+            <p className="text-xs text-gray-400" title={isHe ? "המחיר שעליו נכתב הניתוח, לא מחיר השוק כרגע" : "The price the analysis was written against, not a live quote"}>
+              {isHe ? "מחיר בעת ההמלצה" : "Price at recommendation"}
+            </p>
             <p className="font-bold">{fmt(rec.current_price_at_recommendation)}</p>
           </div>
           <div>
