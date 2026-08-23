@@ -499,8 +499,8 @@ const FundDashboard: React.FC = () => {
           )}
           <p className="text-xs text-gray-400 mb-4">
             {isHe
-              ? "מדרג כל בוקר את כל ~900 מניות היקום לפי מומנטום (50% מומנטום 3 חודשים, 30% מומנטום 6 חודשים, 20% נפח) ובוחר את המאגר הפעיל: 80 החזקות ביותר ללונג + 20 החלשות ביותר לשורט. מניה שנכנסה למאגר נשארת בו לפחות שבוע — כך היא מובטחת להיכלל בסריקה השבועית המעמיקה ולא נופלת בין הכיסאות."
-              : "Ranks all ~900 universe stocks every morning by momentum (50% 3-month, 30% 6-month, 20% volume) and selects the active pool: top 80 for LONG + weakest 20 for SHORT. A stock that enters the pool is held for at least a week, so it is guaranteed to be covered by the weekly deep scan."}
+              ? "רץ כל יום שלישי — יום לפני הסריקה השבועית — ומדרג את כל ~900 מניות היקום לפי מומנטום (50% מומנטום 3 חודשים, 30% מומנטום 6 חודשים, 20% נפח) ובוחר את המאגר הפעיל: 80 החזקות ביותר ללונג + 20 החלשות ביותר לשורט. מניה שנכנסה למאגר נשארת בו לפחות שבוע — כך היא מובטחת להיכלל בסריקה השבועית המעמיקה ולא נופלת בין הכיסאות."
+              : "Runs every Tuesday, the day before the weekly scan, ranking all ~900 universe stocks by momentum (50% 3-month, 30% 6-month, 20% volume) and selects the active pool: top 80 for LONG + weakest 20 for SHORT. A stock that enters the pool is held for at least a week, so it is guaranteed to be covered by the weekly deep scan."}
           </p>
 
           {universeStats?.pool_changes?.ran_at && (

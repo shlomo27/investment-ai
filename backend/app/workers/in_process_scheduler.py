@@ -10,7 +10,7 @@ Schedule (Asia/Jerusalem timezone):
   Sunday    07:00  — load_universe         (refresh S&P500+S&P400+TA-125 from Wikipedia)
   Daily     07:30  — earnings_watcher      (detects reporters; every report → immediate analysis)
   Daily     07:45  — earnings_reminders    (warns holders/watchers a followed stock reports within 2 days)
-  Daily     08:00  — pre_screener          (momentum-score universe → refresh active pool: top 80 LONG + 20 SHORT)
+  Tuesday   08:00  — pre_screener          (momentum-score universe → refresh active pool: top 80 LONG + 20 SHORT)
   Every 30min      — ta_scan               (TA for all master-list stocks — free, no Claude)
   Every 30min      — news_watcher          (news+social for master-list stocks → alerts to holders)
   Every 30min      — digest_sender         (batched external alerts for digest-mode users)
@@ -932,7 +932,13 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
     # active pool (top 80 LONG + 20 SHORT) that ta_scan and full_scan work on.
     scheduler.add_job(
         job_run_prescreener,
-        CronTrigger(hour=8, minute=0, timezone="Asia/Jerusalem"),
+        # Tuesday, the day before the weekly scan. The pool has exactly one
+        # scheduled consumer — that scan — so re-ranking daily churned the list
+        # for six days that nobody read, and that churn was what forced the
+        # sticky window in the first place: a stock could enter on Monday and
+        # be dropped on Tuesday without ever being analysed. Ranking once,
+        # immediately before it is used, removes the noise at its source.
+        CronTrigger(day_of_week="tue", hour=8, minute=0, timezone="Asia/Jerusalem"),
         id="scheduled_prescreener",
         replace_existing=True,
     )
