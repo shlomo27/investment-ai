@@ -91,58 +91,6 @@ class EarningsCalendarService:
         except Exception:
             return None
 
-    async def check_imminent_earnings_and_notify(
-        self,
-        symbols: List[str],
-        user_id: int,
-        db: Any,
-    ) -> List[str]:
-        """
-        Check if any watchlist symbols have earnings within 3 days.
-        Sends notifications for each. Returns list of symbols notified.
-        """
-        upcoming = await self.get_upcoming_earnings(symbols, days_ahead=3)
-        imminent = [e for e in upcoming if e.get("is_imminent")]
-
-        notified = []
-        for event in imminent:
-            symbol = event["symbol"]
-            days = event["days_until"]
-            date_str = event["earnings_date"]
-            eps_est = event.get("eps_estimate")
-
-            try:
-                from app.services.notifications.service import get_notification_service
-                from app.db.models.notification import NotificationType
-
-                msg_he = f"⚠️ {symbol} מדווחת על רווחים בעוד {days} ימים ({date_str})"
-                msg_en = f"⚠️ {symbol} reports earnings in {days} day(s) ({date_str})"
-                if eps_est:
-                    msg_he += f" | תחזית EPS: ${eps_est:.2f}"
-                    msg_en += f" | EPS estimate: ${eps_est:.2f}"
-
-                await get_notification_service().send_notification(
-                    user_id=user_id,
-                    recommendation_id=None,
-                    internal_detail={
-                        "type": "EARNINGS_CALENDAR",
-                        "symbol": symbol,
-                        "earnings_date": date_str,
-                        "days_until": days,
-                        "eps_estimate": eps_est,
-                        "message_he": msg_he,
-                        "message_en": msg_en,
-                    },
-                    db=db,
-                    notification_type=NotificationType.SYSTEM,
-                    title=f"דיווח רווחים קרוב — {symbol}" if True else f"Upcoming Earnings — {symbol}",
-                )
-                notified.append(symbol)
-            except Exception as e:
-                logger.warning("Failed to send earnings notification", symbol=symbol, error=str(e))
-
-        return notified
-
 
 _earnings_service: Optional[EarningsCalendarService] = None
 

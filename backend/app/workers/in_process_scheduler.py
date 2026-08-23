@@ -8,7 +8,8 @@ job store only persists jobs, it does not prevent duplicate fires).
 
 Schedule (Asia/Jerusalem timezone):
   Sunday    07:00  — load_universe         (refresh S&P500+S&P400+TA-125 from Wikipedia)
-  Daily     07:30  — earnings_watcher      (only during earnings seasons; ≥20 fresh → trigger quarterly scan)
+  Daily     07:30  — earnings_watcher      (detects reporters; every report → immediate analysis)
+  Daily     07:45  — earnings_reminders    (warns holders/watchers a followed stock reports within 2 days)
   Daily     08:00  — pre_screener          (momentum-score universe → refresh active pool: top 80 LONG + 20 SHORT)
   Every 30min      — ta_scan               (TA for all master-list stocks — free, no Claude)
   Every 30min      — news_watcher          (news+social for master-list stocks → alerts to holders)
@@ -955,6 +956,15 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+    # Heads-up before a followed stock reports — runs after the watcher so the
+    # calendar it reads is the one just refreshed.
+    scheduler.add_job(
+        job_earnings_reminders,
+        CronTrigger(hour=7, minute=45, timezone="Asia/Jerusalem"),
+        id="scheduled_earnings_reminders",
+        replace_existing=True,
+    )
+
     # Technical analysis scan — every 30 minutes (free: pandas-ta + yfinance, no Claude)
     scheduler.add_job(
         job_daily_ta_scan,
@@ -1047,6 +1057,7 @@ KNOWN_JOB_IDS = {
     "scheduled_prescreener",
     "scheduled_weekly_full_scan",
     "scheduled_earnings_watcher",
+    "scheduled_earnings_reminders",
     "scheduled_ta_scan",
     "scheduled_news_watcher",
     "scheduled_quarterly_scan_batch",
@@ -1228,6 +1239,99 @@ async def job_track_outcomes():
         logger.info(f"[scheduler] track_outcomes done: {result}")
     except Exception as exc:
         logger.error(f"[scheduler] track_outcomes failed: {exc}")
+
+
+async def job_earnings_reminders():
+    """Daily — warn holders and watchers that a stock they follow reports soon.
+
+    The quarterly report is the event most likely to invalidate the thesis
+    someone is holding on, and until now nobody was told it was coming: the
+    first they heard was the revised recommendation a day AFTER the numbers
+    landed. A day's notice is the difference between deciding and reacting.
+
+    Fetches the calendar once for every followed symbol rather than once per
+    user, and remembers what it has already sent so a two-day window does not
+    become two identical alerts.
+    """
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.portfolio import Portfolio
+    from app.db.models.watchlist import Watchlist
+    from app.db.models.notification import NotificationType
+    from app.services.notifications.service import NotificationService
+    from app.workers.earnings_watcher import _finnhub_upcoming
+    from sqlalchemy import select
+    from datetime import date as _date, datetime as _dt, timedelta as _td, timezone as _tz
+    import redis.asyncio as aioredis
+
+    DAYS_AHEAD = 2  # alert on the report and the day before it
+
+    try:
+        async with AsyncSessionLocal() as db:
+            held = await db.execute(
+                select(Portfolio.symbol, Portfolio.user_id).where(Portfolio.quantity > 0)
+            )
+            watched = await db.execute(
+                select(Watchlist.symbol, Watchlist.user_id).where(
+                    Watchlist.alert_on_technical_signal == True
+                )
+            )
+            followers: dict = {}
+            for sym, uid in list(held.all()) + list(watched.all()):
+                followers.setdefault(sym, set()).add(uid)
+
+        if not followers:
+            return
+
+        upcoming = await _finnhub_upcoming(set(followers.keys()), days_ahead=DAYS_AHEAD + 1)
+        if not upcoming:
+            logger.info("[earnings_reminder] no followed stock reports in the next few days")
+            return
+
+        today = _dt.now(_tz.utc).date()
+        r = aioredis.from_url(settings.REDIS_URL)
+        sent = 0
+        try:
+            for symbol, date_str in upcoming.items():
+                try:
+                    report_date = _date.fromisoformat(date_str)
+                except ValueError:
+                    continue
+                days_until = (report_date - today).days
+                if not 0 <= days_until <= DAYS_AHEAD:
+                    continue
+
+                when = ("היום אחרי סגירת המסחר" if days_until == 0
+                        else "מחר" if days_until == 1
+                        else f"בעוד {days_until} ימים")
+                title = (
+                    f"📅 {symbol}: דוח כספי {when} ({date_str})\n"
+                    f"זה האירוע שהכי עשוי לשנות את ההמלצה על המניה. "
+                    f"המערכת תנתח אותה מחדש מיד עם פרסום התוצאות."
+                )
+
+                for uid in followers.get(symbol, ()):
+                    # One reminder per user per symbol per report date.
+                    key = f"investment_ai:earnings_reminder:{uid}:{symbol}:{date_str}"
+                    if await r.get(key):
+                        continue
+                    await r.set(key, "1", ex=14 * 24 * 3600)
+                    async with AsyncSessionLocal() as db:
+                        await NotificationService().send_notification(
+                            user_id=uid, recommendation_id=None,
+                            internal_detail={"symbol": symbol, "signal": "EARNINGS_SOON",
+                                             "earnings_date": date_str,
+                                             "days_until": days_until,
+                                             "trigger": "EARNINGS_REMINDER"},
+                            db=db, notification_type=NotificationType.ALERT, title=title,
+                        )
+                    sent += 1
+        finally:
+            await r.aclose()
+
+        logger.info(f"[earnings_reminder] sent {sent} reminders")
+    except Exception as exc:
+        logger.error(f"[earnings_reminder] failed: {exc}")
 
 
 async def job_check_price_alerts():
