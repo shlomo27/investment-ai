@@ -542,9 +542,17 @@ async def job_quarterly_scan_batch() -> dict:
         if remaining == 0:
             await _on_scan_complete(quarter)
 
+        # Keep the published list in step with what this batch produced,
+        # rather than nudging an admin to press a button.
         if approved:
-            from app.workers.in_process_scheduler import maybe_nudge_master_list_publish
-            await maybe_nudge_master_list_publish()
+            try:
+                from app.services.master_list import publish_master_list
+                async with AsyncSessionLocal() as db:
+                    res = await publish_master_list(db)
+                    await db.commit()
+                logger.info(f"[quarterly_scanner] master list republished: {res}")
+            except Exception as ml_exc:
+                logger.warning(f"[quarterly_scanner] master list publish failed: {ml_exc}")
 
         return result
     finally:

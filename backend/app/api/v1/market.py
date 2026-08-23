@@ -1547,128 +1547,19 @@ async def run_quarterly_batch_now(
 
 
 @router.post("/master-list/publish")
-async def publish_master_list(
+async def publish_master_list_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Admin: publish a new quarterly master list from top approved recommendations.
+    """Admin: republish the master list from the current live recommendations.
 
-    Deactivates all existing entries, then creates new entries from:
-    - Top 30 BUY / STRONG_BUY approved recommendations
-    - Top 20 SELL / STRONG_SELL approved recommendations
+    The same publish now runs automatically after the weekly scan; this is the
+    manual override for when you want the snapshot taken right now.
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
-
-    from app.db.models.master_list import MasterListEntry
-    from app.db.models.recommendation import Recommendation, RecommendationStatus, RecommendationType
-    from app.db.models.asset import Asset as AssetModel
-    from sqlalchemy import update as sa_update
-
-    now = datetime.now(timezone.utc)
-    month = now.month
-    quarter_num = (month - 1) // 3 + 1
-    quarter = f"Q{quarter_num}-{now.year}"
-
-    # Deactivate all existing master list entries
-    await db.execute(sa_update(MasterListEntry).values(is_active=False))
-
-    approved_statuses = [
-        RecommendationStatus.APPROVED,
-        RecommendationStatus.PRESENTED_TO_USER,
-        RecommendationStatus.ACTIONED,
-    ]
-    buy_types = [RecommendationType.BUY, RecommendationType.STRONG_BUY]
-    sell_types = [RecommendationType.SELL, RecommendationType.STRONG_SELL]
-
-    # Top 30 buys
-    buy_result = await db.execute(
-        select(Recommendation, AssetModel.name.label("asset_name"), AssetModel.sector)
-        .join(AssetModel, AssetModel.id == Recommendation.asset_id)
-        .where(Recommendation.recommendation_type.in_(buy_types))
-        .where(Recommendation.status.in_(approved_statuses))
-        .order_by(Recommendation.confidence_score.desc())
-        .limit(30)
-    )
-    buy_rows = buy_result.all()
-
-    # Top 20 sells
-    sell_result = await db.execute(
-        select(Recommendation, AssetModel.name.label("asset_name"), AssetModel.sector)
-        .join(AssetModel, AssetModel.id == Recommendation.asset_id)
-        .where(Recommendation.recommendation_type.in_(sell_types))
-        .where(Recommendation.status.in_(approved_statuses))
-        .order_by(Recommendation.confidence_score.desc())
-        .limit(20)
-    )
-    sell_rows = sell_result.all()
-
-    entries = []
-    seen_symbols: set = set()
-    for rec, asset_name, sector in (buy_rows + sell_rows):
-        # One entry per symbol — rows are confidence-sorted, so the first
-        # occurrence is the best; older duplicate recommendations can't
-        # multiply into the published list.
-        if rec.symbol in seen_symbols:
-            continue
-        seen_symbols.add(rec.symbol)
-        thesis = rec.fundamental_analysis.get("thesis") if rec.fundamental_analysis else None
-        entry = MasterListEntry(
-            symbol=rec.symbol,
-            asset_name=asset_name,
-            recommendation_type=rec.recommendation_type.value if hasattr(rec.recommendation_type, "value") else rec.recommendation_type,
-            confidence_score=rec.confidence_score,
-            target_price=rec.target_price,
-            stop_loss=rec.stop_loss,
-            current_price=rec.current_price_at_recommendation,
-            expected_return_pct=rec.expected_return_pct,
-            thesis=thesis,
-            sector=sector,
-            quarter=quarter,
-            published_at=now,
-            is_active=True,
-            recommendation_id=rec.id,
-        )
-        entries.append(entry)
-
-    db.add_all(entries)
-    await db.flush()
-
-    # Notify all active users that a new master list is published
-    try:
-        from app.db.models.user import User as UserModel
-        from app.db.models.notification import NotificationType
-        from app.services.notifications.service import NotificationService
-
-        users_result = await db.execute(
-            select(UserModel).where(UserModel.is_active == True)
-        )
-        all_users = users_result.scalars().all()
-
-        notification_service = NotificationService()
-        for u in all_users:
-            title = (
-                f"רשימת המאסטר {quarter} פורסמה"
-                if u.preferred_language == "he"
-                else f"Master List {quarter} Published"
-            )
-            await notification_service.send_notification(
-                user_id=u.id,
-                recommendation_id=None,
-                internal_detail={"quarter": quarter, "total": len(entries), "buys": len(buy_rows), "sells": len(sell_rows)},
-                db=db,
-                notification_type=NotificationType.SYSTEM,
-                title=title,
-            )
-    except Exception as _notify_exc:
-        logger.warning(f"Master list publish notifications failed: {_notify_exc}")
-
-    return {
-        "published": len(entries),
-        "quarter": quarter,
-        "buys": len(buy_rows),
-        "sells": len(sell_rows),
-    }
+    from app.services.master_list import publish_master_list
+    return await publish_master_list(db)
 
 
 # ─── Earnings Calendar ────────────────────────────────────────────────────────
