@@ -474,6 +474,47 @@ async def _notify_recommendation_removed(symbol: str, old_type: str, new_type: s
         logger.warning("rec-downgrade notify failed", symbol=symbol, error=str(e))
 
 
+_REC_LABELS = {
+    "STRONG_BUY":  "🚀 קנייה חזקה",
+    "BUY":         "📈 קנייה",
+    "SELL":        "📉 מכירה",
+    "STRONG_SELL": "⚠️ מכירה חזקה",
+}
+
+
+def _new_rec_title(state: AgentWorkflowState, recommendation) -> str:
+    """One line saying what the committee decided and on what.
+
+    This alert was the only one sent without a title, so it fell back to the
+    generic "עדכון השקעות" — the inbox showed the same five words against
+    every new recommendation, and the reader had to open each one to find out
+    which stock it was about, let alone whether to buy or sell.
+    """
+    senior = state.get("senior_decision") or {}
+    rec_type = senior.get("final_recommendation", "")
+    symbol = state["asset_symbol"]
+    label = _REC_LABELS.get(rec_type, rec_type)
+
+    parts = [f"{label} — {symbol}"]
+
+    price = (state.get("data_fetcher_output") or {}).get("price")
+    if price:
+        parts.append(f"מחיר נוכחי ${price:,.2f}")
+
+    target = getattr(recommendation, "target_price", None) if recommendation else None
+    if target and price:
+        pct = (target - price) / price * 100
+        parts.append(f"יעד ${target:,.2f} ({pct:+.0f}%)")
+    elif target:
+        parts.append(f"יעד ${target:,.2f}")
+
+    conf = senior.get("decision_confidence")
+    if conf:
+        parts.append(f"ביטחון {float(conf):.0f}%")
+
+    return " | ".join(parts) + " 👈 פתח את דוח המחקר המלא."
+
+
 async def node_notify_users(state: AgentWorkflowState) -> AgentWorkflowState:
     """Node 4b: Notify eligible users about new recommendation."""
     logger.info("Workflow node: notify_users", rec_id=state.get("recommendation_id"))
@@ -543,6 +584,7 @@ async def node_notify_users(state: AgentWorkflowState) -> AgentWorkflowState:
                         recommendation_id=rec_id,
                         internal_detail=internal_detail,
                         db=session,
+                        title=_new_rec_title(state, recommendation),
                     )
                 except Exception as ue:
                     logger.warning("Failed to notify user", user_id=user.id, error=str(ue))
