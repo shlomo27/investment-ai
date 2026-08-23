@@ -38,7 +38,10 @@ const Recommendations: React.FC = () => {
   const { summary: portfolioSummary } = useAppSelector((s) => s.portfolio);
   const isHe = user?.preferred_language === "he";
 
-  const [view, setView] = useState<"inbox" | "signals" | "scanlog">("inbox");
+  // Signals first: the recommendations are the product, the inbox is a log
+  // of what already happened. Landing on the log made a client read
+  // history before seeing what is being recommended right now.
+  const [view, setView] = useState<"inbox" | "signals" | "scanlog">("signals");
   const [scanLog, setScanLog] = useState<Awaited<ReturnType<typeof recommendationsApi.getScanActivity>> | null>(null);
   const [scanLogLoading, setScanLogLoading] = useState(false);
   const [expandedLog, setExpandedLog] = useState<number | null>(null);
@@ -164,15 +167,6 @@ const Recommendations: React.FC = () => {
       {/* Main Tabs */}
       <div className="flex bg-gray-900 rounded-xl p-1 w-fit">
         <button
-          onClick={() => setView("inbox")}
-          className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "inbox" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
-        >
-          {isHe ? "תיבת דואר" : "Inbox"}
-          {unreadCount > 0 && (
-            <span className="ml-2 bg-red-500 text-xs rounded-full px-1.5 py-0.5">{unreadCount}</span>
-          )}
-        </button>
-        <button
           onClick={() => setView("signals")}
           className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "signals" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
         >
@@ -181,6 +175,15 @@ const Recommendations: React.FC = () => {
             <span className="ml-2 bg-gray-700 text-gray-300 text-xs rounded-full px-1.5 py-0.5">
               {topPicks.length}
             </span>
+          )}
+        </button>
+        <button
+          onClick={() => setView("inbox")}
+          className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "inbox" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
+        >
+          {isHe ? "תיבת דואר" : "Inbox"}
+          {unreadCount > 0 && (
+            <span className="ml-2 bg-red-500 text-xs rounded-full px-1.5 py-0.5">{unreadCount}</span>
           )}
         </button>
         <button
