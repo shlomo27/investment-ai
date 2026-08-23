@@ -23,6 +23,17 @@ from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
+# The fundamentals a verdict genuinely rests on: each one is either read by a
+# hard exclusion rule or needed to value the company at all. All are mandatory
+# disclosure for a US-listed company, so a gap means our fetch failed.
+CRITICAL_FUNDAMENTALS = (
+    "market_cap",        # exclusion: market cap below $500M
+    "free_cash_flow",    # exclusion: negative 3-year average FCF
+    "revenue_growth",    # exclusion: revenue declining 3+ quarters
+    "profit_margin",     # earnings quality
+    "debt_to_equity",    # exclusion: leverage
+)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main workflow nodes
@@ -58,6 +69,35 @@ async def node_fetch_data(state: AgentWorkflowState) -> AgentWorkflowState:
                 "workflow_status": "failed",
                 "error": "No price available from any market data source",
             }
+
+        # Enough fundamentals to actually judge the company. Every field below
+        # is one a hard exclusion rule or the valuation depends on, and every
+        # one is mandatory disclosure for a US-listed company — so an absence
+        # means our fetch failed, not that the company withheld it. Judging on
+        # a mostly-empty sheet produces a confident-looking verdict backed by
+        # nothing, which is worse than no verdict at all.
+        #
+        # Deliberately NOT required: P/E (legitimately absent for loss-making
+        # companies) and dividend yield (absent for non-payers). Requiring
+        # those would reject healthy candidates for telling the truth.
+        missing = [f for f in CRITICAL_FUNDAMENTALS if (market_data or {}).get(f) is None]
+        if len(missing) > len(CRITICAL_FUNDAMENTALS) // 2:
+            logger.error(
+                "Too many fundamentals missing — aborting analysis",
+                symbol=state["asset_symbol"], missing=missing,
+            )
+            return {
+                **state,
+                "data_fetcher_output": market_data,
+                "data_fetcher_error": "insufficient_fundamentals",
+                "workflow_status": "failed",
+                "error": f"Insufficient fundamental data — missing: {', '.join(missing)}",
+            }
+        if missing:
+            logger.info(
+                "Proceeding with partial fundamentals",
+                symbol=state["asset_symbol"], missing=missing,
+            )
 
         return {
             **state,

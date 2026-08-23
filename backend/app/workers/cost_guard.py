@@ -145,6 +145,12 @@ async def clear_market_data_down() -> None:
         pass
 
 
+# Abort reasons that mean "we could not gather the data", never "the company
+# was judged and found wanting". Both must be requeued rather than recorded.
+_DATA_GAP_REASONS = {"no_price", "insufficient_fundamentals"}
+
+
 def is_no_price_result(result: dict) -> bool:
-    """True if the workflow aborted because no source returned a price."""
-    return (result or {}).get("data_fetcher_error") == "no_price"
+    """True if the workflow aborted for want of data — no price at all, or too
+    few fundamentals to judge the company on."""
+    return (result or {}).get("data_fetcher_error") in _DATA_GAP_REASONS
