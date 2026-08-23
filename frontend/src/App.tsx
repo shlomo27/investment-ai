@@ -20,7 +20,6 @@ import ResearchReport from "./pages/ResearchReport";
 import TechnicalAnalysisPage from "./pages/TechnicalAnalysisPage";
 import Orders from "./pages/Orders";
 import Watchlist from "./pages/Watchlist";
-import MasterList from "./pages/MasterList";
 import Settings from "./pages/Settings";
 import Performance from "./pages/Performance";
 import NotFound from "./pages/NotFound";
@@ -222,16 +221,6 @@ const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/master-list"
-          element={
-            <AdminRoute>
-              <AppLayout>
-                <MasterList />
-              </AppLayout>
-            </AdminRoute>
-          }
-        />
 
         <Route
           path="/settings"
@@ -262,7 +251,7 @@ const App: React.FC = () => {
               ? <Navigate to="/login" replace />
               : user?.is_admin
               ? <Navigate to="/fund" replace />
-              : <Navigate to="/master-list" replace />
+              : <Navigate to="/recommendations" replace />
           }
         />
         <Route

@@ -1088,13 +1088,6 @@ const FundDashboard: React.FC = () => {
               },
             },
             {
-              step: 2,
-              icon: "📋",
-              title: isHe ? "פרסם רשימת מאסטר" : "Publish Master List",
-              desc: isHe ? "מפרסם את ה-50 המניות הטובות ביותר לכל המשתמשים" : "Publishes top 50 stocks to all users",
-              action: async () => marketApi.publishMasterList(),
-            },
-            {
               step: 3,
               icon: "💼",
               title: isHe ? `צור פוזיציית בדיקה (${simSymbol})` : `Create Test Position (${simSymbol})`,

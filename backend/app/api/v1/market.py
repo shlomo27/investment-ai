@@ -1442,42 +1442,6 @@ async def earnings_status(
 
 # ─── Master List ──────────────────────────────────────────────────────────────
 
-@router.get("/master-list")
-async def get_master_list(db: AsyncSession = Depends(get_db)):
-    """Return the active quarterly master list of curated stock picks."""
-    from app.db.models.master_list import MasterListEntry
-
-    result = await db.execute(
-        select(MasterListEntry)
-        .where(MasterListEntry.is_active == True)
-        .order_by(MasterListEntry.confidence_score.desc())
-    )
-    entries = result.scalars().all()
-    quarter = entries[0].quarter if entries else None
-    return {
-        "quarter": quarter,
-        "entries": [
-            {
-                "id": e.id,
-                "symbol": e.symbol,
-                "asset_name": e.asset_name,
-                "recommendation_type": e.recommendation_type,
-                "confidence_score": e.confidence_score,
-                "target_price": e.target_price,
-                "stop_loss": e.stop_loss,
-                "current_price": e.current_price,
-                "expected_return_pct": e.expected_return_pct,
-                "thesis": e.thesis,
-                "sector": e.sector,
-                "quarter": e.quarter,
-                "published_at": e.published_at.isoformat() if e.published_at else None,
-                "recommendation_id": e.recommendation_id,
-            }
-            for e in entries
-        ],
-    }
-
-
 @router.post("/quarterly/requeue-reporters")
 async def requeue_unanalyzed_reporters_endpoint(
     current_user: User = Depends(get_current_active_user),
@@ -1544,22 +1508,6 @@ async def run_quarterly_batch_now(
 
     _asyncio.create_task(_run_and_clear())
     return {"started": True, "remaining_before": remaining, "reprioritized": reorder}
-
-
-@router.post("/master-list/publish")
-async def publish_master_list_endpoint(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    """Admin: republish the master list from the current live recommendations.
-
-    The same publish now runs automatically after the weekly scan; this is the
-    manual override for when you want the snapshot taken right now.
-    """
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    from app.services.master_list import publish_master_list
-    return await publish_master_list(db)
 
 
 # ─── Earnings Calendar ────────────────────────────────────────────────────────

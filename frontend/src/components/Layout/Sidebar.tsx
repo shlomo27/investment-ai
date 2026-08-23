@@ -11,7 +11,6 @@ interface NavItem {
 
 const ADMIN_ITEMS: NavItem[] = [
   { to: "/fund", icon: "🎯", label_he: "לוח ניהול", label_en: "Dashboard" },
-  { to: "/master-list", icon: "📋", label_he: "רשימת מאסטר", label_en: "Master List" },
 ];
 
 const CLIENT_ITEMS: NavItem[] = [
