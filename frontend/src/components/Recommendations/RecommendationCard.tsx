@@ -117,12 +117,20 @@ const RecommendationCard: React.FC<Props> = ({
             {(() => {
               if (!approvedAt) return null;
               const ageDays = Math.floor((Date.now() - new Date(approvedAt).getTime()) / 86400000);
-              if (ageDays < 3) {
-                return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-green-900/40 text-green-300 border border-green-700/40">🟢 {isHe ? "חדשה" : "Fresh"}</span>;
-              } else if (ageDays <= 7) {
-                return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300 border border-yellow-700/40">🟡 {isHe ? `${ageDays} ימים` : `${ageDays} days`}</span>;
+              // Thresholds follow the actual refresh cycle. Every live
+              // recommendation is re-analysed by the weekly scan, subject to a
+              // 14-day freshness skip, so the worst case is ~20 days. Turning
+              // red at 7 made "stale" the normal state and taught the reader to
+              // ignore it; red now means genuinely overdue — something did not
+              // run — which is worth acting on.
+              if (ageDays < 7) {
+                return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-green-900/40 text-green-300 border border-green-700/40">🟢 {isHe ? "עדכנית" : "Fresh"}</span>;
+              } else if (ageDays <= 20) {
+                return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300 border border-yellow-700/40"
+                             title={isHe ? "נבדקת מחדש בסריקה השבועית — עד ~20 יום בין ניתוחים" : "Re-checked by the weekly scan — up to ~20 days between analyses"}>🟡 {isHe ? `${ageDays} ימים` : `${ageDays} days`}</span>;
               } else {
-                return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-red-900/40 text-red-300 border border-red-700/40">🔴 {isHe ? "ישנה - מומלץ לרענן" : "Stale - refresh recommended"}</span>;
+                return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-red-900/40 text-red-300 border border-red-700/40"
+                             title={isHe ? "חרגה ממחזור הריענון הרגיל — ייתכן שסריקה לא רצה" : "Past the normal refresh cycle — a scan may not have run"}>🔴 {isHe ? `${ageDays} ימים — חורג` : `${ageDays} days — overdue`}</span>;
               }
             })()}
           </div>
