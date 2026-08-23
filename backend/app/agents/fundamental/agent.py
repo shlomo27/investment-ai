@@ -46,6 +46,9 @@ If ANY rule is confirmed → set auto_disqualified=true, recommendation=HOLD, li
 ✗ Market cap below $500M USD → ELIMINATION
 ✗ Negative 3-year average FCF → ELIMINATION
 If UNCERTAIN whether a rule applies: flag it in hard_exclusions_triggered as "UNCERTAIN: [reason]" — do NOT auto-eliminate based on uncertainty alone.
+MISSING DATA IS NOT A ZERO. A figure shown as "NOT REPORTED" was not returned by any
+data source. Never read it as 0, never eliminate on it, and never write in the
+client-facing text that the company "reported $0" — say the figure is unavailable.
 
 ══════════════════════════════════════════════
 CATALYST VALIDATION PROTOCOL — Score 0-5 points
@@ -215,6 +218,24 @@ class FundamentalAnalystAgent:
     @staticmethod
     def _v(value: Any, default: Any = "N/A") -> Any:
         return value if value is not None else default
+
+    @staticmethod
+    def _num(value: Any, prefix: str = "", decimals: int = 0) -> str:
+        """Format a number, or say plainly that it is missing.
+
+        Rendering an absent figure as 0 is not a display detail: the model
+        cannot tell "this company generated no free cash flow" from "nobody
+        reported it", and free cash flow sits directly under a hard exclusion
+        rule ("negative 3-year average FCF → ELIMINATION"). A missing value
+        shown as $0 lands on the edge of that rule and forces the analyst to
+        hedge in the client-facing write-up.
+        """
+        if value is None:
+            return "NOT REPORTED (no data source returned this figure — do not treat as zero)"
+        try:
+            return f"{prefix}{float(value):,.{decimals}f}"
+        except (TypeError, ValueError):
+            return str(value)
 
     @staticmethod
     def _short_side_override(direction_bias: Optional[str]) -> str:
@@ -414,6 +435,7 @@ expected_return_pct must be NEGATIVE (the expected decline)."""
         pre_exclusions: Optional[List[str]] = None,
     ) -> str:
         v = self._v
+        n = self._num
         # Dates matter: without them the model cannot tell a headline from this
         # week apart from one a year old, and will happily build a "current"
         # thesis on stale news.
@@ -487,8 +509,8 @@ If NOT a real violation → explain why in hard_exclusions_triggered as "CLEARED
 Current Price: {v(data.get('price'), 'N/A')} {v(data.get('currency'), 'USD')}
 Previous Close: {v(data.get('previous_close'), 'N/A')}
 52-Week Range: {v(data.get('fifty_two_week_low'), 'N/A')} – {v(data.get('fifty_two_week_high'), 'N/A')}
-Volume: {v(data.get('volume'), 0):,} (30d avg: {v(data.get('avg_volume_30d'), 0):,})
-Market Cap: ${v(data.get('market_cap'), 0):,.0f}
+Volume: {n(data.get('volume'))} (30d avg: {n(data.get('avg_volume_30d'))})
+Market Cap: {n(data.get('market_cap'), '$')}
 Sector: {v(data.get('sector'), 'Unknown')} | Industry: {v(data.get('industry'), 'Unknown')}
 Country: {v(data.get('country'), 'US')}
 
@@ -507,7 +529,7 @@ Profit Margin: {v(data.get('profit_margin'), 'N/A')}
 Operating Margin: {v(data.get('operating_margin'), 'N/A')}
 ROE: {v(data.get('roe'), 'N/A')}
 ROA: {v(data.get('roa'), 'N/A')}
-Free Cash Flow: ${v(data.get('free_cash_flow'), 0):,.0f}
+Free Cash Flow: {n(data.get('free_cash_flow'), '$')}
 Debt/Equity: {v(data.get('debt_to_equity'), 'N/A')}
 Current Ratio: {v(data.get('current_ratio'), 'N/A')}
 Quick Ratio: {v(data.get('quick_ratio'), 'N/A')}
