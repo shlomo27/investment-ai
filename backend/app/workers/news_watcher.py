@@ -246,6 +246,8 @@ async def _run_news_watch() -> dict:
 
     from app.db.models.portfolio import Portfolio
 
+    from app.db.models.recommendation import Recommendation, RecommendationStatus
+
     async with AsyncSessionLocal() as db:
         rows = await db.execute(
             select(MasterListEntry.symbol).where(MasterListEntry.is_active==True).distinct()
@@ -256,15 +258,31 @@ async def _run_news_watch() -> dict:
             select(Portfolio.symbol).where(Portfolio.quantity > 0).distinct()
         )
         held_symbols = {r[0] for r in held_rows.all()}
+        # Every stock with a LIVE recommendation, which is what clients
+        # actually see. The master list is published by hand and goes stale
+        # between publications, so keying news monitoring on it alone left a
+        # freshly recommended stock with no news watch at all — the TA scan
+        # already covers live recommendations; news did not.
+        live_rows = await db.execute(
+            select(Recommendation.symbol).where(
+                Recommendation.status.in_([
+                    RecommendationStatus.APPROVED,
+                    RecommendationStatus.PRESENTED_TO_USER,
+                    RecommendationStatus.ACTIONED,
+                ])
+            ).distinct()
+        )
+        live_symbols = {r[0] for r in live_rows.all()}
 
-    symbols = sorted(master_symbols | held_symbols)
+    symbols = sorted(master_symbols | held_symbols | live_symbols)
     if not symbols:
-        logger.info("[news_watcher] No active master list symbols — skipping")
+        logger.info("[news_watcher] nothing to watch — no master list, holdings or live recs")
         return {"symbols_checked": 0}
 
     logger.info(
-        f"[news_watcher] Watching {len(symbols)} symbols "
-        f"(master={len(master_symbols)}, held-only={len(held_symbols - master_symbols)})"
+        f"[news_watcher] Watching {len(symbols)} symbols (master={len(master_symbols)}, "
+        f"held-only={len(held_symbols - master_symbols)}, "
+        f"live-rec-only={len(live_symbols - master_symbols - held_symbols)})"
     )
     symbols_alerted = 0
 
