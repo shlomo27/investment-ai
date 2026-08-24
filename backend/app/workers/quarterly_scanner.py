@@ -20,6 +20,13 @@ REDIS_PREFIX  = "investment_ai:quarterly_scan:"
 BATCH_PER_DAY = 75
 TTL_SECONDS   = 60 * 24 * 3600  # 60 days
 
+# A live recommendation is a claim about the present. The weekly full scan only
+# covers the current pre-screener pool, so a stock that left the pool is not
+# revisited until its quarterly turn — up to ~90 days. These two bounds close
+# that gap: re-analyze at 30 days, retire at 45 if the re-analysis never landed.
+STALE_REVALIDATE_DAYS = 30
+STALE_EXPIRE_DAYS     = 45
+
 
 async def _earnings_report_dates(redis_client) -> dict:
     """symbol -> earnings report date (YYYY-MM-DD) from the earnings tracker,
@@ -217,6 +224,117 @@ async def requeue_unanalyzed_reporters() -> dict:
         await redis_client.aclose()
 
 
+async def requeue_stale_live_recommendations() -> dict:
+    """Re-validate — and, failing that, retire — live recommendations that have
+    aged past their refresh cycle.
+
+    A recommendation is only ever superseded by a FRESHER analysis of the same
+    symbol. Nothing expires on time alone. So a stock that dropped out of the
+    weekly pre-screener pool could sit in the feed for months carrying a price
+    target set before its last earnings report, presented to the client as a
+    current view the system had not actually re-checked.
+
+    Two tiers, both driven from the daily batch:
+      1. older than STALE_REVALIDATE_DAYS  -> front of the analysis queue, so
+         the pipeline confirms it (new rec supersedes) or drops it (existing
+         supersede + "removed" alert).
+      2. older than STALE_EXPIRE_DAYS      -> dismissed. Fifteen days of daily
+         re-queue attempts have failed; the claim is no longer one we can
+         stand behind, and silence is worse than an empty slot.
+
+    Expiry is skipped entirely while the decision engine is down — an outage
+    must not be allowed to quietly empty the feed.
+    """
+    from datetime import datetime, timezone, timedelta
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.asset import Asset
+    from app.db.models.recommendation import (
+        Recommendation, RecommendationStatus as _RS,
+    )
+    from app.workers.cost_guard import is_decision_engine_down
+    from sqlalchemy import select, update as _update
+    import redis.asyncio as aioredis
+
+    live = [_RS.APPROVED, _RS.PRESENTED_TO_USER, _RS.ACTIONED]
+    now = datetime.now(timezone.utc)
+    revalidate_before = now - timedelta(days=STALE_REVALIDATE_DAYS)
+    expire_before = now - timedelta(days=STALE_EXPIRE_DAYS)
+
+    redis_client = aioredis.from_url(settings.REDIS_URL)
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = await db.execute(
+                select(Recommendation.id, Recommendation.symbol, Recommendation.created_at)
+                .where(
+                    Recommendation.status.in_(live),
+                    Recommendation.created_at < revalidate_before,
+                )
+                .order_by(Recommendation.created_at)
+            )
+            stale = rows.all()
+            if not stale:
+                return {"requeued": 0, "expired": 0, "reason": "no stale live recommendations"}
+
+            syms = [r[1] for r in stale]
+            known = {r[0] for r in (await db.execute(
+                select(Asset.symbol).where(Asset.symbol.in_(syms), Asset.in_universe == True)
+            )).all()}
+
+            expired_ids = [
+                r[0] for r in stale
+                if (r[2] if r[2].tzinfo else r[2].replace(tzinfo=timezone.utc)) < expire_before
+            ]
+            engine_down = await is_decision_engine_down()
+            expired = 0
+            if expired_ids and not engine_down:
+                await db.execute(
+                    _update(Recommendation)
+                    .where(Recommendation.id.in_(expired_ids))
+                    .values(status=_RS.DISMISSED)
+                )
+                await db.commit()
+                expired = len(expired_ids)
+                logger.info(f"[quarterly_scanner] expired {expired} live recommendations "
+                            f"older than {STALE_EXPIRE_DAYS}d without re-validation")
+
+        # Re-queue everything still live and stale — including what was just
+        # expired, since a re-analysis is exactly how it earns its way back.
+        pending = {p.decode() if isinstance(p, bytes) else p
+                   for p in await redis_client.lrange(REDIS_PREFIX + "todo", 0, -1)}
+        requeued = 0
+        capped = 0
+        seen: set[str] = set()
+        for _id, sym, _created in reversed(stale):   # oldest consumed first
+            if sym not in known or sym in seen:
+                continue
+            seen.add(sym)
+            # Same loop guard as the reporter sweep: a symbol the committee
+            # keeps rejecting must not be re-analyzed every single day forever.
+            ck = f"{REDIS_PREFIX}stale_requeue_count:{sym}"
+            tries = int(await redis_client.get(ck) or 0)
+            if tries >= 2:
+                capped += 1
+                continue
+            await redis_client.srem(REDIS_PREFIX + "done", sym)
+            if sym not in pending:
+                await redis_client.rpush(REDIS_PREFIX + "todo", sym)
+                await redis_client.incr(ck)
+                await redis_client.expire(ck, STALE_REVALIDATE_DAYS * 24 * 3600)
+                requeued += 1
+
+        if requeued and not await redis_client.get(REDIS_PREFIX + "active"):
+            await redis_client.set(REDIS_PREFIX + "active", "1", ex=TTL_SECONDS)
+
+        logger.info(f"[quarterly_scanner] stale-recommendation sweep — {len(stale)} stale, "
+                    f"{requeued} re-queued, {expired} expired, {capped} capped")
+        return {"requeued": requeued, "expired": expired, "stale": len(stale),
+                "capped": capped, "engine_down": engine_down,
+                "queue_len": await redis_client.llen(REDIS_PREFIX + "todo")}
+    finally:
+        await redis_client.aclose()
+
+
 async def get_quarterly_scan_status() -> dict:
     from app.core.config import settings
     import redis.asyncio as aioredis
@@ -389,6 +507,20 @@ async def job_quarterly_scan_batch() -> dict:
                             f"{cover['requeued']} reporters missing a real analysis")
         except Exception as e:
             logger.warning(f"[quarterly_scanner] coverage check failed: {e}")
+
+        # Freshness guarantee for what the client is actually looking at: a
+        # recommendation still on screen after a month must be re-checked, and
+        # retired if it cannot be. Runs before the freshness skip-map below so
+        # a re-queued stale symbol is not immediately marked "recently
+        # analyzed" and skipped — the 14-day window and the 30-day staleness
+        # bound do not overlap.
+        try:
+            stale = await requeue_stale_live_recommendations()
+            if stale.get("requeued") or stale.get("expired"):
+                logger.info(f"[quarterly_scanner] stale sweep re-queued {stale.get('requeued')} "
+                            f"and expired {stale.get('expired')} live recommendations")
+        except Exception as e:
+            logger.warning(f"[quarterly_scanner] stale-recommendation sweep failed: {e}")
 
         from app.workers.cost_guard import budget_exceeded, record_analysis_cost, get_today_spend
 

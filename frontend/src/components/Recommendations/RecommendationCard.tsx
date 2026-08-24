@@ -117,20 +117,22 @@ const RecommendationCard: React.FC<Props> = ({
             {(() => {
               if (!approvedAt) return null;
               const ageDays = Math.floor((Date.now() - new Date(approvedAt).getTime()) / 86400000);
-              // Thresholds follow the actual refresh cycle. Every live
-              // recommendation is re-analysed by the weekly scan, subject to a
-              // 14-day freshness skip, so the worst case is ~20 days. Turning
-              // red at 7 made "stale" the normal state and taught the reader to
-              // ignore it; red now means genuinely overdue — something did not
-              // run — which is worth acting on.
+              // Thresholds follow the actual refresh policy. The weekly scan
+              // only covers the current pre-screener pool, so a stock that left
+              // the pool waits for its quarterly turn; the backend closes that
+              // gap by re-queueing any live recommendation past 30 days and
+              // retiring it at 45. The badge says which of those states this
+              // card is in, so "old" no longer reads as "broken".
               if (ageDays < 7) {
                 return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-green-900/40 text-green-300 border border-green-700/40">🟢 {isHe ? "עדכנית" : "Fresh"}</span>;
-              } else if (ageDays <= 20) {
+              } else if (ageDays <= 30) {
                 return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300 border border-yellow-700/40"
-                             title={isHe ? "נבדקת מחדש בסריקה השבועית — עד ~20 יום בין ניתוחים" : "Re-checked by the weekly scan — up to ~20 days between analyses"}>🟡 {isHe ? `${ageDays} ימים` : `${ageDays} days`}</span>;
+                             title={isHe ? "בתוך מחזור הריענון — הניתוח נבדק מחדש עד 30 יום" : "Within the refresh cycle — re-analysed within 30 days"}>🟡 {isHe ? `${ageDays} ימים` : `${ageDays} days`}</span>;
               } else {
-                return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-red-900/40 text-red-300 border border-red-700/40"
-                             title={isHe ? "חרגה ממחזור הריענון הרגיל — ייתכן שסריקה לא רצה" : "Past the normal refresh cycle — a scan may not have run"}>🔴 {isHe ? `${ageDays} ימים — חורג` : `${ageDays} days — overdue`}</span>;
+                return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-orange-900/40 text-orange-300 border border-orange-700/40"
+                             title={isHe
+                               ? "הניתוח ישן מ-30 יום ולכן נכנס לתור לבדיקה מחדש. אם לא ייבדק עד גיל 45 יום — ההמלצה תוסר. עד אז התייחס אליה בזהירות: יעד המחיר נקבע לפני יותר מחודש."
+                               : "Older than 30 days, so it is queued for re-analysis. If it is not re-checked by day 45 the recommendation is retired. Until then treat it with caution — the price target was set over a month ago."}>🟠 {isHe ? `${ageDays} ימים — ממתין לבדיקה מחדש` : `${ageDays} days — awaiting re-check`}</span>;
               }
             })()}
           </div>
