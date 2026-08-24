@@ -337,6 +337,15 @@ export const recommendationsApi = {
     return response.data;
   },
 
+  getHiddenCount: async (): Promise<{
+    hidden_total: number;
+    hidden_short: number;
+    hidden_volatile: number;
+  }> => {
+    const response = await api.get("/recommendations/hidden-count");
+    return response.data;
+  },
+
   deleteNotification: async (notificationId: number): Promise<void> => {
     await api.delete(`/recommendations/inbox/${notificationId}`);
   },

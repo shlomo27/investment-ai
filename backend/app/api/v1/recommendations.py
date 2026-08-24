@@ -10,7 +10,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, and_
 
 from app.core.database import get_db
 from app.core.security import get_current_active_user
@@ -166,6 +166,55 @@ async def get_recommendations(
         ))
 
     return response
+
+
+@router.get("/hidden-count")
+async def hidden_by_preferences(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """How many live recommendations the user's own display settings hide.
+
+    Without this the filters are invisible: a stock is approved, appears in
+    the scan log, and is simply absent from the feed with no way to tell that
+    a preference — not a fault — removed it.
+    """
+    from sqlalchemy import func as sqlfunc
+
+    live = [
+        RecommendationStatus.APPROVED,
+        RecommendationStatus.PRESENTED_TO_USER,
+        RecommendationStatus.ACTIONED,
+    ]
+    _short_types = (RecommendationType.SELL, RecommendationType.STRONG_SELL)
+    _volatile_levels = (RiskLevel.HIGH, RiskLevel.VERY_HIGH)
+
+    async def _count(condition):
+        q = select(sqlfunc.count(Recommendation.id)).where(
+            Recommendation.status.in_(live), condition
+        )
+        return (await db.execute(q)).scalar() or 0
+
+    hidden_short = 0
+    if not current_user.allows_short:
+        hidden_short = await _count(Recommendation.recommendation_type.in_(_short_types))
+
+    hidden_volatile = 0
+    if not current_user.allows_volatile:
+        volatile_symbols = (
+            select(Asset.symbol).where(Asset.risk_level.in_(_volatile_levels))
+        ).scalar_subquery()
+        # Exclude ones already counted as short so the total is not double-counted.
+        cond = Recommendation.symbol.in_(volatile_symbols)
+        if not current_user.allows_short:
+            cond = and_(cond, Recommendation.recommendation_type.notin_(_short_types))
+        hidden_volatile = await _count(cond)
+
+    return {
+        "hidden_total": hidden_short + hidden_volatile,
+        "hidden_short": hidden_short,
+        "hidden_volatile": hidden_volatile,
+    }
 
 
 @router.get("/inbox", response_model=List[NotificationInboxResponse])

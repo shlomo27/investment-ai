@@ -66,6 +66,25 @@ const Recommendations: React.FC = () => {
     const timer = window.setInterval(() => load(false), 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [view]);
+  // A recommendation excluded by the user's own display preferences simply
+  // vanished from the feed — approved in the scan log, absent here, with no
+  // way to tell a preference from a fault. Count them so the gap is visible.
+  const [hiddenCount, setHiddenCount] = useState<{
+    hidden_total: number;
+    hidden_short: number;
+    hidden_volatile: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (view !== "signals") return;
+    let cancelled = false;
+    recommendationsApi
+      .getHiddenCount()
+      .then((d) => { if (!cancelled) setHiddenCount(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [view]);
+
   const [dirFilter, setDirFilter] = useState<DirectionFilter>("ALL");
   const [sortBy, setSortBy] = useState<"confidence" | "newest">("confidence");
   const [tradeModal, setTradeModal] = useState<{ rec: Recommendation; type: OrderType } | null>(null);
@@ -542,6 +561,38 @@ const Recommendations: React.FC = () => {
       {/* ── AI Signals ── */}
       {view === "signals" && !isLoading && (
         <div className="space-y-4">
+          {hiddenCount && hiddenCount.hidden_total > 0 && (
+            <div className="rounded-2xl border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-sm">
+              <p className="text-amber-200">
+                {isHe
+                  ? `${hiddenCount.hidden_total} המלצות פעילות מוסתרות לפי הגדרות התצוגה שלך`
+                  : `${hiddenCount.hidden_total} live recommendations are hidden by your display settings`}
+              </p>
+              <p className="text-amber-200/70 text-xs mt-1">
+                {[
+                  hiddenCount.hidden_short > 0
+                    ? (isHe
+                        ? `${hiddenCount.hidden_short} מכירה בחסר (SHORT)`
+                        : `${hiddenCount.hidden_short} short`)
+                    : null,
+                  hiddenCount.hidden_volatile > 0
+                    ? (isHe
+                        ? `${hiddenCount.hidden_volatile} מניות בסיכון גבוה`
+                        : `${hiddenCount.hidden_volatile} high-risk`)
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(isHe ? " · " : " · ")}
+              </p>
+              <Link
+                to="/settings"
+                className="inline-block mt-2 text-xs text-amber-300 hover:text-amber-200 underline"
+              >
+                {isHe ? "שנה בהגדרות" : "Change in settings"}
+              </Link>
+            </div>
+          )}
+
           {/* Direction Filter */}
           <div className="flex items-center gap-2">
             {(["ALL", "LONG", "SHORT"] as DirectionFilter[]).map((f) => (
