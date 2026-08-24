@@ -86,6 +86,7 @@ const Recommendations: React.FC = () => {
   }, [view]);
 
   const [dirFilter, setDirFilter] = useState<DirectionFilter>("ALL");
+  const [symbolQuery, setSymbolQuery] = useState("");
   const [sortBy, setSortBy] = useState<"confidence" | "newest">("confidence");
   const [tradeModal, setTradeModal] = useState<{ rec: Recommendation; type: OrderType } | null>(null);
   const [techMap, setTechMap] = useState<Record<number, TechnicalAnalysis>>({});
@@ -182,21 +183,31 @@ const Recommendations: React.FC = () => {
     }
   };
 
-  const BUY_LIMIT = 20;
-  const SELL_LIMIT = 10;
-
-  // Sort all recommendations by confidence DESC
+  // Sort all recommendations by confidence DESC.
+  //
+  // There used to be a "top 20 BUY / top 10 SELL" slice here. It was the last
+  // place the feed was truncated: an approved stock could sit at rank 21, be
+  // announced by an alert, appear in the scan log, and still be absent from
+  // this list with nothing to explain it. Every live recommendation is shown;
+  // the search box below is how you get to a specific one.
   const sorted = [...recommendations].sort((a, b) => b.confidence_score - a.confidence_score);
 
-  // Top 20 BUY + top 10 SELL (by confidence)
-  const topBuys = sorted.filter((r) => isLong(r.recommendation_type)).slice(0, BUY_LIMIT);
-  const topSells = sorted.filter((r) => isShort(r.recommendation_type)).slice(0, SELL_LIMIT);
+  const topBuys = sorted.filter((r) => isLong(r.recommendation_type));
+  const topSells = sorted.filter((r) => isShort(r.recommendation_type));
   const topPicks = [...topBuys, ...topSells].sort((a, b) => b.confidence_score - a.confidence_score);
 
-  const _filtered =
+  const _byDir =
     dirFilter === "LONG" ? topBuys :
     dirFilter === "SHORT" ? topSells :
     topPicks;
+  const _q = symbolQuery.trim().toUpperCase();
+  const _filtered = _q
+    ? _byDir.filter(
+        (r) =>
+          r.symbol.toUpperCase().includes(_q) ||
+          (r.asset_name || "").toUpperCase().includes(_q)
+      )
+    : _byDir;
   const filteredRecs = sortBy === "newest"
     ? [..._filtered].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     : _filtered;
@@ -611,6 +622,12 @@ const Recommendations: React.FC = () => {
               </button>
             ))}
             <div className="flex-1" />
+            <input
+              value={symbolQuery}
+              onChange={(e) => setSymbolQuery(e.target.value)}
+              placeholder={isHe ? "חפש סימול…" : "Search symbol…"}
+              className="w-36 px-3 py-1.5 rounded-lg text-xs bg-gray-900 text-gray-200 border border-gray-800 placeholder-gray-600 focus:border-blue-600 focus:outline-none"
+            />
             <button
               onClick={() => setSortBy(sortBy === "confidence" ? "newest" : "confidence")}
               className="px-3 py-1.5 rounded-lg text-xs border bg-gray-900 text-gray-300 border-gray-800 hover:border-gray-600"
@@ -625,8 +642,21 @@ const Recommendations: React.FC = () => {
           {filteredRecs.length === 0 ? (
             <div className="bg-gray-900 rounded-2xl p-12 border border-gray-800 text-center text-gray-500">
               <p className="text-4xl mb-3">🤖</p>
-              <p>{isHe ? "אין סיגנלים בפילטר זה" : "No signals for this filter"}</p>
-              <p className="text-sm mt-1">{isHe ? "הסוכנים סורקים את השוק" : "Agents are scanning markets"}</p>
+              {_q ? (
+                <>
+                  <p>{isHe ? `אין המלצה פעילה עבור "${symbolQuery}"` : `No live recommendation for "${symbolQuery}"`}</p>
+                  <p className="text-sm mt-1">
+                    {isHe
+                      ? "בדוק ביומן סריקה — ייתכן שהניתוח נדחה או הוחלף"
+                      : "Check the scan log — the analysis may have been rejected or superseded"}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p>{isHe ? "אין סיגנלים בפילטר זה" : "No signals for this filter"}</p>
+                  <p className="text-sm mt-1">{isHe ? "הסוכנים סורקים את השוק" : "Agents are scanning markets"}</p>
+                </>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
