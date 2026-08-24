@@ -311,7 +311,7 @@ export const ordersApi = {
 export const recommendationsApi = {
   getRecommendations: async (
     statusFilter?: string,
-    limit = 20,
+    limit = 200,
     offset = 0
   ): Promise<Recommendation[]> => {
     const response = await api.get<Recommendation[]>("/recommendations/", {

@@ -71,7 +71,10 @@ class NotificationInboxResponse(BaseModel):
 @router.get("/", response_model=List[RecommendationResponse])
 async def get_recommendations(
     status_filter: Optional[str] = None,
-    limit: int = 20,
+    # 20 was low enough that a live recommendation could sit outside the feed
+    # entirely: an alert would arrive, the client would go looking for the
+    # stock, and it was not there.
+    limit: int = 200,
     offset: int = 0,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
@@ -97,6 +100,26 @@ async def get_recommendations(
         except ValueError:
             pass
 
+    # User-selected content preferences (self-service display filters the user
+    # controls in Settings — NOT personalized advice): hide short-side signals
+    # and/or high-volatility stocks unless the user opted in to see them.
+    #
+    # These MUST be applied before the limit. Filtering the page after slicing
+    # it meant a hidden row was never replaced by the next eligible one: ask
+    # for 20, hide 5, get 15 — and the five that should have taken their place
+    # were simply never fetched.
+    _short_types = (RecommendationType.SELL, RecommendationType.STRONG_SELL)
+    _volatile_levels = (RiskLevel.HIGH, RiskLevel.VERY_HIGH)
+
+    if not current_user.allows_short:
+        query = query.where(Recommendation.recommendation_type.notin_(_short_types))
+
+    if not current_user.allows_volatile:
+        volatile_symbols = (
+            select(Asset.symbol).where(Asset.risk_level.in_(_volatile_levels))
+        ).scalar_subquery()
+        query = query.where(Recommendation.symbol.notin_(volatile_symbols))
+
     query = query.order_by(desc(Recommendation.created_at)).offset(offset).limit(limit)
     result = await db.execute(query)
     recommendations = result.scalars().all()
@@ -105,21 +128,6 @@ async def get_recommendations(
     symbols = [r.symbol for r in recommendations]
     assets_result = await db.execute(select(Asset).where(Asset.symbol.in_(symbols)))
     assets = {a.symbol: a for a in assets_result.scalars().all()}
-
-    # User-selected content preferences (self-service display filters the user
-    # controls in Settings — NOT personalized advice): hide short-side signals
-    # and/or high-volatility stocks unless the user opted in to see them.
-    _short_types = (RecommendationType.SELL, RecommendationType.STRONG_SELL)
-    _volatile_levels = (RiskLevel.HIGH, RiskLevel.VERY_HIGH)
-    filtered = []
-    for rec in recommendations:
-        if not current_user.allows_short and rec.recommendation_type in _short_types:
-            continue
-        asset = assets.get(rec.symbol)
-        if not current_user.allows_volatile and asset and asset.risk_level in _volatile_levels:
-            continue
-        filtered.append(rec)
-    recommendations = filtered
 
     response = []
     for rec in recommendations:
