@@ -94,9 +94,36 @@ const RecommendationCard: React.FC<Props> = ({
               // Risk transparency: short positions and high-volatility stocks
               // carry materially different risk — always label them, whatever
               // the user's display filters are.
-              const rl = (rec.risk_level || "").toUpperCase();
-              const volatile = rl === "HIGH" || rl === "VERY_HIGH";
-              if (!isSell && !volatile) return null;
+              const beta = typeof rec.beta === "number" ? rec.beta : null;
+              // Volatility is stated on every card, not only the alarming ones.
+              // Showing a badge exclusively for high-risk stocks meant a silent
+              // card could mean "calm stock" or "never measured", and the
+              // reader had no way to tell which.
+              const band =
+                beta === null ? null :
+                beta < 0.8 ? {
+                  label: isHe ? "תנודתיות נמוכה" : "Low volatility",
+                  cls: "bg-green-950/60 text-green-300 border-green-800/50",
+                  icon: "🛡️",
+                } :
+                beta < 1.3 ? {
+                  label: isHe ? "תנודתיות רגילה" : "Market-like volatility",
+                  cls: "bg-gray-800/80 text-gray-300 border-gray-700",
+                  icon: "〰️",
+                } :
+                beta < 1.8 ? {
+                  label: isHe ? "תנודתיות גבוהה" : "High volatility",
+                  cls: "bg-orange-950/60 text-orange-300 border-orange-800/50",
+                  icon: "⚡",
+                } : {
+                  label: isHe ? "תנודתיות גבוהה מאוד" : "Very high volatility",
+                  cls: "bg-red-950/60 text-red-300 border-red-800/50",
+                  icon: "⚡",
+                };
+              const betaHint = beta === null ? "" : isHe
+                ? `בטא ${beta.toFixed(2)} — המניה זזה בערך פי ${beta.toFixed(2)} מהשוק. מודד תנועה מול השוק בלבד; מניה רגועה עדיין יכולה לקפוץ על חדשות שלה.`
+                : `Beta ${beta.toFixed(2)} — moves about ${beta.toFixed(2)}× the market. Measures market-correlated movement only; a calm stock can still gap on its own news.`;
+              if (!isSell && !band) return null;
               return (
                 <>
                   {isSell && (
@@ -105,10 +132,10 @@ const RecommendationCard: React.FC<Props> = ({
                       📉 {isHe ? "פוזיציית שורט" : "Short position"}
                     </span>
                   )}
-                  {volatile && (
-                    <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-orange-950/60 text-orange-300 border border-orange-800/50"
-                          title={isHe ? "תנודות מחיר חדות — סיכון גבוה מהממוצע" : "Sharp price swings — above-average risk"}>
-                      ⚡ {isHe ? "תנודתיות גבוהה" : "High volatility"}
+                  {band && (
+                    <span className={`inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full border ${band.cls}`}
+                          title={betaHint}>
+                      {band.icon} {band.label} · β {beta!.toFixed(2)}
                     </span>
                   )}
                 </>

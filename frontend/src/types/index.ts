@@ -473,6 +473,7 @@ export interface Recommendation {
   asset_name?: string;
   sector?: string;
   risk_level?: string;
+  beta?: number;
   created_at: string;
   approved_at?: string;
   presented_at?: string;

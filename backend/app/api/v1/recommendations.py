@@ -45,6 +45,7 @@ class RecommendationResponse(BaseModel):
     asset_name: Optional[str]
     sector: Optional[str]
     risk_level: Optional[str] = None
+    beta: Optional[float] = None
     created_at: datetime
     approved_at: Optional[datetime]
     presented_at: Optional[datetime]
@@ -72,6 +73,21 @@ class NotificationInboxResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+def _beta_of(rec: Recommendation, asset: Optional[Asset]) -> Optional[float]:
+    """Beta for display: this analysis's own reading, falling back to the
+    asset's stored one. Returns None rather than a guess when neither exists —
+    a missing volatility figure must not read as a low one."""
+    raw = rec.data_fetcher_raw or {}
+    value = raw.get("beta")
+    if value is None and asset is not None:
+        value = asset.beta
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if 0 < value < 10 else None
 
 
 @router.get("/", response_model=List[RecommendationResponse])
@@ -159,6 +175,10 @@ async def get_recommendations(
             trigger_details=rec.trigger_details,
             asset_name=asset.name if asset else None,
             risk_level=asset.risk_level.value if asset and asset.risk_level else None,
+            # Prefer the beta measured by this analysis over the asset-level
+            # one: the card states the volatility that was true when the
+            # committee formed its view, not whatever a later scan overwrote.
+            beta=_beta_of(rec, asset),
             sector=asset.sector if asset else None,
             created_at=rec.created_at,
             approved_at=rec.approved_at,

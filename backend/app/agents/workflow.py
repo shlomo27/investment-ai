@@ -248,6 +248,26 @@ async def node_senior_review(state: AgentWorkflowState) -> AgentWorkflowState:
         }
 
 
+def _risk_level_from_beta(beta: float):
+    """Volatility band from beta — how hard the stock swings relative to the
+    market. Conventional bands: below 0.8 damped, 0.8-1.3 roughly market-like,
+    1.3-1.8 amplified, above 1.8 sharply amplified.
+
+    Beta captures market-correlated movement only, so a low-beta stock can
+    still gap on its own news. It is what every data provider actually returns
+    for us, and it is a far better answer than the constant it replaces.
+    """
+    from app.db.models.asset import RiskLevel
+
+    if beta < 0.8:
+        return RiskLevel.LOW
+    if beta < 1.3:
+        return RiskLevel.MEDIUM
+    if beta < 1.8:
+        return RiskLevel.HIGH
+    return RiskLevel.VERY_HIGH
+
+
 async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowState:
     """Node 4a: Save approved recommendation to database."""
     logger.info("Workflow node: save_recommendation", symbol=state["asset_symbol"])
@@ -272,6 +292,24 @@ async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowSt
             if not asset:
                 logger.warning("Asset not found for recommendation", symbol=state["asset_symbol"])
                 return {**state, "workflow_status": "failed", "error": "Asset not found in DB"}
+
+            # Persist the volatility we just measured.
+            #
+            # Asset.risk_level was written once, at universe load, as a literal
+            # MEDIUM for every US stock, and nothing ever revised it. Two things
+            # downstream read it and were therefore both dead: the "high
+            # volatility" badge on the card never appeared, and the user's
+            # allows_volatile setting filtered on a constant. Asset.beta was
+            # declared but never written at all, even though every analysis
+            # fetches it.
+            _beta = raw.get("beta")
+            try:
+                _beta = float(_beta) if _beta is not None else None
+            except (TypeError, ValueError):
+                _beta = None
+            if _beta is not None and 0 < _beta < 10:
+                asset.beta = _beta
+                asset.risk_level = _risk_level_from_beta(_beta)
 
             # Map recommendation type
             rec_type_str = senior.get("final_recommendation", "HOLD")
