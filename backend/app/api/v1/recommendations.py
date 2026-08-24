@@ -157,6 +157,7 @@ async def get_recommendations(
 @router.get("/inbox", response_model=List[NotificationInboxResponse])
 async def get_inbox(
     unread_only: bool = False,
+    notification_type: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
     current_user: User = Depends(get_current_active_user),
@@ -165,11 +166,23 @@ async def get_inbox(
     """
     The main notification inbox. Authenticated users see full internal details here.
     This is the only place where the full AI analysis is exposed.
+
+    Paged newest-first. Ask for the next page with `offset`; a short page means
+    there are no more — an inbox that only ever showed the newest 50 left older
+    alerts unreachable after a few weeks away.
     """
     query = select(Notification).where(Notification.user_id == current_user.id)
 
     if unread_only:
         query = query.where(Notification.is_read == False)
+
+    if notification_type:
+        try:
+            query = query.where(
+                Notification.notification_type == NotificationType(notification_type.upper())
+            )
+        except ValueError:
+            pass  # unknown type — ignore the filter rather than return nothing
 
     query = query.order_by(desc(Notification.sent_at)).offset(offset).limit(limit)
     result = await db.execute(query)
@@ -368,6 +381,50 @@ async def mark_notification_read(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
 
     return {"message": "Marked as read", "id": notification_id}
+
+
+@router.delete("/inbox/{notification_id}")
+async def delete_notification(
+    notification_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete one notification from the inbox."""
+    result = await db.execute(
+        select(Notification).where(
+            Notification.id == notification_id,
+            Notification.user_id == current_user.id,
+        )
+    )
+    notification = result.scalar_one_or_none()
+    if not notification:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+
+    await db.delete(notification)
+    await db.flush()
+    return {"deleted": True, "id": notification_id}
+
+
+@router.delete("/inbox")
+async def clear_read_notifications(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear every notification already read.
+
+    Scoped to read ones on purpose: a single button that wiped unread alerts
+    could silently discard a sell signal the user had not opened yet.
+    """
+    from sqlalchemy import delete as sa_delete
+
+    result = await db.execute(
+        sa_delete(Notification).where(
+            Notification.user_id == current_user.id,
+            Notification.is_read == True,
+        )
+    )
+    await db.flush()
+    return {"deleted": result.rowcount or 0}
 
 
 @router.post("/{recommendation_id}/request-technical")

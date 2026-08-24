@@ -320,11 +320,30 @@ export const recommendationsApi = {
     return response.data;
   },
 
-  getInbox: async (unreadOnly = false, limit = 50): Promise<Notification[]> => {
+  getInbox: async (
+    unreadOnly = false,
+    limit = 50,
+    offset = 0,
+    notificationType?: string,
+  ): Promise<Notification[]> => {
     const response = await api.get<Notification[]>("/recommendations/inbox", {
-      params: { unread_only: unreadOnly, limit },
+      params: {
+        unread_only: unreadOnly,
+        limit,
+        offset,
+        ...(notificationType ? { notification_type: notificationType } : {}),
+      },
     });
     return response.data;
+  },
+
+  deleteNotification: async (notificationId: number): Promise<void> => {
+    await api.delete(`/recommendations/inbox/${notificationId}`);
+  },
+
+  clearReadNotifications: async (): Promise<number> => {
+    const response = await api.delete<{ deleted: number }>("/recommendations/inbox");
+    return response.data.deleted;
   },
 
   getUnreadCount: async (): Promise<number> => {

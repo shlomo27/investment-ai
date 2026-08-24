@@ -9,6 +9,7 @@ interface NotificationsState {
   isLoading: boolean;
   error: string | null;
   lastFetched: string | null;
+  hasMoreInbox: boolean;
 }
 
 const initialState: NotificationsState = {
@@ -18,18 +19,29 @@ const initialState: NotificationsState = {
   isLoading: false,
   error: null,
   lastFetched: null,
+  hasMoreInbox: false,
 };
 
 // ─── Async Thunks ─────────────────────────────────────────────────────────────
 
+export const INBOX_PAGE_SIZE = 50;
+
 export const fetchInbox = createAsyncThunk(
   "notifications/fetchInbox",
   async (
-    { unreadOnly = false }: { unreadOnly?: boolean },
+    {
+      unreadOnly = false,
+      offset = 0,
+      notificationType,
+    }: { unreadOnly?: boolean; offset?: number; notificationType?: string },
     { rejectWithValue }
   ) => {
     try {
-      return await recommendationsApi.getInbox(unreadOnly);
+      const items = await recommendationsApi.getInbox(
+        unreadOnly, INBOX_PAGE_SIZE, offset, notificationType,
+      );
+      // A short page means the end — no total is needed to know when to stop.
+      return { items, offset, hasMore: items.length === INBOX_PAGE_SIZE };
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.detail || "Failed to fetch inbox");
     }
@@ -110,6 +122,16 @@ const notificationsSlice = createSlice({
     setUnreadCount: (state, action: PayloadAction<number>) => {
       state.unreadCount = action.payload;
     },
+    // Drop rows locally after the server confirms the delete, so the list does
+    // not jump back on the next render while a refetch is in flight.
+    removeNotification: (state, action: PayloadAction<number>) => {
+      const gone = state.notifications.find((n) => n.id === action.payload);
+      state.notifications = state.notifications.filter((n) => n.id !== action.payload);
+      if (gone && !gone.is_read && state.unreadCount > 0) state.unreadCount -= 1;
+    },
+    removeReadNotifications: (state) => {
+      state.notifications = state.notifications.filter((n) => !n.is_read);
+    },
   },
   extraReducers: (builder) => {
     // Fetch inbox
@@ -120,8 +142,13 @@ const notificationsSlice = createSlice({
       })
       .addCase(fetchInbox.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.notifications = action.payload;
-        state.unreadCount = action.payload.filter((n) => !n.is_read).length;
+        const { items, offset, hasMore } = action.payload;
+        // offset 0 is a fresh load or a filter change; anything else appends.
+        state.notifications = offset === 0 ? items : [...state.notifications, ...items];
+        state.hasMoreInbox = hasMore;
+        if (offset === 0) {
+          state.unreadCount = items.filter((n) => !n.is_read).length;
+        }
         state.lastFetched = new Date().toISOString();
       })
       .addCase(fetchInbox.rejected, (state, action) => {
@@ -182,6 +209,8 @@ const notificationsSlice = createSlice({
 
 export const {
   clearError,
+  removeNotification,
+  removeReadNotifications,
   addRealtimeNotification,
   decrementUnreadCount,
   setUnreadCount,

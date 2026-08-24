@@ -6,6 +6,8 @@ import {
   fetchRecommendations,
   markNotificationRead,
   acknowledgeRecommendation,
+  removeNotification,
+  removeReadNotifications,
 } from "../store/slices/notificationsSlice";
 import { fetchPortfolioSummary } from "../store/slices/portfolioSlice";
 import { recommendationsApi, ordersApi } from "../api/client";
@@ -32,7 +34,7 @@ const isShort = (type: RecommendationType) =>
 const Recommendations: React.FC = () => {
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((s) => s.auth);
-  const { notifications, recommendations, isLoading } = useAppSelector(
+  const { notifications, recommendations, isLoading, hasMoreInbox } = useAppSelector(
     (s) => s.notifications
   );
   const { summary: portfolioSummary } = useAppSelector((s) => s.portfolio);
@@ -69,6 +71,44 @@ const Recommendations: React.FC = () => {
   const [tradeModal, setTradeModal] = useState<{ rec: Recommendation; type: OrderType } | null>(null);
   const [techMap, setTechMap] = useState<Record<number, TechnicalAnalysis>>({});
   const [loadingTech, setLoadingTech] = useState<Record<number, boolean>>({});
+  const [inboxType, setInboxType] = useState("");
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const applyInboxFilter = (value: string) => {
+    setInboxType(value);
+    dispatch(fetchInbox({ unreadOnly: false, offset: 0, notificationType: value || undefined }));
+  };
+
+  const handleLoadMore = async () => {
+    setLoadingMore(true);
+    await dispatch(fetchInbox({
+      unreadOnly: false,
+      offset: notifications.length,
+      notificationType: inboxType || undefined,
+    }));
+    setLoadingMore(false);
+  };
+
+  const handleDeleteNotification = async (id: number) => {
+    try {
+      await recommendationsApi.deleteNotification(id);
+      dispatch(removeNotification(id));
+    } catch {}
+  };
+
+  const handleClearRead = async () => {
+    const readCount = notifications.filter((n) => n.is_read).length;
+    if (readCount === 0) return;
+    if (!window.confirm(
+      isHe
+        ? `למחוק ${readCount} הודעות שכבר נקראו? הודעות שלא נפתחו יישארו.`
+        : `Delete ${readCount} already-read messages? Unopened ones will stay.`
+    )) return;
+    try {
+      await recommendationsApi.clearReadNotifications();
+      dispatch(removeReadNotifications());
+    } catch {}
+  };
 
   useEffect(() => {
     dispatch(fetchInbox({ unreadOnly: false }));
@@ -294,6 +334,36 @@ const Recommendations: React.FC = () => {
       {/* ── Inbox ── */}
       {view === "inbox" && !isLoading && (
         <div className="space-y-3">
+          {/* Filter + bulk clear. Without these an inbox is write-only: after a
+              few weeks away the newest page buries everything else. */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {([
+              ["", isHe ? "הכל" : "All"],
+              ["RECOMMENDATION", isHe ? "המלצות" : "Recommendations"],
+              ["ALERT", isHe ? "התרעות" : "Alerts"],
+              ["SYSTEM", isHe ? "מערכת" : "System"],
+            ] as [string, string][]).map(([value, label]) => (
+              <button
+                key={value || "all"}
+                onClick={() => applyInboxFilter(value)}
+                className={`text-xs px-3 py-1.5 rounded-lg ${
+                  inboxType === value
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-800 text-gray-400 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              onClick={handleClearRead}
+              className="text-xs px-3 py-1.5 rounded-lg bg-gray-800 text-gray-400 hover:text-red-300 ms-auto"
+              title={isHe ? "מוחק רק הודעות שכבר נקראו — הודעות שלא נפתחו נשארות" : "Deletes only messages already read — unopened ones stay"}
+            >
+              🗑 {isHe ? "נקה שנקראו" : "Clear read"}
+            </button>
+          </div>
+
           {notifications.length === 0 ? (
             <div className="bg-gray-900 rounded-2xl p-12 border border-gray-800 text-center text-gray-500">
               <p className="text-4xl mb-3">📬</p>
@@ -407,9 +477,22 @@ const Recommendations: React.FC = () => {
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                      <p className="text-xs text-gray-500">
-                        {new Date(notif.sent_at).toLocaleString(isHe ? "he-IL" : "en-US")}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-gray-500">
+                          {new Date(notif.sent_at).toLocaleString(isHe ? "he-IL" : "en-US")}
+                        </p>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();  // the row itself toggles expand
+                            handleDeleteNotification(notif.id);
+                          }}
+                          className="text-xs text-gray-600 hover:text-red-400 px-1"
+                          title={isHe ? "מחק הודעה" : "Delete message"}
+                          aria-label={isHe ? "מחק הודעה" : "Delete message"}
+                        >
+                          🗑
+                        </button>
+                      </div>
                       {recId && (
                         <Link
                           to={`/research/${recId}`}
@@ -424,6 +507,18 @@ const Recommendations: React.FC = () => {
                 </div>
               );
             })
+          )}
+
+          {hasMoreInbox && (
+            <button
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              className="w-full py-3 rounded-2xl bg-gray-900 border border-gray-800 text-sm text-blue-400 hover:text-blue-300 hover:border-gray-700 disabled:text-gray-600"
+            >
+              {loadingMore
+                ? (isHe ? "טוען..." : "Loading...")
+                : (isHe ? "טען הודעות ישנות יותר" : "Load older messages")}
+            </button>
           )}
         </div>
       )}
