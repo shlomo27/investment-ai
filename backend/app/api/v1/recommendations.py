@@ -63,6 +63,12 @@ class NotificationInboxResponse(BaseModel):
     is_read: bool
     sent_at: datetime
     read_at: Optional[datetime]
+    # State of the recommendation this message was about, resolved now rather
+    # than when it was sent. A message outlives the recommendation it announced,
+    # so without this a BUY alert stays on screen pointing at a stock that has
+    # since left the feed — and the reader searches for it and finds nothing.
+    recommendation_live: Optional[bool] = None
+    recommendation_current_type: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -211,7 +217,33 @@ async def get_inbox(
             if not rec.presented_at:
                 rec.presented_at = datetime.utcnow()
 
-    return [NotificationInboxResponse.from_orm(n) for n in notifications]
+    # Resolve each linked recommendation's CURRENT state in one query.
+    live_statuses = {
+        RecommendationStatus.APPROVED,
+        RecommendationStatus.PRESENTED_TO_USER,
+        RecommendationStatus.ACTIONED,
+    }
+    rec_state: Dict[int, Any] = {}
+    all_rec_ids = [n.recommendation_id for n in notifications if n.recommendation_id]
+    if all_rec_ids:
+        state_rows = await db.execute(
+            select(Recommendation.id, Recommendation.status, Recommendation.recommendation_type)
+            .where(Recommendation.id.in_(all_rec_ids))
+        )
+        rec_state = {r[0]: (r[1], r[2]) for r in state_rows.all()}
+
+    out = []
+    for n in notifications:
+        item = NotificationInboxResponse.from_orm(n)
+        state = rec_state.get(n.recommendation_id) if n.recommendation_id else None
+        if state:
+            status_val, type_val = state
+            item.recommendation_live = status_val in live_statuses
+            item.recommendation_current_type = (
+                type_val.value if hasattr(type_val, "value") else str(type_val)
+            )
+        out.append(item)
+    return out
 
 
 @router.get("/unread-count")

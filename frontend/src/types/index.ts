@@ -563,6 +563,10 @@ export interface Notification {
   is_read: boolean;
   sent_at: string;
   read_at?: string;
+  /** Whether the recommendation this message announced is still in the feed. */
+  recommendation_live?: boolean | null;
+  /** What the committee says about it NOW — may differ from when it was sent. */
+  recommendation_current_type?: string | null;
 }
 
 export interface WatchlistItem {

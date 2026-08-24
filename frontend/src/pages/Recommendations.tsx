@@ -493,6 +493,22 @@ const Recommendations: React.FC = () => {
                           🗑
                         </button>
                       </div>
+                      {/* A message outlives the recommendation it announced.
+                          Saying so here answers "I got a BUY alert but the
+                          stock is not in the feed" on the spot. */}
+                      {recId && notif.recommendation_live === false && (
+                        <span
+                          className="text-xs px-2 py-0.5 rounded-lg bg-gray-800 text-gray-400 border border-gray-700"
+                          title={isHe
+                            ? "ההמלצה הוחלפה בניתוח חדש יותר או בוטלה — לכן היא כבר לא בפיד"
+                            : "Replaced by a newer analysis or withdrawn — which is why it is no longer in the feed"}
+                        >
+                          {isHe ? "לא בפיד יותר" : "No longer in feed"}
+                          {notif.recommendation_current_type
+                            ? ` · ${isHe ? "כעת" : "now"} ${notif.recommendation_current_type}`
+                            : ""}
+                        </span>
+                      )}
                       {recId && (
                         <Link
                           to={`/research/${recId}`}
