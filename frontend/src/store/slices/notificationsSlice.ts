@@ -62,7 +62,10 @@ export const fetchUnreadCount = createAsyncThunk(
 export const fetchRecommendations = createAsyncThunk(
   "notifications/fetchRecommendations",
   async (
-    { limit = 20, offset = 0 }: { limit?: number; offset?: number },
+    // Every caller passes {} and relies on this default, so this number —
+    // not the API client's — is what actually caps the feed. It was 20,
+    // which silently hid live recommendations past the newest twenty.
+    { limit = 200, offset = 0 }: { limit?: number; offset?: number },
     { rejectWithValue }
   ) => {
     try {
