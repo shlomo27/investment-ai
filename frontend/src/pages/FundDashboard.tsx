@@ -88,6 +88,24 @@ const FundDashboard: React.FC = () => {
   const [batchResult, setBatchResult] = useState<any>(null);
   const [batchStarting, setBatchStarting] = useState(false);
   const [betaResult, setBetaResult] = useState<string | null>(null);
+  const [qStatus, setQStatus] = useState<Awaited<ReturnType<typeof marketApi.getQuarterlyStatus>> | null>(null);
+
+  // Poll the sweep so progress is visible without pressing Refresh, and faster
+  // while a batch is actually consuming the queue.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const s = await marketApi.getQuarterlyStatus();
+        if (!cancelled) setQStatus(s);
+      } catch {
+        /* keep the last known state */
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 20_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
   const [betaStatus, setBetaStatus] = useState<{ running: boolean; done?: number; total?: number } | null>(null);
   const betaRunning = !!betaStatus?.running;
 
@@ -876,13 +894,49 @@ const FundDashboard: React.FC = () => {
           </div>
         </div>
 
+        {/* Live sweep progress. The bar below counts earnings reporters and
+            barely moves while the sweep runs, so a working batch and a stalled
+            one looked identical — and "already running" read as a failure. */}
+        {qStatus?.active && (
+          <div className="mb-4 p-3 rounded-xl bg-gray-800/60 border border-gray-700">
+            <div className="flex items-center justify-between text-xs mb-2">
+              <span className="text-gray-300">
+                {isHe ? `סריקה רבעונית ${qStatus.quarter}` : `Quarterly sweep ${qStatus.quarter}`}
+                {qStatus.batch_running && (
+                  <span className="ml-2 text-purple-300">
+                    {isHe ? "· אצווה רצה כעת" : "· batch running now"}
+                  </span>
+                )}
+              </span>
+              <span className="text-gray-400 font-mono">
+                {qStatus.done}/{qStatus.total} ({qStatus.progress_pct}%)
+              </span>
+            </div>
+            <div className="h-2 bg-gray-900 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-purple-500 transition-all"
+                style={{ width: `${Math.min(100, qStatus.progress_pct)}%` }}
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              {isHe
+                ? `נותרו ${qStatus.remaining} מניות. כל ניתוח לוקח 1-3 דקות, ואצווה אחת מנתחת עד 75 מניות — כלומר שעה עד שלוש.`
+                : `${qStatus.remaining} remaining. Each analysis takes 1-3 minutes and a batch does up to 75, so one to three hours.`}
+            </p>
+          </div>
+        )}
+
         {batchResult && (
           <div className={`mb-4 p-3 rounded-xl text-xs ${batchResult.error ? "bg-red-900/20 text-red-400" : "bg-purple-900/20 text-purple-300"}`}>
             {batchResult.error
               ? batchResult.error
               : batchResult.started
                 ? (isHe ? `האצווה רצה ברקע — ${batchResult.remaining_before} מניות בתור. עקוב ביומן הסריקות.` : `Batch running — ${batchResult.remaining_before} in queue. Watch the scan log.`)
-                : (isHe ? `לא הופעל: ${batchResult.reason}${batchResult.remaining != null ? ` (בתור: ${batchResult.remaining})` : ""}` : `Not started: ${batchResult.reason}`)}
+                : batchResult.reason === "batch already running"
+                  ? (isHe
+                      ? "אצווה כבר רצה — זו אינה שגיאה. עקוב אחרי הפס למעלה."
+                      : "A batch is already running — this is not an error. Watch the bar above.")
+                  : (isHe ? `לא הופעל: ${batchResult.reason}${batchResult.remaining != null ? ` (בתור: ${batchResult.remaining})` : ""}` : `Not started: ${batchResult.reason}`)}
           </div>
         )}
 

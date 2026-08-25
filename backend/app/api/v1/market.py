@@ -1523,6 +1523,33 @@ async def earnings_status(
 
 # ─── Master List ──────────────────────────────────────────────────────────────
 
+@router.get("/quarterly/status")
+async def quarterly_status(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Live progress of the quarterly sweep.
+
+    The panel had no view of this at all: the only visible bar counts earnings
+    reporters, which barely moves while the sweep runs, so a working batch and
+    a stalled one looked exactly the same — and "batch already running" read as
+    a failure rather than as the sweep doing its job.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.workers.quarterly_scanner import get_quarterly_scan_status, REDIS_PREFIX
+    from app.core.config import settings
+    import redis.asyncio as aioredis
+
+    status_ = await get_quarterly_scan_status()
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        running = bool(await r.get(REDIS_PREFIX + "batch_running"))
+    finally:
+        await r.aclose()
+    status_["batch_running"] = running
+    return status_
+
+
 @router.post("/quarterly/requeue-reporters")
 async def requeue_unanalyzed_reporters_endpoint(
     current_user: User = Depends(get_current_active_user),

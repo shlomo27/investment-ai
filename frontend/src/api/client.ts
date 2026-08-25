@@ -526,6 +526,19 @@ export const marketApi = {
     return response.data;
   },
 
+  getQuarterlyStatus: async (): Promise<{
+    active: boolean;
+    quarter: string;
+    total: number;
+    done: number;
+    remaining: number;
+    progress_pct: number;
+    batch_running: boolean;
+  }> => {
+    const response = await api.get("/market/quarterly/status");
+    return response.data;
+  },
+
   requeueReporters: async (): Promise<any> => {
     const response = await api.post("/market/quarterly/requeue-reporters");
     return response.data;
