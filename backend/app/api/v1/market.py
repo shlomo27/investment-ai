@@ -27,6 +27,22 @@ router = APIRouter(prefix="/market", tags=["Market Data"])
 _BACKGROUND_TASKS: set = set()
 
 
+def _detach(coro):
+    """Start a background task and keep it alive until it finishes.
+
+    Every long-running job started from this module was fire-and-forget, which
+    means asyncio held no strong reference to it and the collector was free to
+    drop it mid-run — no error, no log, just a job that stops partway. Route
+    them all through here.
+    """
+    import asyncio as _a
+
+    task = _a.create_task(coro)
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    return task
+
+
 class AssetPoolResponse(BaseModel):
     id: int
     symbol: str
@@ -361,7 +377,6 @@ async def backfill_beta_endpoint(
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    import asyncio
     from app.workers.beta_backfill import job_backfill_beta, get_backfill_status
 
     status_now = await get_backfill_status()
@@ -373,9 +388,7 @@ async def backfill_beta_endpoint(
     # so a fire-and-forget task can be garbage-collected mid-run: the loop stops
     # partway through with no error anywhere, which is exactly what a run that
     # halts around symbol 750 of 900 looks like.
-    task = asyncio.create_task(job_backfill_beta())
-    _BACKGROUND_TASKS.add(task)
-    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    _detach(job_backfill_beta())
 
     return {"started": True,
             "detail": "Beta backfill running in the background — volatility badges "
@@ -408,7 +421,6 @@ async def run_screener_endpoint(
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    import asyncio
     from app.workers.pre_screener import get_status, run_pre_screener_background
 
     status = await get_status()
@@ -420,7 +432,7 @@ async def run_screener_endpoint(
             "message": "הסקרינר כבר רץ ברקע",
         }
 
-    asyncio.create_task(run_pre_screener_background())
+    _detach(run_pre_screener_background())
     return {
         "started": True,
         "message": "הסקרינר רץ ברקע — ההתקדמות מתעדכנת כאן. זה לוקח כמה דקות.",
@@ -551,7 +563,6 @@ async def scan_pool_now(
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    import asyncio
     from sqlalchemy import select
     from app.db.models.asset import Asset
 
@@ -578,7 +589,7 @@ async def scan_pool_now(
     })
     await _scan_state_set(init_state)
 
-    asyncio.create_task(_run_scan_background(symbols_meta))
+    _detach(_run_scan_background(symbols_meta))
 
     return {
         "started": True,
@@ -669,9 +680,8 @@ async def simulate_ta_scan(
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    import asyncio
     from app.workers.in_process_scheduler import job_daily_ta_scan
-    asyncio.create_task(job_daily_ta_scan())
+    _detach(job_daily_ta_scan())
     return {"started": True, "message": "TA scan running in background — check notifications inbox in ~1 min"}
 
 
@@ -1149,7 +1159,7 @@ async def simulate_ai_engines_check(
         return {"started": False, "already_running": True, "symbol": current.get("symbol")}
 
     await _ai_check_state_set({"running": True, "symbol": sym})
-    asyncio.create_task(_run_ai_engines_check(sym))
+    _detach(_run_ai_engines_check(sym))
     return {"started": True, "symbol": sym,
             "message": "Analysis running in background (1-3 min) — poll ai-engines-status"}
 
@@ -1535,7 +1545,6 @@ async def run_quarterly_batch_now(
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    import asyncio as _asyncio
     from app.core.config import settings
     from app.workers.quarterly_scanner import job_quarterly_scan_batch, REDIS_PREFIX
     import redis.asyncio as aioredis
@@ -1577,7 +1586,12 @@ async def run_quarterly_batch_now(
             finally:
                 await r2.aclose()
 
-    _asyncio.create_task(_run_and_clear())
+    # Strong reference until it finishes: asyncio keeps only a weak one, so a
+    # fire-and-forget batch can be garbage-collected mid-run. The _run_and_clear
+    # finally block would then never run, stranding the running-flag for its
+    # full TTL and refusing every resume attempt for ten minutes.
+    _detach(_run_and_clear())
+
     return {"started": True, "remaining_before": remaining, "reprioritized": reorder}
 
 
