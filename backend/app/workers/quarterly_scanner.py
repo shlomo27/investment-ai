@@ -335,6 +335,68 @@ async def requeue_stale_live_recommendations() -> dict:
         await redis_client.aclose()
 
 
+async def sync_queue_with_universe() -> dict:
+    """Reconcile the in-flight scan queue with the current universe.
+
+    The queue is filled once, at the start of a quarter, from the index
+    membership as it stood that day. The universe itself is refreshed weekly —
+    a company that leaves the index is retired and its replacement inserted —
+    but the queue was never told. Two things followed from that:
+
+      * A ticker that was renamed or delisted mid-quarter stayed in the queue
+        and was retried on every batch, forever, because no provider will ever
+        price a symbol that no longer trades.
+      * Its replacement, sitting in the universe under the new symbol, was not
+        in the queue and so went unanalysed until the next quarter began.
+
+    Runs after each universe refresh, and again at the head of every batch.
+    """
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.asset import Asset
+    from sqlalchemy import select
+    import redis.asyncio as aioredis
+
+    redis_client = aioredis.from_url(settings.REDIS_URL)
+    try:
+        if not await redis_client.get(REDIS_PREFIX + "active"):
+            return {"synced": False, "reason": "no active sweep"}
+
+        async with AsyncSessionLocal() as db:
+            universe = {r[0] for r in (await db.execute(
+                select(Asset.symbol).where(Asset.in_universe == True)
+            )).all()}
+
+        if not universe:
+            return {"synced": False, "reason": "universe empty — refusing to touch the queue"}
+
+        pending = [p.decode() if isinstance(p, bytes) else p
+                   for p in await redis_client.lrange(REDIS_PREFIX + "todo", 0, -1)]
+        done = {d.decode() if isinstance(d, bytes) else d
+                for d in await redis_client.smembers(REDIS_PREFIX + "done")}
+
+        # Drop what has left the index.
+        removed = 0
+        for sym in set(pending) - universe:
+            await redis_client.lrem(REDIS_PREFIX + "todo", 0, sym)
+            await redis_client.delete(f"{REDIS_PREFIX}no_price_count:{sym}")
+            removed += 1
+
+        # Pick up what has joined it since the sweep started.
+        added = 0
+        for sym in sorted(universe - set(pending) - done):
+            await redis_client.lpush(REDIS_PREFIX + "todo", sym)
+            added += 1
+
+        if removed or added:
+            logger.info(f"[quarterly_scanner] queue synced with universe — "
+                        f"removed {removed} retired symbols, added {added} new ones")
+        return {"synced": True, "removed": removed, "added": added,
+                "queue_len": await redis_client.llen(REDIS_PREFIX + "todo")}
+    finally:
+        await redis_client.aclose()
+
+
 async def get_quarterly_scan_status() -> dict:
     from app.core.config import settings
     import redis.asyncio as aioredis
@@ -514,6 +576,13 @@ async def job_quarterly_scan_batch() -> dict:
         # a re-queued stale symbol is not immediately marked "recently
         # analyzed" and skipped — the 14-day window and the 30-day staleness
         # bound do not overlap.
+        # Reconcile with the universe before spending anything: symbols that
+        # left the index are dropped, ones that joined it are picked up.
+        try:
+            await sync_queue_with_universe()
+        except Exception as e:
+            logger.warning(f"[quarterly_scanner] universe sync failed: {e}")
+
         try:
             stale = await requeue_stale_live_recommendations()
             if stale.get("requeued") or stale.get("expired"):
@@ -561,6 +630,7 @@ async def job_quarterly_scan_batch() -> dict:
         # three times looked identical to the whole market going dark.
         data_fail_syms: set = set()
         no_price_dead = 0
+        retired_symbols = 0
 
         for _ in range(BATCH_PER_DAY):
             if await budget_exceeded():
@@ -585,6 +655,18 @@ async def job_quarterly_scan_batch() -> dict:
             try:
                 async with AsyncSessionLocal() as db:
                     asset = (await db.execute(select(Asset).where(Asset.symbol==symbol))).scalar_one_or_none()
+
+                # The symbol may have left the index since the queue was built.
+                # Spending an analysis — or a no-price retry — on a ticker that
+                # no longer trades is pure waste, and it was the waste that
+                # halted the batch.
+                if asset is None or not asset.in_universe:
+                    await redis_client.sadd(REDIS_PREFIX + "done", symbol)
+                    await redis_client.expire(REDIS_PREFIX + "done", TTL_SECONDS)
+                    retired_symbols += 1
+                    logger.info(f"[quarterly_scanner] {symbol}: no longer in the universe — skipping")
+                    continue
+
                 exchange       = asset.exchange.value if asset else "NASDAQ"
                 direction_bias = getattr(asset, "direction_bias", None)
                 result = await run_investment_workflow(symbol=symbol, exchange=exchange, direction_bias=direction_bias)
@@ -695,7 +777,7 @@ async def job_quarterly_scan_batch() -> dict:
         result = {"quarter": quarter, "processed": len(processed),
                   "approved": approved, "rejected": rejected, "errors": errors,
                   "skipped_fresh": skipped_fresh, "no_price_retired": no_price_dead,
-                  "remaining": remaining}
+                  "left_universe": retired_symbols, "remaining": remaining}
         logger.info(f"[quarterly_scanner] batch done: {result}")
 
         if remaining == 0:

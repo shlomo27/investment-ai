@@ -397,6 +397,17 @@ async def job_load_universe():
             async with db.begin():
                 result = await load_universe(db)
         logger.info(f"[scheduler] load_universe done: {result}")
+
+        # The scan queue was built from index membership as it stood at the
+        # start of the quarter and is not otherwise told about changes, so a
+        # renamed ticker would be retried forever while its replacement waited
+        # for the next quarter.
+        try:
+            from app.workers.quarterly_scanner import sync_queue_with_universe
+            sync = await sync_queue_with_universe()
+            logger.info(f"[scheduler] quarterly queue synced with universe: {sync}")
+        except Exception as exc:
+            logger.warning(f"[scheduler] quarterly queue sync failed: {exc}")
     except Exception as exc:
         logger.error(f"[scheduler] load_universe failed: {exc}")
 
