@@ -530,6 +530,11 @@ export const marketApi = {
     return response.data;
   },
 
+  backfillBeta: async (): Promise<any> => {
+    const response = await api.post("/market/universe/backfill-beta");
+    return response.data;
+  },
+
   simulateTestNotification: async (): Promise<any> => {
     const response = await api.post("/market/simulate/test-notification");
     return response.data;

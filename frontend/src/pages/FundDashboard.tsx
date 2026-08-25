@@ -87,6 +87,8 @@ const FundDashboard: React.FC = () => {
   const [earningsCheckResult, setEarningsCheckResult] = useState<any>(null);
   const [batchResult, setBatchResult] = useState<any>(null);
   const [batchStarting, setBatchStarting] = useState(false);
+  const [betaRunning, setBetaRunning] = useState(false);
+  const [betaResult, setBetaResult] = useState<string | null>(null);
 
   const handleRequeueReporters = async () => {
     setBatchStarting(true);
@@ -243,6 +245,22 @@ const FundDashboard: React.FC = () => {
       setUniverseResult({ error: e?.response?.data?.detail || "Failed" });
     }
     setUniverseLoading(false);
+  };
+
+  const handleBackfillBeta = async () => {
+    setBetaRunning(true);
+    setBetaResult(null);
+    try {
+      await marketApi.backfillBeta();
+      setBetaResult(
+        isHe
+          ? "המדידה רצה ברקע — תג התנודתיות יופיע על הכרטיסים בהדרגה, מניה אחת בשנייה."
+          : "Running in the background — volatility badges appear on cards as symbols are measured, about one a second."
+      );
+    } catch (e: any) {
+      setBetaResult(e?.response?.data?.detail || (isHe ? "נכשל" : "Failed"));
+    }
+    setBetaRunning(false);
   };
 
   const handleScanNow = async () => {
@@ -447,6 +465,33 @@ const FundDashboard: React.FC = () => {
               {isHe ? "אין נתוני יקום — טען יקום תחילה" : "No universe data — load universe first"}
             </div>
           )}
+
+          {/* Volatility measurement. Beta is filled in for a stock only when
+              the pipeline re-analyses it, which for anything outside the pool
+              can be a quarter away — until then its card shows no volatility
+              band at all. This measures the whole universe in one pass. */}
+          <div className="mt-4 pt-4 border-t border-gray-800">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm text-gray-300">
+                  {isHe ? "מדידת תנודתיות (בטא)" : "Measure volatility (beta)"}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {isHe
+                    ? "ממלא בטא למניות שטרם נמדדו — מפעיל את תג התנודתיות בכרטיסים ואת סינון ההעדפות"
+                    : "Fills beta for unmeasured stocks — enables the card badge and the preference filter"}
+                </p>
+              </div>
+              <button
+                onClick={handleBackfillBeta}
+                disabled={betaRunning}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-blue-300 border border-gray-700 hover:border-blue-700 disabled:text-gray-600"
+              >
+                {betaRunning ? (isHe ? "מפעיל..." : "Starting...") : (isHe ? "הפעל מדידה" : "Run")}
+              </button>
+            </div>
+            {betaResult && <p className="text-xs text-gray-400 mt-2">{betaResult}</p>}
+          </div>
 
           {universeResult && (
             <div className={`mt-3 p-3 rounded-xl text-xs ${universeResult.error ? "bg-red-900/20 text-red-400" : "bg-green-900/20 text-green-400"}`}>
