@@ -180,57 +180,84 @@ class DataFetcherAgent:
         if is_tase:
             return await self.tase_service.get_tase_stock_info(symbol)
 
-        # Primary: Yahoo Finance
-        result = await self.yahoo_service.get_stock_info(symbol)
-        if result and result.get("price", 0) > 0:
-            return await self._fill_fundamental_gaps(symbol, result)
+        # Providers that have just failed repeatedly are skipped for a cooling
+        # period. Yahoo answers from a blocked IP range on Railway, so without
+        # this every analysis opened with a call that could not succeed, paying
+        # its timeout before reaching a source that works — and no record was
+        # kept, which is why these outages could only be described as
+        # "it happens sometimes".
+        from app.services.market_data import provider_health
 
-        logger.warning("Yahoo Finance returned no price — trying Alpaca snapshot", symbol=symbol)
+        skip = await provider_health.open_circuits()
+
+        # Primary: Yahoo Finance
+        result = None
+        if "yahoo" not in skip:
+            result = await self.yahoo_service.get_stock_info(symbol)
+            got = bool(result and result.get("price", 0) > 0)
+            await provider_health.record("yahoo", got)
+            if got:
+                result["_price_source"] = "yahoo"
+                return await self._fill_fundamental_gaps(symbol, result)
+            logger.warning("Yahoo Finance returned no price — trying Alpaca snapshot", symbol=symbol)
 
         # Fallback 1: Alpaca (price/volume only, fast)
-        alpaca = get_alpaca_service()
-        snap = await alpaca.get_snapshot(symbol)
-        if snap and snap.get("price", 0) > 0:
-            logger.info("Alpaca snapshot succeeded", symbol=symbol, price=snap["price"])
-            # Merge Alpaca price into Yahoo result (which has fundamentals even if price=0)
-            base = result or self._empty_price_data(symbol, "US")
-            base.update({
-                "price":          snap["price"],
-                "previous_close": snap.get("previous_close", 0),
-                "volume":         snap.get("volume", 0),
-            })
-            return base
-
-        logger.warning("Alpaca unavailable — trying FMP", symbol=symbol)
+        if "alpaca" not in skip:
+            alpaca = get_alpaca_service()
+            snap = await alpaca.get_snapshot(symbol)
+            got = bool(snap and snap.get("price", 0) > 0)
+            await provider_health.record("alpaca", got)
+            if got:
+                logger.info("Alpaca snapshot succeeded", symbol=symbol, price=snap["price"])
+                # Merge Alpaca price into Yahoo result (which has fundamentals even if price=0)
+                base = result or self._empty_price_data(symbol, "US")
+                base.update({
+                    "price":          snap["price"],
+                    "previous_close": snap.get("previous_close", 0),
+                    "volume":         snap.get("volume", 0),
+                    "_price_source":  "alpaca",
+                })
+                return await self._fill_fundamental_gaps(symbol, base)
+            logger.warning("Alpaca unavailable — trying FMP", symbol=symbol)
 
         # Fallback 2: FMP (full fundamentals)
-        fmp_result = await get_fmp_service().get_stock_info(symbol)
-        if fmp_result and fmp_result.get("price", 0) > 0:
-            logger.info("FMP fallback succeeded", symbol=symbol, price=fmp_result["price"])
-            return fmp_result
-
-        logger.warning("FMP unavailable — trying Finnhub", symbol=symbol)
+        if "fmp" not in skip:
+            fmp_result = await get_fmp_service().get_stock_info(symbol)
+            got = bool(fmp_result and fmp_result.get("price", 0) > 0)
+            await provider_health.record("fmp", got)
+            if got:
+                logger.info("FMP fallback succeeded", symbol=symbol, price=fmp_result["price"])
+                fmp_result["_price_source"] = "fmp"
+                return fmp_result
+            logger.warning("FMP unavailable — trying Finnhub", symbol=symbol)
 
         # Fallback 3: Finnhub (real-time quote + profile + financials)
-        finnhub_result = await get_finnhub_service().get_stock_info(symbol)
-        if finnhub_result and finnhub_result.get("price", 0) > 0:
-            logger.info("Finnhub fallback succeeded", symbol=symbol, price=finnhub_result["price"])
-            return finnhub_result
-
-        logger.warning("Finnhub unavailable — trying Polygon", symbol=symbol)
+        if "finnhub" not in skip:
+            finnhub_result = await get_finnhub_service().get_stock_info(symbol)
+            got = bool(finnhub_result and finnhub_result.get("price", 0) > 0)
+            await provider_health.record("finnhub", got)
+            if got:
+                logger.info("Finnhub fallback succeeded", symbol=symbol, price=finnhub_result["price"])
+                finnhub_result["_price_source"] = "finnhub"
+                return finnhub_result
+            logger.warning("Finnhub unavailable — trying Polygon", symbol=symbol)
 
         # Fallback 4: Polygon (previous-day close — last resort)
-        polygon_result = await get_polygon_service().get_stock_info(symbol)
-        if polygon_result and polygon_result.get("price", 0) > 0:
-            logger.info("Polygon fallback succeeded", symbol=symbol, price=polygon_result["price"])
-            base = result or self._empty_price_data(symbol, "US")
-            base.update({k: v for k, v in polygon_result.items() if v is not None})
-            return base
+        if "polygon" not in skip:
+            polygon_result = await get_polygon_service().get_stock_info(symbol)
+            got = bool(polygon_result and polygon_result.get("price", 0) > 0)
+            await provider_health.record("polygon", got)
+            if got:
+                logger.info("Polygon fallback succeeded", symbol=symbol, price=polygon_result["price"])
+                base = result or self._empty_price_data(symbol, "US")
+                base.update({k: v for k, v in polygon_result.items() if v is not None})
+                base["_price_source"] = "polygon"
+                return await self._fill_fundamental_gaps(symbol, base)
 
         logger.error(
             "All 5 market data sources failed — returning empty data. "
             "Analysis will use Claude training knowledge only.",
-            symbol=symbol,
+            symbol=symbol, skipped=sorted(skip),
         )
         return result or self._empty_price_data(symbol, "US")
 

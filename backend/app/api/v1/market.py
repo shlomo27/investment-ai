@@ -1008,11 +1008,18 @@ async def price_source_diagnostics(
     else:
         verdict = f"🟢 {len(working)} מקורות עובדים."
 
+    # A probe says whether a provider answers right now. This says how it has
+    # actually behaved across every real analysis — the difference between
+    # "it works when I test it" and "it works when the system needs it".
+    from app.services.market_data import provider_health
+    health = await provider_health.get_health()
+
     return {
         "symbol": sym,
         "verdict": verdict,
         "working_count": len(working),
         "sources": results,
+        "health": health,
         "batch_quotes": {
             "ok": batch_ok > 0,
             "detail": (f"FMP החזיר {batch_ok}/3 ציטוטים — המסלולים ההמוניים מכוסים"
