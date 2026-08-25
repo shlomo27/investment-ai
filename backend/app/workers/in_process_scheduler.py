@@ -401,6 +401,17 @@ async def job_load_universe():
         logger.error(f"[scheduler] load_universe failed: {exc}")
 
 
+async def job_backfill_beta():
+    """Sunday 07:40 IL — measure beta for universe stocks that have none."""
+    from app.workers.beta_backfill import job_backfill_beta as _run
+    logger.info("[scheduler] beta_backfill started")
+    try:
+        result = await _run()
+        logger.info(f"[scheduler] beta_backfill done: {result}")
+    except Exception as exc:
+        logger.error(f"[scheduler] beta_backfill failed: {exc}")
+
+
 async def job_run_prescreener():
     """Daily 08:00 IL — score universe, activate top 80 LONG + 20 SHORT.
 
@@ -882,6 +893,18 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+    # Volatility backfill — Sunday 07:40 IL, right after the universe refresh
+    # brings in new symbols. Measures beta for any stock that has never had it
+    # measured, so the card's volatility band and the user's allows_volatile
+    # setting work on the whole universe instead of only on stocks the pipeline
+    # happened to re-analyse.
+    scheduler.add_job(
+        job_backfill_beta,
+        CronTrigger(day_of_week="sun", hour=7, minute=40, timezone="Asia/Jerusalem"),
+        id="scheduled_beta_backfill",
+        replace_existing=True,
+    )
+
     # Daily pre-screener — 08:00 IL: momentum-score the universe, refresh the
     # active pool (top 80 LONG + 20 SHORT) that ta_scan and full_scan work on.
     scheduler.add_job(
@@ -1014,6 +1037,7 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
 # (a stale daily-09:00 full scan haunted us exactly this way).
 KNOWN_JOB_IDS = {
     "scheduled_load_universe",
+    "scheduled_beta_backfill",
     "scheduled_prescreener",
     "scheduled_weekly_full_scan",
     "scheduled_earnings_watcher",

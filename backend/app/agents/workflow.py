@@ -250,22 +250,16 @@ async def node_senior_review(state: AgentWorkflowState) -> AgentWorkflowState:
 
 def _risk_level_from_beta(beta: float):
     """Volatility band from beta — how hard the stock swings relative to the
-    market. Conventional bands: below 0.8 damped, 0.8-1.3 roughly market-like,
-    1.3-1.8 amplified, above 1.8 sharply amplified.
+    market. Beta captures market-correlated movement only, so a low-beta stock
+    can still gap on its own news; it is what every data provider actually
+    returns for us, and far better than the constant it replaces.
 
-    Beta captures market-correlated movement only, so a low-beta stock can
-    still gap on its own news. It is what every data provider actually returns
-    for us, and it is a far better answer than the constant it replaces.
+    Delegates to the backfill worker's version so a stock measured here and one
+    measured there cannot be classified by two different rules.
     """
-    from app.db.models.asset import RiskLevel
+    from app.workers.beta_backfill import risk_level_from_beta
 
-    if beta < 0.8:
-        return RiskLevel.LOW
-    if beta < 1.3:
-        return RiskLevel.MEDIUM
-    if beta < 1.8:
-        return RiskLevel.HIGH
-    return RiskLevel.VERY_HIGH
+    return risk_level_from_beta(beta)
 
 
 async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowState:
@@ -378,6 +372,10 @@ async def node_save_recommendation(state: AgentWorkflowState) -> AgentWorkflowSt
                     "price": raw.get("price"),
                     "market_cap": raw.get("market_cap"),
                     "pe_ratio": raw.get("pe_ratio"),
+                    # Beta is fetched on every run and was dropped here, so the
+                    # card had no volatility figure to show even for a stock
+                    # that had just been analysed.
+                    "beta": raw.get("beta"),
                     "sentiment": raw.get("social_sentiment"),
                     "fetch_timestamp": raw.get("fetch_timestamp"),
                     "fetch_errors": raw.get("fetch_errors"),

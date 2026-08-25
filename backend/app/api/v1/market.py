@@ -342,6 +342,29 @@ async def load_universe_endpoint(
     return result
 
 
+@router.post("/universe/backfill-beta")
+async def backfill_beta_endpoint(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Measure beta for universe stocks that have never had it measured.
+
+    Runs detached: one provider call per symbol, rate-limited to roughly one a
+    second, so a few hundred symbols take minutes — well past any HTTP timeout.
+    The scheduled Sunday run does the same thing; this exists so the first fill
+    does not have to wait for it.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    import asyncio
+    from app.workers.beta_backfill import job_backfill_beta
+
+    asyncio.create_task(job_backfill_beta())
+    return {"started": True,
+            "detail": "Beta backfill running in the background — volatility badges "
+                      "appear on cards as symbols are measured."}
+
+
 @router.post("/universe/screen")
 async def run_screener_endpoint(
     current_user: User = Depends(get_current_active_user),
