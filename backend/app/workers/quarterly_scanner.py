@@ -375,45 +375,94 @@ async def sync_queue_with_universe() -> dict:
         done = {d.decode() if isinstance(d, bytes) else d
                 for d in await redis_client.smembers(REDIS_PREFIX + "done")}
 
-        # Drop what has left the index.
+        # Rebuild the queue in one pass: keep only symbols still in the index,
+        # and keep each of them once. The queue is a Redis list, so a symbol
+        # requeued by several paths — an earnings re-queue, a stale-signal
+        # re-queue, a no-price retry — appeared more than once and was paid for
+        # more than once. Order is preserved, so anything already prioritised
+        # stays prioritised.
+        kept: list = []
+        seen: set = set()
         removed = 0
-        for sym in set(pending) - universe:
-            await redis_client.lrem(REDIS_PREFIX + "todo", 0, sym)
-            await redis_client.delete(f"{REDIS_PREFIX}no_price_count:{sym}")
-            removed += 1
+        for sym in pending:
+            if sym not in universe or sym in seen:
+                removed += 1
+                if sym not in universe:
+                    await redis_client.delete(f"{REDIS_PREFIX}no_price_count:{sym}")
+                continue
+            seen.add(sym)
+            kept.append(sym)
 
-        # Pick up what has joined it since the sweep started.
-        added = 0
-        for sym in sorted(universe - set(pending) - done):
-            await redis_client.lpush(REDIS_PREFIX + "todo", sym)
-            added += 1
+        # Pick up what has joined the index since the sweep started.
+        fresh = sorted(universe - seen - done)
 
-        if removed or added:
+        if removed or fresh:
+            # rpop consumes from the tail, so rewrite head-first with lpush in
+            # the same order the old list had, then put the new symbols behind
+            # everything already queued.
+            pipe = redis_client.pipeline()
+            pipe.delete(REDIS_PREFIX + "todo")
+            for sym in reversed(fresh):
+                pipe.lpush(REDIS_PREFIX + "todo", sym)
+            for sym in reversed(kept):
+                pipe.lpush(REDIS_PREFIX + "todo", sym)
+            pipe.expire(REDIS_PREFIX + "todo", TTL_SECONDS)
+            await pipe.execute()
             logger.info(f"[quarterly_scanner] queue synced with universe — "
-                        f"removed {removed} retired symbols, added {added} new ones")
-        return {"synced": True, "removed": removed, "added": added,
+                        f"dropped {removed} retired/duplicate entries, added {len(fresh)} new symbols")
+
+        return {"synced": True, "removed": removed, "added": len(fresh),
                 "queue_len": await redis_client.llen(REDIS_PREFIX + "todo")}
     finally:
         await redis_client.aclose()
 
 
 async def get_quarterly_scan_status() -> dict:
+    """Sweep progress measured against the universe as it stands today.
+
+    The total used to be "still queued + already done". Both sides accumulate
+    history: a sweep that began months ago has swept symbols that have since
+    left the index — the Israeli tickers that were dropped, index reshuffles —
+    and they stayed in the done set forever. The denominator therefore grew past
+    the universe it was supposedly measuring (1,079 against a universe of 903),
+    and the percentage was quietly understated, since work already finished
+    counted against a target that no longer existed.
+    """
     from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.asset import Asset
+    from sqlalchemy import select
     import redis.asyncio as aioredis
+
     redis_client = aioredis.from_url(settings.REDIS_URL)
     try:
         active  = await redis_client.get(REDIS_PREFIX + "active")
         quarter = (await redis_client.get(REDIS_PREFIX + "quarter") or b"").decode()
         todo    = await redis_client.llen(REDIS_PREFIX + "todo")
-        done    = await redis_client.scard(REDIS_PREFIX + "done")
-        total   = todo + done
+        done_raw = {d.decode() if isinstance(d, bytes) else d
+                    for d in await redis_client.smembers(REDIS_PREFIX + "done")}
+
+        async with AsyncSessionLocal() as db:
+            universe = {r[0] for r in (await db.execute(
+                select(Asset.symbol).where(Asset.in_universe == True)
+            )).all()}
+
+        # Fall back to the old arithmetic only if the universe reads back empty,
+        # so a database hiccup shows a stale number rather than 0%.
+        if universe:
+            done = len(done_raw & universe)
+            total = len(universe)
+        else:
+            done = len(done_raw)
+            total = todo + done
+
         return {
             "active":       bool(active),
             "quarter":      quarter,
             "total":        total,
             "done":         done,
             "remaining":    todo,
-            "progress_pct": round(done/total*100, 1) if total else 0,
+            "progress_pct": round(done / total * 100, 1) if total else 0,
         }
     finally:
         await redis_client.aclose()
