@@ -21,6 +21,11 @@ from app.services.market_data.tase_service import TASEService
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/market", tags=["Market Data"])
 
+# Strong references to detached background tasks. Without this asyncio holds
+# only a weak reference and the garbage collector can cancel a long-running
+# task partway through, silently.
+_BACKGROUND_TASKS: set = set()
+
 
 class AssetPoolResponse(BaseModel):
     id: int
@@ -357,12 +362,37 @@ async def backfill_beta_endpoint(
         raise HTTPException(status_code=403, detail="Admin access required")
 
     import asyncio
-    from app.workers.beta_backfill import job_backfill_beta
+    from app.workers.beta_backfill import job_backfill_beta, get_backfill_status
 
-    asyncio.create_task(job_backfill_beta())
+    status_now = await get_backfill_status()
+    if status_now.get("running"):
+        return {"started": False, "already_running": True, **status_now,
+                "detail": "A backfill is already running — let it finish."}
+
+    # Hold a reference until the task completes. asyncio keeps only a weak one,
+    # so a fire-and-forget task can be garbage-collected mid-run: the loop stops
+    # partway through with no error anywhere, which is exactly what a run that
+    # halts around symbol 750 of 900 looks like.
+    task = asyncio.create_task(job_backfill_beta())
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+
     return {"started": True,
             "detail": "Beta backfill running in the background — volatility badges "
                       "appear on cards as symbols are measured."}
+
+
+@router.get("/universe/backfill-beta/status")
+async def backfill_beta_status(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Progress of an in-flight beta backfill, so the panel can show a live
+    count instead of leaving the admin to guess whether it is still working."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.workers.beta_backfill import get_backfill_status
+
+    return await get_backfill_status()
 
 
 @router.post("/universe/screen")

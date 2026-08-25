@@ -87,8 +87,9 @@ const FundDashboard: React.FC = () => {
   const [earningsCheckResult, setEarningsCheckResult] = useState<any>(null);
   const [batchResult, setBatchResult] = useState<any>(null);
   const [batchStarting, setBatchStarting] = useState(false);
-  const [betaRunning, setBetaRunning] = useState(false);
   const [betaResult, setBetaResult] = useState<string | null>(null);
+  const [betaStatus, setBetaStatus] = useState<{ running: boolean; done?: number; total?: number } | null>(null);
+  const betaRunning = !!betaStatus?.running;
 
   const handleRequeueReporters = async () => {
     setBatchStarting(true);
@@ -248,23 +249,37 @@ const FundDashboard: React.FC = () => {
   };
 
   const handleBackfillBeta = async () => {
-    setBetaRunning(true);
     setBetaResult(null);
     try {
-      await marketApi.backfillBeta();
-      setBetaResult(
-        isHe
-          ? "המדידה רצה ברקע — מניה אחת בשנייה, כ-15 דקות ליקום מלא. רענן את הדף כדי לראות את ההתקדמות."
-          : "Running in the background — about one a second, ~15 minutes for the full universe. Refresh to see progress."
-      );
-      // Give the first symbols time to land so the counter moves on refresh
-      // rather than sitting at its old value and looking stuck.
-      setTimeout(() => { loadUniverseStats(); }, 15_000);
+      const res = await marketApi.backfillBeta();
+      if (res.already_running) {
+        setBetaResult(isHe ? "כבר רצה מדידה — תן לה לסיים." : "A run is already in progress.");
+      }
+      setBetaStatus({ running: true });
     } catch (e: any) {
       setBetaResult(e?.response?.data?.detail || (isHe ? "נכשל" : "Failed"));
     }
-    setBetaRunning(false);
   };
+
+  // Poll while a backfill is in flight. The run survives page reloads — it
+  // lives in the server process, not the browser — so the panel picks a live
+  // run back up on mount instead of implying a refresh interrupted it.
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const s = await marketApi.getBackfillBetaStatus();
+        if (cancelled) return;
+        setBetaStatus(s);
+        if (!s.running) loadUniverseStats();
+      } catch {
+        /* leave the last known state on screen */
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 5_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
 
   const handleScanNow = async () => {
     setScanRunning(true);
@@ -505,9 +520,18 @@ const FundDashboard: React.FC = () => {
                 disabled={betaRunning}
                 className="shrink-0 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-blue-300 border border-gray-700 hover:border-blue-700 disabled:text-gray-600"
               >
-                {betaRunning ? (isHe ? "מפעיל..." : "Starting...") : (isHe ? "הפעל מדידה" : "Run")}
+                {betaRunning ? (isHe ? "רצה..." : "Running...") : (isHe ? "הפעל מדידה" : "Run")}
               </button>
             </div>
+            {betaRunning && (
+              <p className="text-xs text-blue-300 mt-2">
+                {betaStatus?.total
+                  ? (isHe
+                      ? `מודד כעת — ${betaStatus.done} מתוך ${betaStatus.total}. אפשר לעזוב את הדף, הריצה ממשיכה בשרת.`
+                      : `Measuring — ${betaStatus.done} of ${betaStatus.total}. You can leave the page; the run continues on the server.`)
+                  : (isHe ? "מתחיל..." : "Starting...")}
+              </p>
+            )}
             {betaResult && <p className="text-xs text-gray-400 mt-2">{betaResult}</p>}
           </div>
 

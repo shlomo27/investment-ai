@@ -71,12 +71,84 @@ async def _fetch_beta(symbol: str) -> float | None:
     return None
 
 
+_RUNNING_KEY = "investment_ai:beta_backfill:running"
+# Comfortably longer than the gap between two progress writes, short enough
+# that a process killed mid-run frees the lock quickly.
+_RUNNING_TTL = 120
+
+
+async def _redis():
+    from app.core.config import settings
+    import redis.asyncio as aioredis
+
+    return aioredis.from_url(settings.REDIS_URL)
+
+
+async def _mark_running(done: int, total: int) -> None:
+    import json
+
+    try:
+        client = await _redis()
+        try:
+            await client.set(_RUNNING_KEY, json.dumps({"done": done, "total": total}),
+                             ex=_RUNNING_TTL)
+        finally:
+            await client.aclose()
+    except Exception:
+        pass  # progress reporting must never take the run down with it
+
+
+async def _clear_running() -> None:
+    try:
+        client = await _redis()
+        try:
+            await client.delete(_RUNNING_KEY)
+        finally:
+            await client.aclose()
+    except Exception:
+        pass
+
+
+async def get_backfill_status() -> dict:
+    """Whether a run is in flight, and how far along it is."""
+    import json
+
+    try:
+        client = await _redis()
+        try:
+            raw = await client.get(_RUNNING_KEY)
+        finally:
+            await client.aclose()
+    except Exception:
+        return {"running": False}
+    if not raw:
+        return {"running": False}
+    try:
+        state = json.loads(raw)
+    except (ValueError, TypeError):
+        return {"running": True}
+    return {"running": True, "done": state.get("done"), "total": state.get("total")}
+
+
 async def job_backfill_beta(limit: int = _MAX_PER_RUN) -> dict:
-    """Measure volatility for universe stocks that have never been measured."""
+    """Measure volatility for universe stocks that have never been measured.
+
+    Refuses to start when a run is already in flight. Two concurrent runs each
+    call the provider once a second, which together breach Finnhub's 60/minute
+    free-tier limit — the rejected calls come back empty and get recorded as
+    "no provider has a beta for this symbol", so pressing the button twice made
+    the coverage worse rather than faster.
+    """
     from app.core.database import AsyncSessionLocal
     from app.db.models.asset import Asset
     from app.db.models.recommendation import Recommendation, RecommendationStatus
     from sqlalchemy import select
+
+    existing = await get_backfill_status()
+    if existing.get("running"):
+        return {"updated": 0, "attempted": 0, "reason": "a run is already in progress",
+                "already_running": True, **existing}
+    await _mark_running(done=0, total=0)
 
     async with AsyncSessionLocal() as db:
         rows = await db.execute(
@@ -105,25 +177,32 @@ async def job_backfill_beta(limit: int = _MAX_PER_RUN) -> dict:
     symbols.sort(key=lambda s: (s not in on_screen, s))
 
     if not symbols:
+        await _clear_running()
         return {"updated": 0, "attempted": 0, "reason": "every universe stock already has a beta"}
 
     updated = 0
     missing = 0
-    for symbol in symbols:
-        beta = await _fetch_beta(symbol)
-        if beta is None or not (0 < beta < 10):
-            missing += 1
-        else:
-            async with AsyncSessionLocal() as db:
-                asset = (await db.execute(
-                    select(Asset).where(Asset.symbol == symbol)
-                )).scalar_one_or_none()
-                if asset is not None:
-                    asset.beta = beta
-                    asset.risk_level = risk_level_from_beta(beta)
-                    await db.commit()
-                    updated += 1
-        await asyncio.sleep(_DELAY_SECONDS)
+    try:
+        for index, symbol in enumerate(symbols, start=1):
+            beta = await _fetch_beta(symbol)
+            if beta is None or not (0 < beta < 10):
+                missing += 1
+            else:
+                async with AsyncSessionLocal() as db:
+                    asset = (await db.execute(
+                        select(Asset).where(Asset.symbol == symbol)
+                    )).scalar_one_or_none()
+                    if asset is not None:
+                        asset.beta = beta
+                        asset.risk_level = risk_level_from_beta(beta)
+                        await db.commit()
+                        updated += 1
+            # Refresh the lock as we go. A crashed run must not hold it until
+            # the TTL expires, and a long healthy run must not lose it midway.
+            await _mark_running(done=index, total=len(symbols))
+            await asyncio.sleep(_DELAY_SECONDS)
+    finally:
+        await _clear_running()
 
     logger.info(f"[beta_backfill] measured {updated}/{len(symbols)} symbols "
                 f"({missing} had no beta from any provider)")
