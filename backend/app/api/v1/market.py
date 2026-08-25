@@ -584,6 +584,16 @@ async def universe_stats(
         )
     )
 
+    # How much of the universe has had its volatility actually measured. The
+    # backfill is otherwise invisible: it runs in the background and the only
+    # evidence is a badge appearing on some cards but not others, which reads
+    # as a bug rather than as progress.
+    beta_measured = await db.execute(
+        select(sqlfunc.count(Asset.id)).where(
+            Asset.in_universe == True, Asset.beta.isnot(None)
+        )
+    )
+
     top_result = await db.execute(
         select(Asset.symbol, Asset.long_score)
         .where(Asset.is_active_in_pool == True)
@@ -598,6 +608,7 @@ async def universe_stats(
         "universe_total": total_universe.scalar(),
         "seeded_pool": seeded.scalar(),
         "active_pool": active_pool.scalar(),
+        "beta_measured": beta_measured.scalar(),
         "top_candidates": [
             {"symbol": r[0], "score": round(r[1], 1)}
             for r in top_result.fetchall()

@@ -254,9 +254,12 @@ const FundDashboard: React.FC = () => {
       await marketApi.backfillBeta();
       setBetaResult(
         isHe
-          ? "המדידה רצה ברקע — תג התנודתיות יופיע על הכרטיסים בהדרגה, מניה אחת בשנייה."
-          : "Running in the background — volatility badges appear on cards as symbols are measured, about one a second."
+          ? "המדידה רצה ברקע — מניה אחת בשנייה, כ-15 דקות ליקום מלא. רענן את הדף כדי לראות את ההתקדמות."
+          : "Running in the background — about one a second, ~15 minutes for the full universe. Refresh to see progress."
       );
+      // Give the first symbols time to land so the counter moves on refresh
+      // rather than sitting at its old value and looking stuck.
+      setTimeout(() => { loadUniverseStats(); }, 15_000);
     } catch (e: any) {
       setBetaResult(e?.response?.data?.detail || (isHe ? "נכשל" : "Failed"));
     }
@@ -478,9 +481,24 @@ const FundDashboard: React.FC = () => {
                 </p>
                 <p className="text-xs text-gray-500">
                   {isHe
-                    ? "ממלא בטא למניות שטרם נמדדו — מפעיל את תג התנודתיות בכרטיסים ואת סינון ההעדפות"
-                    : "Fills beta for unmeasured stocks — enables the card badge and the preference filter"}
+                    ? "רץ אוטומטית כל יום ראשון 07:40 — הכפתור רק כדי לא לחכות"
+                    : "Runs automatically every Sunday 07:40 — the button is only to avoid waiting"}
                 </p>
+                {universeStats && typeof universeStats.beta_measured === "number" && (
+                  <p className="text-xs mt-1">
+                    <span className={
+                      universeStats.beta_measured >= universeStats.universe_total * 0.9
+                        ? "text-green-400"
+                        : universeStats.beta_measured > 0
+                        ? "text-yellow-400"
+                        : "text-gray-500"
+                    }>
+                      {isHe
+                        ? `נמדדו ${universeStats.beta_measured.toLocaleString()} מתוך ${universeStats.universe_total.toLocaleString()}`
+                        : `${universeStats.beta_measured.toLocaleString()} of ${universeStats.universe_total.toLocaleString()} measured`}
+                    </span>
+                  </p>
+                )}
               </div>
               <button
                 onClick={handleBackfillBeta}

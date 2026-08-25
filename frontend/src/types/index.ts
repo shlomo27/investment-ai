@@ -524,6 +524,7 @@ export interface UniverseStats {
   universe_total: number;
   seeded_pool: number;
   active_pool: number;
+  beta_measured?: number;
   top_candidates: Array<{ symbol: string; score: number }>;
   pool_changes?: {
     ran_at?: string | null;

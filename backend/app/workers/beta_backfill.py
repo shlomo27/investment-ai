@@ -20,7 +20,11 @@ logger = logging.getLogger(__name__)
 # Finnhub's free tier allows 60 calls/minute. One call per second leaves room
 # for the schedulers that share the key.
 _DELAY_SECONDS = 1.0
-_MAX_PER_RUN = 400
+# Sized to cover the whole universe (S&P 500 + 400, ~900 symbols) in a single
+# run. A smaller cap meant one press of the button measured less than half the
+# universe and left the rest with no badge — indistinguishable, from the
+# outside, from the feature not working.
+_MAX_PER_RUN = 1200
 
 
 def risk_level_from_beta(beta: float):
