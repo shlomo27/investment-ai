@@ -75,6 +75,7 @@ async def job_backfill_beta(limit: int = _MAX_PER_RUN) -> dict:
     """Measure volatility for universe stocks that have never been measured."""
     from app.core.database import AsyncSessionLocal
     from app.db.models.asset import Asset
+    from app.db.models.recommendation import Recommendation, RecommendationStatus
     from sqlalchemy import select
 
     async with AsyncSessionLocal() as db:
@@ -85,6 +86,23 @@ async def job_backfill_beta(limit: int = _MAX_PER_RUN) -> dict:
             .limit(limit)
         )
         symbols = [r[0] for r in rows.all()]
+
+        # Stocks the user is actually looking at go first. Measuring the
+        # universe in plain alphabetical order meant a run that stopped early
+        # left every symbol late in the alphabet without a badge — a card for
+        # VRTX stayed blank while GOOGL had one, which reads as a broken
+        # feature rather than as an unfinished pass.
+        on_screen = {r[0] for r in (await db.execute(
+            select(Recommendation.symbol).where(
+                Recommendation.status.in_([
+                    RecommendationStatus.APPROVED,
+                    RecommendationStatus.PRESENTED_TO_USER,
+                    RecommendationStatus.ACTIONED,
+                ])
+            ).distinct()
+        )).all()}
+
+    symbols.sort(key=lambda s: (s not in on_screen, s))
 
     if not symbols:
         return {"updated": 0, "attempted": 0, "reason": "every universe stock already has a beta"}
