@@ -556,7 +556,11 @@ async def job_quarterly_scan_batch() -> dict:
         processed = []
         skipped_fresh = 0
         engine_fail_streak = 0  # consecutive analyses that failed on a dead engine
-        data_fail_streak   = 0  # consecutive analyses aborted for want of a price
+        # DISTINCT symbols that failed for want of a price, back to back. It must
+        # be distinct symbols: counting attempts meant one dead ticker retried
+        # three times looked identical to the whole market going dark.
+        data_fail_syms: set = set()
+        no_price_dead = 0
 
         for _ in range(BATCH_PER_DAY):
             if await budget_exceeded():
@@ -606,11 +610,32 @@ async def job_quarterly_scan_batch() -> dict:
                 logger.warning(f"[quarterly_scanner] {symbol}: {exc}")
 
             if no_price:
-                # Same treatment as an engine outage: back in the queue, not
-                # marked done, not charged.
-                await redis_client.rpush(REDIS_PREFIX + "todo", symbol)
-                data_fail_streak += 1
-                if data_fail_streak >= 3:
+                # Back of the line, NOT the front. The queue is consumed with
+                # rpop, so the rpush this used to do handed the very same symbol
+                # straight back on the next iteration: one ticker with no price
+                # anywhere — delisted, renamed, or simply unsupported — failed
+                # three times in a row, tripped the outage detector, and halted
+                # the entire day's batch. It then sat at the head of the queue
+                # and did it again the next day, and every day after.
+                await redis_client.lpush(REDIS_PREFIX + "todo", symbol)
+
+                # A symbol that no provider can price after several separate
+                # attempts is not a market outage — it is a dead ticker. Retire
+                # it so it stops consuming the batch.
+                ck = f"{REDIS_PREFIX}no_price_count:{symbol}"
+                tries = await redis_client.incr(ck)
+                await redis_client.expire(ck, TTL_SECONDS)
+                if tries >= 3:
+                    await redis_client.lrem(REDIS_PREFIX + "todo", 0, symbol)
+                    await redis_client.sadd(REDIS_PREFIX + "done", symbol)
+                    await redis_client.expire(REDIS_PREFIX + "done", TTL_SECONDS)
+                    no_price_dead += 1
+                    logger.warning(f"[quarterly_scanner] {symbol}: no price from any provider "
+                                   f"after {tries} attempts — retiring from this sweep")
+                    continue
+
+                data_fail_syms.add(symbol)
+                if len(data_fail_syms) >= 3:
                     logger.error("[quarterly_scanner] halting batch — market data appears DOWN")
                     from app.workers.cost_guard import mark_market_data_down
                     await mark_market_data_down()
@@ -621,13 +646,14 @@ async def job_quarterly_scan_batch() -> dict:
                         "Finnhub, Polygon). המערכת עצרה את הסריקה כדי לא לנתח "
                         "מניות בלי מחיר — החברות נשארות בתור וינותחו כשהנתונים "
                         "יחזרו.\n\n<b>לא בוצע ניתוח כלשהו.</b> בדוק את מפתחות ה-API "
-                        "ואת המכסות שלהם."
+                        "ואת המכסות שלהם.\n\n"
+                        f"המניות שנכשלו: {', '.join(sorted(data_fail_syms))}"
                     )
                     break
                 await asyncio.sleep(2)
                 continue
 
-            data_fail_streak = 0
+            data_fail_syms.clear()
             from app.workers.cost_guard import clear_market_data_down
             await clear_market_data_down()
 
@@ -668,7 +694,8 @@ async def job_quarterly_scan_batch() -> dict:
         remaining = await redis_client.llen(REDIS_PREFIX + "todo")
         result = {"quarter": quarter, "processed": len(processed),
                   "approved": approved, "rejected": rejected, "errors": errors,
-                  "skipped_fresh": skipped_fresh, "remaining": remaining}
+                  "skipped_fresh": skipped_fresh, "no_price_retired": no_price_dead,
+                  "remaining": remaining}
         logger.info(f"[quarterly_scanner] batch done: {result}")
 
         if remaining == 0:
