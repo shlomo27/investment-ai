@@ -663,24 +663,13 @@ async def node_log_rejection(state: AgentWorkflowState) -> AgentWorkflowState:
                 except ValueError:
                     rec_type = RecommendationType.HOLD
 
-                rejected_rec = Recommendation(
-                    asset_id=asset.id,
-                    symbol=state["asset_symbol"],
-                    recommendation_type=rec_type,
-                    status=RecommendationStatus.REJECTED,
-                    confidence_score=float(senior.get("decision_confidence", 0)),
-                    data_fetcher_raw={"price": raw.get("price"), "fetch_timestamp": raw.get("fetch_timestamp")},
-                    fundamental_analysis={"confidence_score": fundamental.get("confidence_score")},
-                    senior_review_notes=senior.get("rejection_reasoning"),
-                    senior_notes=senior.get("senior_notes"),
-                    trigger_type=state.get("trigger_type", "SCHEDULED"),
-                    trigger_details=state.get("trigger_details"),
-                )
-                session.add(rejected_rec)
-
-                # If this is a GENUINE rejection (not an engine-down 0.0
-                # fallback) that overturned a live BUY/SELL, supersede the
-                # stale rec and tell holders it's no longer recommended.
+                # Work out FIRST whether anything was actually judged. These
+                # rows are read back by the scan log, where a stock that was
+                # never analysed used to be indistinguishable from one the
+                # committee weighed and turned down: same "rejected" label, but
+                # blank confidence and no reasoning, because no reasoning ever
+                # existed. The reader is left to guess whether that is a verdict
+                # or a fault.
                 fconf = fundamental.get("confidence_score")
                 engine_down = (
                     fconf == 0.0
@@ -692,6 +681,49 @@ async def node_log_rejection(state: AgentWorkflowState) -> AgentWorkflowState:
                 # meets the criteria" — on no evidence at all.
                 data_outage = bool(state.get("data_fetcher_error"))
                 genuine = not (engine_down or data_outage)
+
+                abort_reason = None
+                if data_outage:
+                    abort_reason = state.get("data_fetcher_error") or "no_data"
+                elif engine_down:
+                    abort_reason = "engine_down"
+
+                _ABORT_TEXT = {
+                    "no_price": "לא בוצע ניתוח — אף ספק נתונים לא החזיר מחיר למניה. "
+                                "זו אינה דחייה: המניה לא נבדקה כלל והיא תנותח כשהנתונים יחזרו.",
+                    "insufficient_fundamentals":
+                        "לא בוצע ניתוח — חסרים נתוני יסוד מהותיים. זו אינה דחייה: "
+                        "המניה לא נבדקה כלל.",
+                    "engine_down": "לא בוצע ניתוח — מנוע הניתוח לא היה זמין. זו אינה דחייה.",
+                }
+                notes = senior.get("rejection_reasoning")
+                if abort_reason and not notes:
+                    notes = _ABORT_TEXT.get(
+                        abort_reason,
+                        "לא בוצע ניתוח — התהליך נעצר לפני שהוועדה הגיעה להחלטה. זו אינה דחייה.",
+                    )
+
+                rejected_rec = Recommendation(
+                    asset_id=asset.id,
+                    symbol=state["asset_symbol"],
+                    recommendation_type=rec_type,
+                    status=RecommendationStatus.REJECTED,
+                    confidence_score=float(senior.get("decision_confidence", 0)),
+                    data_fetcher_raw={
+                        "price": raw.get("price"),
+                        "fetch_timestamp": raw.get("fetch_timestamp"),
+                        # Read by the scan log to tell "never judged" apart from
+                        # "judged and turned down".
+                        "abort_reason": abort_reason,
+                    },
+                    fundamental_analysis={"confidence_score": fundamental.get("confidence_score")},
+                    senior_review_notes=notes,
+                    senior_notes=senior.get("senior_notes"),
+                    trigger_type=state.get("trigger_type", "SCHEDULED"),
+                    trigger_details=state.get("trigger_details"),
+                )
+                session.add(rejected_rec)
+
                 downgraded_from = None
                 if genuine:
                     from sqlalchemy import update as sa_update

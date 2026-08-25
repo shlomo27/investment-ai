@@ -287,12 +287,16 @@ const Recommendations: React.FC = () => {
 
           {!scanLogLoading && scanLog && (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                 {[
                   { key: "approved_buy", he: "אושרו — קנייה", en: "Approved BUY", cls: "text-green-400 border-green-900/50" },
                   { key: "approved_sell", he: "אושרו — מכירה", en: "Approved SELL", cls: "text-red-400 border-red-900/50" },
                   { key: "hold", he: "החזק", en: "HOLD", cls: "text-yellow-400 border-yellow-900/50" },
                   { key: "rejected", he: "נדחו", en: "Rejected", cls: "text-gray-300 border-gray-700" },
+                  // Counted apart from rejections: these stocks were never
+                  // judged, and folding them in made an outage read as a
+                  // verdict on the company.
+                  { key: "not_analyzed", he: "לא נותחו", en: "Not analysed", cls: "text-orange-400 border-orange-900/50" },
                   { key: "superseded", he: "הוחלפו", en: "Superseded", cls: "text-gray-500 border-gray-800" },
                 ].map((c) => (
                   <div key={c.key} className={`bg-gray-900 border rounded-xl p-3 text-center ${c.cls}`}>
@@ -315,8 +319,9 @@ const Recommendations: React.FC = () => {
                       item.bucket === "approved_sell" ? { txt: isHe ? "אושרה — מכירה" : "SELL", cls: "bg-red-900/40 text-red-300" } :
                       item.bucket === "hold" ? { txt: isHe ? "החזק" : "HOLD", cls: "bg-yellow-900/30 text-yellow-300" } :
                       item.bucket === "superseded" ? { txt: isHe ? "הוחלפה" : "Superseded", cls: "bg-gray-800 text-gray-500" } :
+                      item.bucket === "not_analyzed" ? { txt: isHe ? "לא נותחה" : "Not analysed", cls: "bg-orange-950/60 text-orange-300 border border-orange-800/50" } :
                       { txt: isHe ? "נדחתה" : "Rejected", cls: "bg-gray-800 text-gray-400 border border-gray-700" };
-                    const canOpenReport = item.bucket !== "rejected";
+                    const canOpenReport = item.bucket !== "rejected" && item.bucket !== "not_analyzed";
                     return (
                       <div key={item.id} className="bg-gray-900 rounded-xl border border-gray-800 px-4 py-3">
                         <div className="flex items-center gap-3">

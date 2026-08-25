@@ -385,6 +385,7 @@ export const recommendationsApi = {
       recommendation_type: string;
       status: string;
       bucket: string;
+      abort_reason: string | null;
       confidence_score: number;
       created_at: string | null;
       reason: string;

@@ -356,7 +356,8 @@ async def get_scan_activity(
     recs = result.scalars().all()
 
     items = []
-    counts = {"approved_buy": 0, "approved_sell": 0, "hold": 0, "rejected": 0, "superseded": 0}
+    counts = {"approved_buy": 0, "approved_sell": 0, "hold": 0, "rejected": 0,
+              "superseded": 0, "not_analyzed": 0}
     LIVE = {
         RecommendationStatus.APPROVED,
         RecommendationStatus.PRESENTED_TO_USER,
@@ -364,7 +365,13 @@ async def get_scan_activity(
     }
     for r in recs:
         rec_type = r.recommendation_type.value if r.recommendation_type else "HOLD"
-        if r.status == RecommendationStatus.REJECTED:
+        # A run that aborted before the committee decided is not a rejection.
+        # It was shown as one — same label, blank confidence, no reasoning —
+        # which made a data outage look like a verdict on the stock.
+        abort_reason = (r.data_fetcher_raw or {}).get("abort_reason")
+        if abort_reason:
+            bucket = "not_analyzed"
+        elif r.status == RecommendationStatus.REJECTED:
             bucket = "rejected"
         elif r.status == RecommendationStatus.DISMISSED:
             bucket = "superseded"
@@ -383,6 +390,7 @@ async def get_scan_activity(
             "recommendation_type": rec_type,
             "status": r.status.value,
             "bucket": bucket,
+            "abort_reason": abort_reason,
             "confidence_score": r.confidence_score,
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "reason": (r.senior_review_notes or r.senior_notes or "")[:500],
