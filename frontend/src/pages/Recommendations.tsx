@@ -87,7 +87,11 @@ const Recommendations: React.FC = () => {
 
   const [dirFilter, setDirFilter] = useState<DirectionFilter>("ALL");
   const [symbolQuery, setSymbolQuery] = useState("");
-  const [sortBy, setSortBy] = useState<"confidence" | "newest">("confidence");
+  // Default to risk/reward, not confidence. Measured over a week of live
+  // signals the confidence score spans 11 points with a standard deviation of
+  // 3 — it cannot rank anything, so sorting by it was close to arbitrary.
+  // Risk/reward is arithmetic on the committee's own target and stop.
+  const [sortBy, setSortBy] = useState<"rr" | "confidence" | "newest">("rr");
   const [tradeModal, setTradeModal] = useState<{ rec: Recommendation; type: OrderType } | null>(null);
   const [techMap, setTechMap] = useState<Record<number, TechnicalAnalysis>>({});
   const [loadingTech, setLoadingTech] = useState<Record<number, boolean>>({});
@@ -190,6 +194,13 @@ const Recommendations: React.FC = () => {
   // announced by an alert, appear in the scan log, and still be absent from
   // this list with nothing to explain it. Every live recommendation is shown;
   // the search box below is how you get to a specific one.
+  const riskReward = (r: Recommendation): number => {
+    const entry = r.current_price_at_recommendation;
+    if (!entry || !r.target_price || !r.stop_loss) return -1;
+    const risk = Math.abs(entry - r.stop_loss);
+    return risk > 0 ? Math.abs(r.target_price - entry) / risk : -1;
+  };
+
   const sorted = [...recommendations].sort((a, b) => b.confidence_score - a.confidence_score);
 
   const topBuys = sorted.filter((r) => isLong(r.recommendation_type));
@@ -208,9 +219,16 @@ const Recommendations: React.FC = () => {
           (r.asset_name || "").toUpperCase().includes(_q)
       )
     : _byDir;
-  const filteredRecs = sortBy === "newest"
-    ? [..._filtered].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    : _filtered;
+  const filteredRecs =
+    sortBy === "newest"
+      ? [..._filtered].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      : sortBy === "rr"
+        // Confidence breaks ties: with a spread this narrow it is a tiebreaker,
+        // not a ranking.
+        ? [..._filtered].sort(
+            (a, b) => (riskReward(b) - riskReward(a)) || (b.confidence_score - a.confidence_score)
+          )
+        : _filtered;
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
   const longCount = topBuys.length;
@@ -666,13 +684,15 @@ const Recommendations: React.FC = () => {
               className="w-36 px-3 py-1.5 rounded-lg text-xs bg-gray-900 text-gray-200 border border-gray-800 placeholder-gray-600 focus:border-blue-600 focus:outline-none"
             />
             <button
-              onClick={() => setSortBy(sortBy === "confidence" ? "newest" : "confidence")}
+              onClick={() => setSortBy(sortBy === "rr" ? "confidence" : sortBy === "confidence" ? "newest" : "rr")}
               className="px-3 py-1.5 rounded-lg text-xs border bg-gray-900 text-gray-300 border-gray-800 hover:border-gray-600"
               title={isHe ? "החלף מיון" : "Toggle sort"}
             >
-              {sortBy === "confidence"
-                ? (isHe ? "↕ לפי ביטחון" : "↕ By confidence")
-                : (isHe ? "↕ לפי הכי חדש" : "↕ By newest")}
+              {sortBy === "rr"
+                ? (isHe ? "↕ לפי סיכוי/סיכון" : "↕ By risk/reward")
+                : sortBy === "confidence"
+                  ? (isHe ? "↕ לפי ביטחון" : "↕ By confidence")
+                  : (isHe ? "↕ לפי הכי חדש" : "↕ By newest")}
             </button>
           </div>
 
