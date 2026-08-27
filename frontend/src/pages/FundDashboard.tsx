@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { fetchRecommendations } from "../store/slices/notificationsSlice";
-import { marketApi } from "../api/client";
+import { marketApi, authApi } from "../api/client";
 import { UniverseStats, UniversePool, ScreenerStatus, RecommendationType } from "../types";
 import PerformanceDashboard from "../components/Performance/PerformanceDashboard";
 import EarningsCalendar from "../components/EarningsCalendar";
@@ -88,6 +88,21 @@ const FundDashboard: React.FC = () => {
   const [batchResult, setBatchResult] = useState<any>(null);
   const [batchStarting, setBatchStarting] = useState(false);
   const [betaResult, setBetaResult] = useState<string | null>(null);
+  const [demoAccount, setDemoAccount] = useState<{ email: string; password: string; already_existed: boolean } | null>(null);
+  const [demoBusy, setDemoBusy] = useState(false);
+
+  // Handing a prospect the admin login would give them the diagnostics, the
+  // scan triggers that cost real money, and a full export of every user's
+  // data. This mints a plain client account instead.
+  const handleCreateDemo = async () => {
+    setDemoBusy(true);
+    try {
+      setDemoAccount(await authApi.createDemoAccount());
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || "Failed");
+    }
+    setDemoBusy(false);
+  };
   const [qStatus, setQStatus] = useState<Awaited<ReturnType<typeof marketApi.getQuarterlyStatus>> | null>(null);
 
   // Poll the sweep so progress is visible without pressing Refresh, and faster
@@ -551,6 +566,47 @@ const FundDashboard: React.FC = () => {
               </p>
             )}
             {betaResult && <p className="text-xs text-gray-400 mt-2">{betaResult}</p>}
+          </div>
+
+          {/* Demo account for prospects */}
+          <div className="mt-4 pt-4 border-t border-gray-800">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm text-gray-300">
+                  {isHe ? "חשבון הדגמה ללקוח פוטנציאלי" : "Demo account for a prospect"}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {isHe
+                    ? "חשבון לקוח רגיל, לא אדמין. ההתראות כבויות ואין טלגרם מקושר, כך שהוא לא שולח כלום"
+                    : "A plain client account, not an admin. Notifications off, no Telegram linked, so it sends nothing"}
+                </p>
+              </div>
+              <button
+                onClick={handleCreateDemo}
+                disabled={demoBusy}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-blue-300 border border-gray-700 hover:border-blue-700 disabled:text-gray-600"
+              >
+                {demoBusy
+                  ? (isHe ? "יוצר..." : "Creating...")
+                  : (isHe ? "צור / אפס סיסמה" : "Create / reset")}
+              </button>
+            </div>
+            {demoAccount && (
+              <div className="mt-3 p-3 rounded-xl bg-gray-800/60 border border-gray-700 text-xs">
+                <p className="text-gray-400 mb-1">
+                  {demoAccount.already_existed
+                    ? (isHe ? "הסיסמה אופסה. פרטי הכניסה:" : "Password reset. Credentials:")
+                    : (isHe ? "החשבון נוצר. פרטי הכניסה:" : "Account created. Credentials:")}
+                </p>
+                <p className="font-mono text-gray-200 select-all">{demoAccount.email}</p>
+                <p className="font-mono text-gray-200 select-all">{demoAccount.password}</p>
+                <p className="text-gray-500 mt-2">
+                  {isHe
+                    ? "הסיסמה מוצגת פעם אחת בלבד. אחרי ההדגמה, לחץ שוב כדי לאפס אותה."
+                    : "The password is shown once. After the demo, press again to rotate it."}
+                </p>
+              </div>
+            )}
           </div>
 
           {universeResult && (

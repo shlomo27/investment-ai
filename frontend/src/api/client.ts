@@ -122,6 +122,16 @@ api.interceptors.response.use(
 // ─── Auth API ────────────────────────────────────────────────────────────────
 
 export const authApi = {
+  createDemoAccount: async (): Promise<{
+    email: string;
+    password: string;
+    already_existed: boolean;
+    note: string;
+  }> => {
+    const response = await api.post("/auth/demo-account");
+    return response.data;
+  },
+
   register: async (data: {
     email: string;
     password: string;

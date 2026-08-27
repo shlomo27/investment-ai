@@ -529,3 +529,79 @@ async def telegram_unlink(
     current_user.telegram_chat_id = None
     await db.flush()
     return {"linked": False}
+
+
+class DemoAccountResponse(BaseModel):
+    email: str
+    password: str
+    already_existed: bool
+    note: str
+
+
+@router.post("/demo-account", response_model=DemoAccountResponse)
+async def create_demo_account(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create (or reset) a read-only demo account to hand to a prospect.
+
+    The alternative — handing over the admin login — gives the holder the
+    diagnostics screens, the ability to start scans that cost real money, the
+    earnings reset, and a full database export containing every other user's
+    data. It is also a shared credential, so nothing anyone does can be
+    attributed afterwards.
+
+    This account is a plain client: not an admin, onboarded so it lands on the
+    signals feed rather than the questionnaire, every notification channel off
+    and no Telegram link so it never sends anything to the viewer, and both
+    display preferences on so the feed is not silently filtered.
+
+    Calling it again rotates the password and re-applies the settings rather
+    than creating a second account.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    import secrets as pysecrets
+    from sqlalchemy import select as _select
+
+    email = "demo@investment-ai.app"
+    password = "Demo-" + pysecrets.token_urlsafe(9)
+
+    existing = (await db.execute(_select(User).where(User.email == email))).scalar_one_or_none()
+    user = existing or User(email=email, full_name="Demo (read-only)")
+
+    user.hashed_password = get_password_hash(password)
+    user.is_admin = False
+    user.is_active = True
+    user.is_onboarded = True
+    user.preferred_language = "he"
+    user.risk_profile = RiskProfile.HYBRID
+    user.risk_score = 50.0
+    user.investment_type = "BOTH"
+    # Both on: with either off the feed is filtered and the viewer sees a
+    # thinner product than the one being sold, with nothing to say why.
+    user.allows_volatile = True
+    user.allows_short = True
+    user.allows_leveraged = False
+    # Silence every outbound channel — a prospect evaluating the product must
+    # not start receiving its alerts.
+    user.notification_email = False
+    user.notification_sms = False
+    user.notification_push = False
+    user.telegram_chat_id = None
+    user.totp_enabled = False
+
+    if existing is None:
+        db.add(user)
+    await db.flush()
+
+    logger.info("Demo account provisioned", email=email, reset=bool(existing))
+    return DemoAccountResponse(
+        email=email,
+        password=password,
+        already_existed=bool(existing),
+        note=("Client account, not an admin. Notifications are off and no Telegram is "
+              "linked, so it sends nothing. Call this endpoint again to rotate the "
+              "password after the demo."),
+    )
