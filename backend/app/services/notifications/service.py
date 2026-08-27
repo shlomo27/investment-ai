@@ -157,11 +157,21 @@ class NotificationService:
                 if rec_type and symbol:
                     # New-recommendation broadcast — goes to the shared channel
                     # for everyone regardless of personal linking.
+                    def _num(key):
+                        try:
+                            v = (internal_detail or {}).get(key)
+                            return float(v) if v is not None else None
+                        except (TypeError, ValueError):
+                            return None
+
                     tg_success = await tg.send_investment_alert(
                         symbol=symbol,
                         rec_type=rec_type,
                         confidence=confidence,
                         language=user.preferred_language or "he",
+                        entry_price=_num("entry_price"),
+                        target_price=_num("target_price"),
+                        stop_loss=_num("stop_loss"),
                     )
                 elif symbol and (
                     (internal_detail or {}).get("signal")

@@ -606,6 +606,12 @@ async def node_notify_users(state: AgentWorkflowState) -> AgentWorkflowState:
                         "confidence_score": state["senior_decision"].get("decision_confidence"),
                         "target_price": recommendation.target_price if recommendation else None,
                         "stop_loss": recommendation.stop_loss if recommendation else None,
+                        # Needed to state the trade in the alert itself: without
+                        # the entry price, a target and a stop are two numbers
+                        # with nothing to measure them against.
+                        "entry_price": (
+                            recommendation.current_price_at_recommendation if recommendation else None
+                        ),
                         "fundamental_analysis": state.get("fundamental_analysis"),
                         "senior_notes": state["senior_decision"].get("senior_notes"),
                         "trigger_type": state.get("trigger_type", "SCHEDULED"),
