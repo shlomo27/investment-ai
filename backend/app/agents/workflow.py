@@ -697,11 +697,19 @@ async def node_log_rejection(state: AgentWorkflowState) -> AgentWorkflowState:
                     "engine_down": "לא בוצע ניתוח — מנוע הניתוח לא היה זמין. זו אינה דחייה.",
                 }
                 notes = senior.get("rejection_reasoning")
-                if abort_reason and not notes:
-                    notes = _ABORT_TEXT.get(
+                if abort_reason:
+                    # The explanation wins over whatever internal string the
+                    # pipeline produced. A run aborted by an engine outage still
+                    # carries "Fundamental confidence too low: 0.0" — an English
+                    # diagnostic that reaches the reader's screen and states, in
+                    # effect, that the company scored badly, when the truth is
+                    # that nothing was ever scored. The internal text is kept in
+                    # parentheses for whoever is debugging.
+                    explanation = _ABORT_TEXT.get(
                         abort_reason,
                         "לא בוצע ניתוח — התהליך נעצר לפני שהוועדה הגיעה להחלטה. זו אינה דחייה.",
                     )
+                    notes = f"{explanation} ({notes})" if notes else explanation
 
                 rejected_rec = Recommendation(
                     asset_id=asset.id,
