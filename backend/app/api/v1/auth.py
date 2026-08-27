@@ -569,6 +569,30 @@ def _demo_slug(label: Optional[str]) -> str:
     return slug or "guest"
 
 
+
+def _demo_password(length: int = 14) -> str:
+    """A password that survives being read off a screen and typed on a phone.
+
+    token_urlsafe produces hyphens and underscores, and the admin panel is a
+    right-to-left page: a Latin string carrying punctuation gets reordered by
+    the bidi algorithm, so the hyphen renders somewhere other than where it
+    belongs and what the reader types is not what was generated. The alphabet
+    below also drops the characters that look alike in most fonts — 0/O and
+    1/l/I — since the recipient is usually retyping this by hand.
+    """
+    import secrets as pysecrets
+
+    alphabet = ("ABCDEFGHJKLMNPQRSTUVWXYZ"
+                "abcdefghijkmnopqrstuvwxyz"
+                "23456789")
+    while True:
+        candidate = "".join(pysecrets.choice(alphabet) for _ in range(length))
+        # Registration requires a digit; keep demo passwords to the same rule
+        # so one can be reused to sign in anywhere the policy is enforced.
+        if any(c.isdigit() for c in candidate) and any(c.isalpha() for c in candidate):
+            return candidate
+
+
 @router.post("/demo-account", response_model=DemoAccountResponse)
 async def create_demo_account(
     request: DemoAccountRequest,
@@ -590,12 +614,11 @@ async def create_demo_account(
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    import secrets as pysecrets
     from sqlalchemy import select as _select
 
     slug = _demo_slug(request.label)
     email = f"{slug}@{DEMO_EMAIL_DOMAIN}"
-    password = "Demo-" + pysecrets.token_urlsafe(9)
+    password = _demo_password()
 
     existing = (await db.execute(_select(User).where(User.email == email))).scalar_one_or_none()
     user = existing or User(email=email, full_name=f"Demo — {request.label or slug}")
@@ -624,6 +647,12 @@ async def create_demo_account(
     if existing is None:
         db.add(user)
     await db.flush()
+
+    # Clear any brute-force lockout on this address. Failed attempts with the
+    # old password lock the email for fifteen minutes, so without this a fresh
+    # password still could not be used — and the rotation looks broken exactly
+    # when someone is trying hardest to get in.
+    await _login_fail_clear(email)
 
     logger.info("Demo account provisioned", email=email, reset=bool(existing))
     return DemoAccountResponse(

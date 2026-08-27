@@ -91,6 +91,7 @@ const FundDashboard: React.FC = () => {
   const [demoAccount, setDemoAccount] = useState<{ email: string; password: string; label: string; already_existed: boolean } | null>(null);
   const [demoBusy, setDemoBusy] = useState(false);
   const [demoLabel, setDemoLabel] = useState("");
+  const [demoCopied, setDemoCopied] = useState(false);
   const [demoList, setDemoList] = useState<Awaited<ReturnType<typeof authApi.listDemoAccounts>>>([]);
 
   // Handing a prospect the admin login would give them the diagnostics, the
@@ -110,6 +111,7 @@ const FundDashboard: React.FC = () => {
     if (!demoLabel.trim()) return;
     setDemoBusy(true);
     try {
+      setDemoCopied(false);
       setDemoAccount(await authApi.createDemoAccount(demoLabel.trim()));
       setDemoLabel("");
       await loadDemoAccounts();
@@ -630,8 +632,25 @@ const FundDashboard: React.FC = () => {
                     ? (isHe ? `סיסמה חדשה עבור ${demoAccount.label}. הישנה כבר לא עובדת:` : `New password for ${demoAccount.label}. The old one no longer works:`)
                     : (isHe ? `נוצר חשבון עבור ${demoAccount.label}:` : `Account created for ${demoAccount.label}:`)}
                 </p>
-                <p className="font-mono text-gray-200 select-all">{demoAccount.email}</p>
-                <p className="font-mono text-gray-200 select-all">{demoAccount.password}</p>
+                {/* dir="ltr" is required: this is a right-to-left page, and a
+                    Latin credential rendered inside it gets reordered by the
+                    bidi algorithm, so what is read off the screen is not what
+                    was generated. */}
+                <p dir="ltr" className="font-mono text-gray-200 select-all text-left">{demoAccount.email}</p>
+                <p dir="ltr" className="font-mono text-gray-200 select-all text-left">{demoAccount.password}</p>
+                <button
+                  onClick={() => {
+                    navigator.clipboard
+                      ?.writeText(`${demoAccount.email}\n${demoAccount.password}`)
+                      .then(() => setDemoCopied(true))
+                      .catch(() => {});
+                  }}
+                  className="mt-2 px-2 py-1 rounded border border-gray-700 text-blue-300 hover:border-blue-700"
+                >
+                  {demoCopied
+                    ? (isHe ? "הועתק" : "Copied")
+                    : (isHe ? "העתק אימייל וסיסמה" : "Copy email and password")}
+                </button>
                 <p className="text-gray-500 mt-2">
                   {isHe
                     ? "העתק עכשיו — הסיסמה מוצגת פעם אחת בלבד."
