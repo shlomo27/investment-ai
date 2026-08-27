@@ -306,6 +306,38 @@ const Recommendations: React.FC = () => {
                 ))}
               </div>
 
+              {/* Does the confidence score actually separate anything? It is
+                  shown on every card and alert and the feed is sorted by it,
+                  so a narrow spread means the ranking is close to arbitrary. */}
+              {scanLog.confidence_stats && scanLog.confidence_stats.count >= 5 && (
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 text-xs">
+                  <div className="flex items-center gap-3 flex-wrap text-gray-400">
+                    <span className="text-gray-300">
+                      {isHe ? "פיזור הביטחון" : "Confidence spread"}
+                    </span>
+                    <span dir="ltr">
+                      {scanLog.confidence_stats.min}%–{scanLog.confidence_stats.max}%
+                    </span>
+                    <span>
+                      {isHe ? "חציון" : "median"} {scanLog.confidence_stats.median}%
+                    </span>
+                    <span>
+                      {isHe ? "סטיית תקן" : "stdev"} {scanLog.confidence_stats.stdev}
+                    </span>
+                    <span className="text-gray-600">
+                      ({scanLog.confidence_stats.count} {isHe ? "המלצות" : "recs"})
+                    </span>
+                  </div>
+                  {scanLog.confidence_stats.spread < 20 && (
+                    <p className="text-yellow-500/80 mt-2">
+                      {isHe
+                        ? `כל ההמלצות נופלות בטווח של ${scanLog.confidence_stats.spread} נקודות — הציון כמעט לא מבדיל ביניהן, והמיון לפי ביטחון כמעט שרירותי.`
+                        : `Every recommendation falls within ${scanLog.confidence_stats.spread} points — the score barely separates them, so sorting by confidence is close to arbitrary.`}
+                    </p>
+                  )}
+                </div>
+              )}
+
               {scanLog.items.length === 0 ? (
                 <div className="bg-gray-900 rounded-2xl p-12 border border-gray-800 text-center text-gray-500">
                   <p className="text-4xl mb-3">🔍</p>

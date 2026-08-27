@@ -405,6 +405,16 @@ export const recommendationsApi = {
     days: number;
     total: number;
     counts: Record<string, number>;
+    confidence_stats: {
+      count: number;
+      min: number;
+      max: number;
+      median: number;
+      mean: number;
+      spread: number;
+      stdev: number;
+      buckets: Record<string, number>;
+    } | null;
     items: Array<{
       id: number;
       symbol: string;

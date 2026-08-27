@@ -397,7 +397,38 @@ async def get_scan_activity(
             "trigger_type": r.trigger_type,
         })
 
-    return {"days": days, "total": len(items), "counts": counts, "items": items}
+    # How much the confidence score actually varies. The number is shown on
+    # every card and every alert, and the feed is sorted by it — but if the
+    # committee returns much the same figure for everything, it separates
+    # nothing, and both the ranking and the number itself are decoration.
+    approved_scores = sorted(
+        r.confidence_score for r in recs
+        if r.status in LIVE and r.confidence_score and r.confidence_score > 0
+    )
+    confidence_stats = None
+    if approved_scores:
+        n = len(approved_scores)
+        mean = sum(approved_scores) / n
+        spread = max(approved_scores) - min(approved_scores)
+        variance = sum((s - mean) ** 2 for s in approved_scores) / n
+        confidence_stats = {
+            "count": n,
+            "min": round(min(approved_scores), 1),
+            "max": round(max(approved_scores), 1),
+            "median": round(approved_scores[n // 2], 1),
+            "mean": round(mean, 1),
+            "spread": round(spread, 1),
+            "stdev": round(variance ** 0.5, 1),
+            # Buckets of 5 points, so a pile-up in one band is obvious.
+            "buckets": {
+                f"{b}-{b + 4}": sum(1 for s in approved_scores if b <= s < b + 5)
+                for b in range(0, 100, 5)
+                if any(b <= s < b + 5 for s in approved_scores)
+            },
+        }
+
+    return {"days": days, "total": len(items), "counts": counts,
+            "confidence_stats": confidence_stats, "items": items}
 
 
 @router.get("/{recommendation_id}", response_model=RecommendationResponse)
