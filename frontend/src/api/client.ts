@@ -122,13 +122,29 @@ api.interceptors.response.use(
 // ─── Auth API ────────────────────────────────────────────────────────────────
 
 export const authApi = {
-  createDemoAccount: async (): Promise<{
+  createDemoAccount: async (label: string): Promise<{
     email: string;
     password: string;
+    label: string;
     already_existed: boolean;
-    note: string;
   }> => {
-    const response = await api.post("/auth/demo-account");
+    const response = await api.post("/auth/demo-account", { label });
+    return response.data;
+  },
+
+  listDemoAccounts: async (): Promise<Array<{
+    id: number;
+    email: string;
+    label: string;
+    is_active: boolean;
+    created_at: string;
+  }>> => {
+    const response = await api.get("/auth/demo-accounts");
+    return response.data;
+  },
+
+  revokeDemoAccount: async (id: number): Promise<any> => {
+    const response = await api.post(`/auth/demo-accounts/${id}/revoke`);
     return response.data;
   },
 

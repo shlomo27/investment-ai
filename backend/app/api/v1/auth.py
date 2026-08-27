@@ -3,7 +3,7 @@ Authentication API routes
 POST /register, POST /login, POST /logout, GET /me, PUT /profile
 """
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -531,33 +531,61 @@ async def telegram_unlink(
     return {"linked": False}
 
 
+
+# ─── Demo accounts for prospects ──────────────────────────────────────────────
+
+DEMO_EMAIL_DOMAIN = "demo.investment-ai.app"
+
+
+class DemoAccountRequest(BaseModel):
+    label: Optional[str] = None
+
+
 class DemoAccountResponse(BaseModel):
     email: str
     password: str
+    label: str
     already_existed: bool
-    note: str
+
+
+class DemoAccountRow(BaseModel):
+    id: int
+    email: str
+    label: str
+    is_active: bool
+    created_at: datetime
+
+
+def _demo_slug(label: Optional[str]) -> str:
+    """A filesystem-safe, email-safe handle for the prospect.
+
+    Hebrew company names are common here and would not survive an email local
+    part, so anything outside [a-z0-9-] is dropped and a stable fallback is
+    used when nothing usable remains.
+    """
+    import re
+
+    slug = re.sub(r"[^a-z0-9]+", "-", (label or "").strip().lower()).strip("-")[:24]
+    return slug or "guest"
 
 
 @router.post("/demo-account", response_model=DemoAccountResponse)
 async def create_demo_account(
+    request: DemoAccountRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Create (or reset) a read-only demo account to hand to a prospect.
+    """Provision a read-only demo account for one prospect.
 
-    The alternative — handing over the admin login — gives the holder the
-    diagnostics screens, the ability to start scans that cost real money, the
-    earnings reset, and a full database export containing every other user's
-    data. It is also a shared credential, so nothing anyone does can be
-    attributed afterwards.
+    One account per prospect, keyed by label. A single shared demo account
+    cannot work: rotating its password to close out one evaluation locks out
+    every other prospect still looking, and nothing anyone does can be told
+    apart. Re-requesting the same label rotates only that account's password.
 
-    This account is a plain client: not an admin, onboarded so it lands on the
+    The account is a plain client: not an admin, onboarded so it lands on the
     signals feed rather than the questionnaire, every notification channel off
     and no Telegram link so it never sends anything to the viewer, and both
     display preferences on so the feed is not silently filtered.
-
-    Calling it again rotates the password and re-applies the settings rather
-    than creating a second account.
     """
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
@@ -565,11 +593,12 @@ async def create_demo_account(
     import secrets as pysecrets
     from sqlalchemy import select as _select
 
-    email = "demo@investment-ai.app"
+    slug = _demo_slug(request.label)
+    email = f"{slug}@{DEMO_EMAIL_DOMAIN}"
     password = "Demo-" + pysecrets.token_urlsafe(9)
 
     existing = (await db.execute(_select(User).where(User.email == email))).scalar_one_or_none()
-    user = existing or User(email=email, full_name="Demo (read-only)")
+    user = existing or User(email=email, full_name=f"Demo — {request.label or slug}")
 
     user.hashed_password = get_password_hash(password)
     user.is_admin = False
@@ -598,10 +627,48 @@ async def create_demo_account(
 
     logger.info("Demo account provisioned", email=email, reset=bool(existing))
     return DemoAccountResponse(
-        email=email,
-        password=password,
+        email=email, password=password, label=request.label or slug,
         already_existed=bool(existing),
-        note=("Client account, not an admin. Notifications are off and no Telegram is "
-              "linked, so it sends nothing. Call this endpoint again to rotate the "
-              "password after the demo."),
     )
+
+
+@router.get("/demo-accounts", response_model=List[DemoAccountRow])
+async def list_demo_accounts(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every demo account handed out, so access can be reviewed and revoked."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from sqlalchemy import select as _select
+
+    rows = (await db.execute(
+        _select(User).where(User.email.like(f"%@{DEMO_EMAIL_DOMAIN}")).order_by(User.id.desc())
+    )).scalars().all()
+    return [
+        DemoAccountRow(
+            id=u.id, email=u.email, is_active=u.is_active, created_at=u.created_at,
+            label=u.full_name.replace("Demo — ", "") if u.full_name else u.email,
+        )
+        for u in rows
+    ]
+
+
+@router.post("/demo-accounts/{account_id}/revoke")
+async def revoke_demo_account(
+    account_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Close one prospect's access without touching anyone else's."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from sqlalchemy import select as _select
+
+    user = (await db.execute(_select(User).where(User.id == account_id))).scalar_one_or_none()
+    if user is None or not user.email.endswith(f"@{DEMO_EMAIL_DOMAIN}"):
+        raise HTTPException(status_code=404, detail="Not a demo account")
+    user.is_active = False
+    await db.flush()
+    logger.info("Demo account revoked", email=user.email)
+    return {"revoked": True, "email": user.email}

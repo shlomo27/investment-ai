@@ -88,20 +88,45 @@ const FundDashboard: React.FC = () => {
   const [batchResult, setBatchResult] = useState<any>(null);
   const [batchStarting, setBatchStarting] = useState(false);
   const [betaResult, setBetaResult] = useState<string | null>(null);
-  const [demoAccount, setDemoAccount] = useState<{ email: string; password: string; already_existed: boolean } | null>(null);
+  const [demoAccount, setDemoAccount] = useState<{ email: string; password: string; label: string; already_existed: boolean } | null>(null);
   const [demoBusy, setDemoBusy] = useState(false);
+  const [demoLabel, setDemoLabel] = useState("");
+  const [demoList, setDemoList] = useState<Awaited<ReturnType<typeof authApi.listDemoAccounts>>>([]);
 
   // Handing a prospect the admin login would give them the diagnostics, the
   // scan triggers that cost real money, and a full export of every user's
   // data. This mints a plain client account instead.
+  const loadDemoAccounts = async () => {
+    try {
+      setDemoList(await authApi.listDemoAccounts());
+    } catch {
+      /* admin-only; ignore for non-admins */
+    }
+  };
+
+  useEffect(() => { loadDemoAccounts(); }, []);
+
   const handleCreateDemo = async () => {
+    if (!demoLabel.trim()) return;
     setDemoBusy(true);
     try {
-      setDemoAccount(await authApi.createDemoAccount());
+      setDemoAccount(await authApi.createDemoAccount(demoLabel.trim()));
+      setDemoLabel("");
+      await loadDemoAccounts();
     } catch (e: any) {
       alert(e?.response?.data?.detail || "Failed");
     }
     setDemoBusy(false);
+  };
+
+  const handleRevokeDemo = async (id: number, email: string) => {
+    if (!window.confirm(isHe ? `לבטל את הגישה של ${email}?` : `Revoke access for ${email}?`)) return;
+    try {
+      await authApi.revokeDemoAccount(id);
+      await loadDemoAccounts();
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || "Failed");
+    }
   };
   const [qStatus, setQStatus] = useState<Awaited<ReturnType<typeof marketApi.getQuarterlyStatus>> | null>(null);
 
@@ -568,43 +593,74 @@ const FundDashboard: React.FC = () => {
             {betaResult && <p className="text-xs text-gray-400 mt-2">{betaResult}</p>}
           </div>
 
-          {/* Demo account for prospects */}
+          {/* Demo accounts for prospects. One per company: a single shared
+              account cannot work, since rotating its password to close out one
+              evaluation would lock out every other prospect still looking. */}
           <div className="mt-4 pt-4 border-t border-gray-800">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm text-gray-300">
-                  {isHe ? "חשבון הדגמה ללקוח פוטנציאלי" : "Demo account for a prospect"}
-                </p>
-                <p className="text-xs text-gray-500">
-                  {isHe
-                    ? "חשבון לקוח רגיל, לא אדמין. ההתראות כבויות ואין טלגרם מקושר, כך שהוא לא שולח כלום"
-                    : "A plain client account, not an admin. Notifications off, no Telegram linked, so it sends nothing"}
-                </p>
-              </div>
+            <p className="text-sm text-gray-300">
+              {isHe ? "חשבונות הדגמה" : "Demo accounts"}
+            </p>
+            <p className="text-xs text-gray-500 mb-3">
+              {isHe
+                ? "חשבון נפרד לכל חברה. לקוח רגיל, לא אדמין, בלי התראות ובלי טלגרם"
+                : "One per company. A plain client account, not an admin, no notifications, no Telegram"}
+            </p>
+
+            <div className="flex items-center gap-2">
+              <input
+                value={demoLabel}
+                onChange={(e) => setDemoLabel(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreateDemo(); }}
+                placeholder={isHe ? "שם החברה (למשל ibi)" : "Company name (e.g. ibi)"}
+                className="flex-1 px-3 py-1.5 rounded-lg text-xs bg-gray-900 text-gray-200 border border-gray-800 placeholder-gray-600 focus:border-blue-600 focus:outline-none"
+              />
               <button
                 onClick={handleCreateDemo}
-                disabled={demoBusy}
+                disabled={demoBusy || !demoLabel.trim()}
                 className="shrink-0 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-blue-300 border border-gray-700 hover:border-blue-700 disabled:text-gray-600"
               >
-                {demoBusy
-                  ? (isHe ? "יוצר..." : "Creating...")
-                  : (isHe ? "צור / אפס סיסמה" : "Create / reset")}
+                {demoBusy ? (isHe ? "יוצר..." : "Creating...") : (isHe ? "צור" : "Create")}
               </button>
             </div>
+
             {demoAccount && (
               <div className="mt-3 p-3 rounded-xl bg-gray-800/60 border border-gray-700 text-xs">
                 <p className="text-gray-400 mb-1">
                   {demoAccount.already_existed
-                    ? (isHe ? "הסיסמה אופסה. פרטי הכניסה:" : "Password reset. Credentials:")
-                    : (isHe ? "החשבון נוצר. פרטי הכניסה:" : "Account created. Credentials:")}
+                    ? (isHe ? `סיסמה חדשה עבור ${demoAccount.label}. הישנה כבר לא עובדת:` : `New password for ${demoAccount.label}. The old one no longer works:`)
+                    : (isHe ? `נוצר חשבון עבור ${demoAccount.label}:` : `Account created for ${demoAccount.label}:`)}
                 </p>
                 <p className="font-mono text-gray-200 select-all">{demoAccount.email}</p>
                 <p className="font-mono text-gray-200 select-all">{demoAccount.password}</p>
                 <p className="text-gray-500 mt-2">
                   {isHe
-                    ? "הסיסמה מוצגת פעם אחת בלבד. אחרי ההדגמה, לחץ שוב כדי לאפס אותה."
-                    : "The password is shown once. After the demo, press again to rotate it."}
+                    ? "העתק עכשיו — הסיסמה מוצגת פעם אחת בלבד."
+                    : "Copy it now — the password is shown only once."}
                 </p>
+              </div>
+            )}
+
+            {demoList.length > 0 && (
+              <div className="mt-3 space-y-1">
+                {demoList.map((d) => (
+                  <div key={d.id} className="flex items-center gap-2 text-xs py-1">
+                    <span className={d.is_active ? "text-gray-300" : "text-gray-600 line-through"}>
+                      {d.label}
+                    </span>
+                    <span className="text-gray-600 font-mono truncate">{d.email}</span>
+                    <div className="flex-1" />
+                    {d.is_active ? (
+                      <button
+                        onClick={() => handleRevokeDemo(d.id, d.email)}
+                        className="text-red-400 hover:text-red-300 border border-gray-800 rounded px-2 py-0.5"
+                      >
+                        {isHe ? "בטל גישה" : "Revoke"}
+                      </button>
+                    ) : (
+                      <span className="text-gray-600">{isHe ? "בוטל" : "revoked"}</span>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
