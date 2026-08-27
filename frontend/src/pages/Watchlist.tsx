@@ -54,6 +54,12 @@ const Watchlist: React.FC = () => {
     setSearchLoading(false);
   };
 
+  // Prices were rendered with a hardcoded shekel sign. GOOGL showed ₪353.65
+  // for a $353.65 stock: not a cosmetic slip but a price misstated by the
+  // exchange rate, on a screen someone uses to decide what to buy. TASE
+  // symbols carry the .TA suffix; everything else is dollars.
+  const cur = (symbol: string) => (symbol.endsWith(".TA") ? "₪" : "$");
+
   const handleAdd = async (symbol: string, exchange: string) => {
     try {
       await watchlistApi.addToWatchlist({ symbol, exchange });
@@ -138,7 +144,7 @@ const Watchlist: React.FC = () => {
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
               className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500"
-              placeholder={isHe ? "חפש מניה (AAPL, MSFT, תשלב...)" : "Search stock (AAPL, MSFT, TASE...)"}
+              placeholder={isHe ? "חפש מניה (AAPL, MSFT, NVDA...)" : "Search stock (AAPL, MSFT, NVDA...)"}
             />
             {searchLoading && (
               <div className="absolute right-3 top-3">
@@ -200,7 +206,7 @@ const Watchlist: React.FC = () => {
                         </div>
                         {item.current_price && (
                           <span className="text-sm text-gray-400">
-                            ₪{item.current_price.toLocaleString("en", { minimumFractionDigits: 2 })}
+                            {cur(item.symbol)}{item.current_price.toLocaleString("en", { minimumFractionDigits: 2 })}
                           </span>
                         )}
                       </div>
@@ -308,8 +314,8 @@ const Watchlist: React.FC = () => {
                       {[
                         { label: "RSI (14)", value: tech.rsi_14?.toFixed(1) || "N/A", signal: tech.rsi_signal },
                         { label: "MACD", value: tech.macd?.toFixed(2) || "N/A", signal: tech.macd_crossover },
-                        { label: "MA 50", value: tech.ma_50 ? `₪${tech.ma_50.toFixed(2)}` : "N/A" },
-                        { label: "MA 200", value: tech.ma_200 ? `₪${tech.ma_200.toFixed(2)}` : "N/A" },
+                        { label: "MA 50", value: tech.ma_50 ? `${cur(item.symbol)}${tech.ma_50.toFixed(2)}` : "N/A" },
+                        { label: "MA 200", value: tech.ma_200 ? `${cur(item.symbol)}${tech.ma_200.toFixed(2)}` : "N/A" },
                       ].map((ind) => (
                         <div key={ind.label} className="bg-gray-900 rounded-xl p-3">
                           <p className="text-xs text-gray-500 mb-1">{ind.label}</p>
@@ -330,13 +336,13 @@ const Watchlist: React.FC = () => {
                       {tech.support_levels?.length > 0 && (
                         <div className="text-xs text-gray-400">
                           <span>{isHe ? "תמיכה: " : "Support: "}</span>
-                          {tech.support_levels.map((s) => `₪${s.toFixed(2)}`).join(", ")}
+                          {tech.support_levels.map((s) => `${cur(item.symbol)}${s.toFixed(2)}`).join(", ")}
                         </div>
                       )}
                       {tech.resistance_levels?.length > 0 && (
                         <div className="text-xs text-gray-400">
                           <span>{isHe ? "התנגדות: " : "Resistance: "}</span>
-                          {tech.resistance_levels.map((r) => `₪${r.toFixed(2)}`).join(", ")}
+                          {tech.resistance_levels.map((r) => `${cur(item.symbol)}${r.toFixed(2)}`).join(", ")}
                         </div>
                       )}
                     </div>
