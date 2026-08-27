@@ -15,7 +15,8 @@ Schedule (Asia/Jerusalem timezone):
   Every 30min      — news_watcher          (news+social for master-list stocks → alerts to holders)
   Every 30min      — digest_sender         (batched external alerts for digest-mode users)
   Wednesday 09:00  — weekly_full_scan      (full Claude AI on ~100 active pool stocks — keeps recs fresh)
-  Daily     12:00  — quarterly_scan_batch  (50 stocks/day when quarterly scan is active)
+  Daily     12:00  — quarterly_scan_batch  (75 stocks/day when quarterly scan is active)
+  Every 3h         — quarterly_recovery    (resumes the sweep after an outage; no-ops otherwise)
 
 Quarterly flow:
   1. earnings_watcher detects ≥20 stocks with verified fresh earnings
@@ -987,6 +988,21 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+    # Recovery pass — every 3 hours. The daily batch is a single shot: an
+    # outage at 12:00 (Claude out of credits, market data down) halted it and
+    # nothing tried again until noon the following day, so topping the account
+    # up an hour later changed nothing and the whole day's analyses were lost.
+    # The batch already exits immediately unless a sweep is active, the engine
+    # and data are healthy, and budget remains — so this cannot double-spend:
+    # the daily budget stays the binding limit, it just stops being forfeited.
+    scheduler.add_job(
+        job_quarterly_scan_batch,
+        "interval",
+        hours=3,
+        id="scheduled_quarterly_recovery",
+        replace_existing=True,
+    )
+
     # Digest sender — every 30 min, batches external alerts for digest-mode users
     scheduler.add_job(
         job_send_digests,
@@ -1056,6 +1072,7 @@ KNOWN_JOB_IDS = {
     "scheduled_ta_scan",
     "scheduled_news_watcher",
     "scheduled_quarterly_scan_batch",
+    "scheduled_quarterly_recovery",
     "scheduled_digest_sender",
     "scheduled_track_outcomes",
     "scheduled_price_alerts",
