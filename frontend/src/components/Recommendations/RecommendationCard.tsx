@@ -156,10 +156,13 @@ const RecommendationCard: React.FC<Props> = ({
                 return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300 border border-yellow-700/40"
                              title={isHe ? "בתוך מחזור הריענון — הניתוח נבדק מחדש עד 30 יום" : "Within the refresh cycle — re-analysed within 30 days"}>🟡 {isHe ? `${ageDays} ימים` : `${ageDays} days`}</span>;
               } else {
+                // Say what the reader should do, not what the system is doing.
+                // "Awaiting re-check" is internal state: it tells someone
+                // holding a 49-day-old card nothing about whether to act on it.
                 return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-orange-900/40 text-orange-300 border border-orange-700/40"
                              title={isHe
-                               ? "הניתוח ישן מ-30 יום ולכן נכנס לתור לבדיקה מחדש. אם לא ייבדק עד גיל 45 יום — ההמלצה תוסר. עד אז התייחס אליה בזהירות: יעד המחיר נקבע לפני יותר מחודש."
-                               : "Older than 30 days, so it is queued for re-analysis. If it is not re-checked by day 45 the recommendation is retired. Until then treat it with caution — the price target was set over a month ago."}>🟠 {isHe ? `${ageDays} ימים — ממתין לבדיקה מחדש` : `${ageDays} days — awaiting re-check`}</span>;
+                               ? `יעד המחיר והסטופ נקבעו לפני ${ageDays} ימים, לפני שינויי מחיר ואולי לפני דוח רבעוני. המניה בתור לניתוח מחדש; אם לא תיבדק עד גיל 45 יום ההמלצה תוסר מהפיד. עד אז אל תפעל לפי המספרים האלה בלי לבדוק את המחיר הנוכחי.`
+                               : `The target and stop were set ${ageDays} days ago, before subsequent price moves and possibly before an earnings report. It is queued for re-analysis and will be retired at 45 days if not re-checked. Until then do not act on these numbers without checking the current price.`}>🟠 {isHe ? `ניתוח בן ${ageDays} ימים — אמת מחיר לפני פעולה` : `${ageDays}-day-old analysis — verify price first`}</span>;
               }
             })()}
           </div>

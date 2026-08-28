@@ -424,6 +424,26 @@ async def job_backfill_beta():
         logger.error(f"[scheduler] beta_backfill failed: {exc}")
 
 
+async def job_retire_stale_recommendations():
+    """Daily 06:00 IL — re-validate live recommendations past 30 days and
+    retire them past 45.
+
+    This used to run only inside the quarterly batch, behind three guards that
+    have nothing to do with it: no active sweep, engine down, market data down.
+    Retiring a recommendation whose analysis is seven weeks old is database
+    maintenance, not scanning — and while those guards held, a stale card sat
+    in the client's feed well past the age at which the system had promised to
+    remove it.
+    """
+    from app.workers.quarterly_scanner import requeue_stale_live_recommendations
+    logger.info("[scheduler] stale_recommendations started")
+    try:
+        result = await requeue_stale_live_recommendations()
+        logger.info(f"[scheduler] stale_recommendations done: {result}")
+    except Exception as exc:
+        logger.error(f"[scheduler] stale_recommendations failed: {exc}")
+
+
 async def job_run_prescreener():
     """Daily 08:00 IL — score universe, activate top 80 LONG + 20 SHORT.
 
@@ -917,6 +937,14 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+    # Stale recommendations — 06:00 IL daily, independent of any scan.
+    scheduler.add_job(
+        job_retire_stale_recommendations,
+        CronTrigger(hour=6, minute=0, timezone="Asia/Jerusalem"),
+        id="scheduled_stale_recommendations",
+        replace_existing=True,
+    )
+
     # Daily pre-screener — 08:00 IL: momentum-score the universe, refresh the
     # active pool (top 80 LONG + 20 SHORT) that ta_scan and full_scan work on.
     scheduler.add_job(
@@ -1065,6 +1093,7 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
 KNOWN_JOB_IDS = {
     "scheduled_load_universe",
     "scheduled_beta_backfill",
+    "scheduled_stale_recommendations",
     "scheduled_prescreener",
     "scheduled_weekly_full_scan",
     "scheduled_earnings_watcher",
