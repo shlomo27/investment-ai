@@ -1523,6 +1523,22 @@ async def earnings_status(
 
 # ─── Master List ──────────────────────────────────────────────────────────────
 
+@router.post("/recommendations/retire-stale")
+async def retire_stale_recommendations_endpoint(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Re-validate live recommendations past 30 days and retire them past 45.
+
+    Runs daily at 06:00 on its own; this exists so a card that has outlived the
+    policy can be cleared now rather than sitting in the feed until morning.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.workers.quarterly_scanner import requeue_stale_live_recommendations
+
+    return await requeue_stale_live_recommendations()
+
+
 @router.get("/quarterly/status")
 async def quarterly_status(
     current_user: User = Depends(get_current_active_user),

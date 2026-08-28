@@ -92,6 +92,26 @@ const FundDashboard: React.FC = () => {
   const [demoBusy, setDemoBusy] = useState(false);
   const [demoLabel, setDemoLabel] = useState("");
   const [demoCopied, setDemoCopied] = useState(false);
+  const [staleResult, setStaleResult] = useState<string | null>(null);
+  const [staleBusy, setStaleBusy] = useState(false);
+
+  // The retirement runs daily at 06:00; this clears a card that has outlived
+  // the 45-day policy now rather than leaving it in the feed until morning.
+  const handleRetireStale = async () => {
+    setStaleBusy(true);
+    try {
+      const r = await marketApi.retireStaleRecommendations();
+      setStaleResult(
+        isHe
+          ? `${r.expired ?? 0} המלצות הוסרו, ${r.requeued ?? 0} נשלחו לניתוח מחדש (מתוך ${r.stale ?? 0} ישנות).`
+          : `${r.expired ?? 0} retired, ${r.requeued ?? 0} re-queued (of ${r.stale ?? 0} stale).`
+      );
+      dispatch(fetchRecommendations({}));
+    } catch (e: any) {
+      setStaleResult(e?.response?.data?.detail || "Failed");
+    }
+    setStaleBusy(false);
+  };
   const [demoList, setDemoList] = useState<Awaited<ReturnType<typeof authApi.listDemoAccounts>>>([]);
 
   // Handing a prospect the admin login would give them the diagnostics, the
@@ -658,6 +678,29 @@ const FundDashboard: React.FC = () => {
                 </p>
               </div>
             )}
+
+            <div className="mt-4 pt-4 border-t border-gray-800">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm text-gray-300">
+                    {isHe ? "הסרת המלצות ישנות" : "Retire stale recommendations"}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {isHe
+                      ? "רץ אוטומטית כל יום ב-06:00 — מעל 30 יום לניתוח מחדש, מעל 45 יום יורד מהפיד"
+                      : "Runs daily at 06:00 — past 30 days re-analysed, past 45 days removed from the feed"}
+                  </p>
+                </div>
+                <button
+                  onClick={handleRetireStale}
+                  disabled={staleBusy}
+                  className="shrink-0 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-blue-300 border border-gray-700 hover:border-blue-700 disabled:text-gray-600"
+                >
+                  {staleBusy ? (isHe ? "מריץ..." : "Running...") : (isHe ? "הרץ עכשיו" : "Run now")}
+                </button>
+              </div>
+              {staleResult && <p className="text-xs text-gray-400 mt-2">{staleResult}</p>}
+            </div>
 
             {demoList.length > 0 && (
               <div className="mt-3 space-y-1">

@@ -563,6 +563,11 @@ export const marketApi = {
     return response.data;
   },
 
+  retireStaleRecommendations: async (): Promise<any> => {
+    const response = await api.post("/market/recommendations/retire-stale");
+    return response.data;
+  },
+
   getQuarterlyStatus: async (): Promise<{
     active: boolean;
     quarter: string;
