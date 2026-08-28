@@ -404,6 +404,7 @@ export const recommendationsApi = {
   getScanActivity: async (days = 7): Promise<{
     days: number;
     total: number;
+    shown: number;
     counts: Record<string, number>;
     confidence_stats: {
       count: number;

@@ -324,6 +324,14 @@ const Recommendations: React.FC = () => {
                 ))}
               </div>
 
+              {scanLog.shown < scanLog.total && (
+                <p className="text-xs text-gray-500">
+                  {isHe
+                    ? `מוצגות ${scanLog.shown} מתוך ${scanLog.total} הרשומות בתקופה. הסיכומים למעלה מכסים את כולן.`
+                    : `Showing ${scanLog.shown} of ${scanLog.total} entries in the period. The totals above cover all of them.`}
+                </p>
+              )}
+
               {/* Does the confidence score actually separate anything? It is
                   shown on every card and alert and the feed is sorted by it,
                   so a narrow spread means the ranking is close to arbitrary. */}

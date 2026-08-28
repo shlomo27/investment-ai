@@ -347,43 +347,67 @@ async def get_scan_activity(
     from datetime import datetime, timezone, timedelta
 
     since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # The counts must cover the whole window, the listing only what fits on a
+    # screen. Both used to come from one query capped at 300 rows, so once the
+    # window held more analyses than that the headline totals silently became
+    # "the most recent 300" — the tell being that they summed to exactly 300 —
+    # and a transparency screen understated exactly what it exists to report.
+    ITEM_LIMIT = 300
+    all_rows = (await db.execute(
+        select(
+            Recommendation.id,
+            Recommendation.status,
+            Recommendation.recommendation_type,
+            Recommendation.confidence_score,
+            Recommendation.data_fetcher_raw,
+        ).where(Recommendation.created_at >= since)
+    )).all()
+
     result = await db.execute(
         select(Recommendation)
         .where(Recommendation.created_at >= since)
         .order_by(desc(Recommendation.created_at))
-        .limit(300)
+        .limit(ITEM_LIMIT)
     )
     recs = result.scalars().all()
 
-    items = []
-    counts = {"approved_buy": 0, "approved_sell": 0, "hold": 0, "rejected": 0,
-              "superseded": 0, "not_analyzed": 0}
     LIVE = {
         RecommendationStatus.APPROVED,
         RecommendationStatus.PRESENTED_TO_USER,
         RecommendationStatus.ACTIONED,
     }
-    for r in recs:
-        rec_type = r.recommendation_type.value if r.recommendation_type else "HOLD"
+
+    def _bucket(rec_status, rec_type, abort_reason):
         # A run that aborted before the committee decided is not a rejection.
         # It was shown as one — same label, blank confidence, no reasoning —
         # which made a data outage look like a verdict on the stock.
-        abort_reason = (r.data_fetcher_raw or {}).get("abort_reason")
         if abort_reason:
-            bucket = "not_analyzed"
-        elif r.status == RecommendationStatus.REJECTED:
-            bucket = "rejected"
-        elif r.status == RecommendationStatus.DISMISSED:
-            bucket = "superseded"
-        elif r.status in LIVE and rec_type in ("BUY", "STRONG_BUY"):
-            bucket = "approved_buy"
-        elif r.status in LIVE and rec_type in ("SELL", "STRONG_SELL"):
-            bucket = "approved_sell"
-        elif r.status in LIVE:
-            bucket = "hold"
-        else:
-            bucket = "rejected"
+            return "not_analyzed"
+        if rec_status == RecommendationStatus.REJECTED:
+            return "rejected"
+        if rec_status == RecommendationStatus.DISMISSED:
+            return "superseded"
+        if rec_status in LIVE and rec_type in ("BUY", "STRONG_BUY"):
+            return "approved_buy"
+        if rec_status in LIVE and rec_type in ("SELL", "STRONG_SELL"):
+            return "approved_sell"
+        if rec_status in LIVE:
+            return "hold"
+        return "rejected"
+
+    counts = {"approved_buy": 0, "approved_sell": 0, "hold": 0, "rejected": 0,
+              "superseded": 0, "not_analyzed": 0}
+    for _id, rec_status, rtype, _conf, raw in all_rows:
+        bucket = _bucket(rec_status, rtype.value if rtype else "HOLD",
+                         (raw or {}).get("abort_reason"))
         counts[bucket] = counts.get(bucket, 0) + 1
+
+    items = []
+    for r in recs:
+        rec_type = r.recommendation_type.value if r.recommendation_type else "HOLD"
+        abort_reason = (r.data_fetcher_raw or {}).get("abort_reason")
+        bucket = _bucket(r.status, rec_type, abort_reason)
         items.append({
             "id": r.id,
             "symbol": r.symbol,
@@ -402,8 +426,8 @@ async def get_scan_activity(
     # committee returns much the same figure for everything, it separates
     # nothing, and both the ranking and the number itself are decoration.
     approved_scores = sorted(
-        r.confidence_score for r in recs
-        if r.status in LIVE and r.confidence_score and r.confidence_score > 0
+        conf for _id, rec_status, _rtype, conf, _raw in all_rows
+        if rec_status in LIVE and conf and conf > 0
     )
     confidence_stats = None
     if approved_scores:
@@ -427,8 +451,9 @@ async def get_scan_activity(
             },
         }
 
-    return {"days": days, "total": len(items), "counts": counts,
-            "confidence_stats": confidence_stats, "items": items}
+    return {"days": days, "total": len(all_rows), "shown": len(items),
+            "counts": counts, "confidence_stats": confidence_stats,
+            "items": items}
 
 
 @router.get("/{recommendation_id}", response_model=RecommendationResponse)
