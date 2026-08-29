@@ -38,6 +38,9 @@ logger = logging.getLogger(__name__)
 
 ACTIONABLE = {"BUY_NOW", "STRONG_BUY", "SELL_NOW", "STRONG_SELL"}
 SIGNAL_COOLDOWN_SEC = 4 * 3600
+# A signal change must still hold on the next scan (scans run every 30 min)
+# before a holder is told about it.
+CONFIRM_SECONDS = 20 * 60
 SIGNAL_LABELS = {
     "BUY_NOW":     "📈 קנה",
     "STRONG_BUY":  "🚀 קנה חזק",
@@ -71,19 +74,52 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
     r = redis_client or aioredis.from_url(settings.REDIS_URL)
     try:
         last_signal_key = f"investment_ai:ta_last_signal:{symbol}"
+        pending_key = f"investment_ai:ta_pending_signal:{symbol}"
         prev_raw = await r.get(last_signal_key)
         prev_signal = prev_raw.decode() if prev_raw else None
-        await r.set(last_signal_key, signal, ex=7 * 24 * 3600)
 
         # Alert on TRANSITIONS only — a signal that merely persists past the
         # 4h cooldown must not re-alert ("קנה (קודם: קנה)" repeats confused
         # holders into thinking something changed).
         if prev_signal == signal:
+            await r.delete(pending_key)          # a flicker that reverted
+            await r.expire(last_signal_key, 7 * 24 * 3600)
             return False
 
         downgraded = prev_signal in ACTIONABLE and signal not in ACTIONABLE
         if signal not in ACTIONABLE and not downgraded:
+            await r.set(last_signal_key, signal, ex=7 * 24 * 3600)
             return False
+
+        # A change must survive one more scan before anyone hears about it.
+        # Indicators sit right on their thresholds all the time, so a single
+        # crossing was enough to fire: GOOGL went BUY at 19:41, WAIT at 20:11
+        # and BUY again minutes later on a 1.7% price move, and the holder got
+        # two alerts describing a reversal that never happened. Requiring the
+        # new state to persist costs one scan of delay and removes the whipsaw.
+        import json as _json
+        import time as _time
+
+        pending_raw = await r.get(pending_key)
+        pending = {}
+        if pending_raw:
+            try:
+                pending = _json.loads(pending_raw)
+            except (ValueError, TypeError):
+                pending = {}
+
+        now_ts = _time.time()
+        if pending.get("signal") != signal:
+            await r.set(pending_key, _json.dumps({"signal": signal, "first_seen": now_ts}),
+                        ex=6 * 3600)
+            logger.debug(f"[ta] {symbol}: {prev_signal} -> {signal} awaiting confirmation")
+            return False
+        if now_ts - float(pending.get("first_seen") or now_ts) < CONFIRM_SECONDS:
+            return False
+
+        # Confirmed: the change held. Commit it and alert.
+        await r.delete(pending_key)
+        await r.set(last_signal_key, signal, ex=7 * 24 * 3600)
 
         cooldown_key = f"investment_ai:ta_alert:{symbol}"
         last = await r.get(cooldown_key)
