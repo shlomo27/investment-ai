@@ -175,10 +175,19 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
 
         if downgraded:
             prev_label = SIGNAL_LABELS.get(prev_signal, prev_signal)
+            # WAIT means wait. The old wording — a down arrow and "the signal
+            # weakened" — reads to a holder as a reason to get out, and someone
+            # who had bought a day earlier could sell on it within minutes. The
+            # three states have to map to three plain instructions: buy means
+            # buy, sell means sell, and wait means do nothing. Say the last one
+            # out loud, because the reader will otherwise supply the scarier
+            # reading on their own.
             # "היה X, עכשיו Y" — an inline arrow between Hebrew words is
             # direction-ambiguous in RTL and users misread the transition.
-            title = (f"⬇️ {symbol}: הסיגנל נחלש — היה: {prev_label}, עכשיו: המתנה"
-                     f"{price_str} (ניתוח טכני, ציון {score:.0f}/100)")
+            title = (f"⏸️ {symbol}: הסיגנל הטכני נחלש — היה: {prev_label}, עכשיו: המתנה"
+                     f"{price_str} (ניתוח טכני, ציון {score:.0f}/100). "
+                     f"זה אינו סיגנל מכירה: מי שמחזיק — אין פעולה נדרשת. "
+                     f"מי שממתין לכניסה — כדאי להמתין. סיגנל מכירה יגיע בנפרד ויאמר זאת במפורש.")
         elif entry_point:
             title = (f"🟢 {symbol}: נקודת הכניסה הגיעה — ההמלצה (קנייה) נפגשה עם סיגנל טכני חיובי. "
                      f"שני הצדדים מסכימים{price_str} (ציון טכני {score:.0f}/100). 👈 בדוק במערכת.")
