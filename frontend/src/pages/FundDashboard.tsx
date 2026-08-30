@@ -709,7 +709,19 @@ const FundDashboard: React.FC = () => {
                     <span className={d.is_active ? "text-gray-300" : "text-gray-600 line-through"}>
                       {d.label}
                     </span>
-                    <span className="text-gray-600 font-mono truncate">{d.email}</span>
+                    {/* Whether the prospect actually opened it. Without this,
+                        "we sent credentials" and "they tried it" look the
+                        same — and they call for completely different
+                        follow-ups. */}
+                    {d.login_count > 0 ? (
+                      <span className="text-green-400" title={`${d.login_count} ${isHe ? "כניסות" : "logins"}`}>
+                        {isHe ? "נכנס " : "used "}
+                        {new Date(d.last_login_at!).toLocaleDateString(isHe ? "he-IL" : "en-US")}
+                        {d.login_count > 1 ? ` ×${d.login_count}` : ""}
+                      </span>
+                    ) : (
+                      <span className="text-gray-600">{isHe ? "טרם נכנס" : "not used yet"}</span>
+                    )}
                     <div className="flex-1" />
                     {d.is_active ? (
                       <button

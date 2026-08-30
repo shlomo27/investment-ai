@@ -248,8 +248,13 @@ async def login(
         logger.info("2FA required for login", user_id=user.id)
         return {"requires_2fa": True, "pre_auth_token": pre_auth}
 
+    user.last_login_at = datetime.now(timezone.utc)
+    user.login_count = (user.login_count or 0) + 1
+    await db.flush()
+
     tokens = create_token_pair(user.id, user.email)
-    logger.info("User logged in", user_id=user.id, email=user.email)
+    logger.info("User logged in", user_id=user.id, email=user.email,
+                login_count=user.login_count)
 
     return AuthResponse(
         user=UserResponse.from_orm(user),
@@ -484,6 +489,10 @@ async def complete_2fa_login(
     if not pyotp.TOTP(user.totp_secret).verify(code, valid_window=1):
         raise HTTPException(status_code=401, detail="Invalid or expired 2FA code")
 
+    user.last_login_at = datetime.now(timezone.utc)
+    user.login_count = (user.login_count or 0) + 1
+    await db.flush()
+
     tokens = create_token_pair(user.id, user.email)
     logger.info("2FA login successful", user_id=user.id)
 
@@ -554,6 +563,8 @@ class DemoAccountRow(BaseModel):
     label: str
     is_active: bool
     created_at: datetime
+    last_login_at: Optional[datetime] = None
+    login_count: int = 0
 
 
 def _demo_slug(label: Optional[str]) -> str:
@@ -678,6 +689,7 @@ async def list_demo_accounts(
         DemoAccountRow(
             id=u.id, email=u.email, is_active=u.is_active, created_at=u.created_at,
             label=u.full_name.replace("Demo — ", "") if u.full_name else u.email,
+            last_login_at=u.last_login_at, login_count=u.login_count or 0,
         )
         for u in rows
     ]

@@ -54,6 +54,11 @@ class User(Base):
     # Personal Telegram chat (private bot conversation) — linked from Settings;
     # personal alerts go here with full detail, unlike generic email/push/SMS
     telegram_chat_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Whether an account has actually been used. Creation was the only recorded
+    # moment in an account's life, so "credentials were sent" and "they logged
+    # in" were indistinguishable.
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    login_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False, server_default="0")
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     notification_email: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -138,6 +138,8 @@ export const authApi = {
     label: string;
     is_active: boolean;
     created_at: string;
+    last_login_at: string | null;
+    login_count: number;
   }>> => {
     const response = await api.get("/auth/demo-accounts");
     return response.data;
