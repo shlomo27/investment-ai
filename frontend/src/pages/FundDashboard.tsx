@@ -101,10 +101,20 @@ const FundDashboard: React.FC = () => {
     setStaleBusy(true);
     try {
       const r = await marketApi.retireStaleRecommendations();
+      // Say why nothing happened. A run that removes nothing because the
+      // engine is down looks identical to one that found nothing to remove,
+      // and the reader is left pressing the button again.
+      const why = r.engine_down
+        ? (isHe
+            ? " לא הוסרו המלצות כי מנוע הניתוח למטה — זו הגנה מכוונת, כדי שתקלה לא תרוקן את הפיד."
+            : " Nothing was retired because the analysis engine is down — a deliberate guard so an outage cannot empty the feed.")
+        : r.reason
+          ? ` (${r.reason})`
+          : "";
       setStaleResult(
-        isHe
+        (isHe
           ? `${r.expired ?? 0} המלצות הוסרו, ${r.requeued ?? 0} נשלחו לניתוח מחדש (מתוך ${r.stale ?? 0} ישנות).`
-          : `${r.expired ?? 0} retired, ${r.requeued ?? 0} re-queued (of ${r.stale ?? 0} stale).`
+          : `${r.expired ?? 0} retired, ${r.requeued ?? 0} re-queued (of ${r.stale ?? 0} stale).`) + why
       );
       dispatch(fetchRecommendations({}));
     } catch (e: any) {
