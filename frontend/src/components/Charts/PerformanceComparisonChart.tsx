@@ -29,7 +29,8 @@ const CustomTooltip = ({ active, payload, label, isHe }: any) => {
       )}
       {alpha !== null && (
         <p className={`font-bold mt-1 ${parseFloat(alpha) >= 0 ? "text-green-300" : "text-red-300"}`}>
-          Alpha: {parseFloat(alpha) >= 0 ? "+" : ""}{alpha}
+          {/* Cumulative, not the per-trade excess return in the KPI row above. */}
+          Alpha מצטברת: {parseFloat(alpha) >= 0 ? "+" : ""}{alpha}
         </p>
       )}
       {payload[0]?.payload?.trade_count !== undefined && (
@@ -127,7 +128,7 @@ const PerformanceComparisonChart: React.FC<Props> = ({ isHe = false }) => {
                 ? "bg-green-900/30 border-green-700/50 text-green-300"
                 : "bg-red-900/30 border-red-700/50 text-red-300"
             }`}>
-              Alpha {data.alpha > 0 ? "+" : ""}{data.alpha}%
+              Alpha מצטברת {data.alpha > 0 ? "+" : ""}{data.alpha}%
             </div>
           </div>
         </div>

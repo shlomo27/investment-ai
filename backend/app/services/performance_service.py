@@ -105,9 +105,16 @@ class PerformanceService:
         """
         Returns overall recommendation performance statistics.
         """
+        # HOLD is not a position. Counting it as a trade put a stock nobody was
+        # told to buy at the top of the results as the "best trade" — there was
+        # no entry, so there is no return to attribute to a decision.
+        from app.db.models.recommendation import RecommendationType as _RT
+
+        _TRADED = (_RT.BUY, _RT.STRONG_BUY, _RT.SELL, _RT.STRONG_SELL)
         result = await db.execute(
             select(Recommendation).where(
-                Recommendation.outcome_result.isnot(None)
+                Recommendation.outcome_result.isnot(None),
+                Recommendation.recommendation_type.in_(_TRADED),
             )
         )
         tracked = result.scalars().all()
@@ -143,7 +150,17 @@ class PerformanceService:
             "win_count": len(wins),
             "loss_count": len(losses),
             "neutral_count": len(neutrals),
-            "win_rate_pct": round(len(wins) / len(tracked) * 100, 1),
+            # Among calls that actually moved. A NEUTRAL is a stock that went
+            # nowhere in thirty days, not a failed call, and counting it as one
+            # put 18.1% on screen directly above "13W / 3L" — a subtitle from
+            # which the reader computes 81%. Both numbers are reported, each
+            # with the denominator it is measured against.
+            "win_rate_pct": (
+                round(len(wins) / (len(wins) + len(losses)) * 100, 1)
+                if (len(wins) + len(losses)) else 0.0
+            ),
+            "decided_count": len(wins) + len(losses),
+            "win_rate_of_all_pct": round(len(wins) / len(tracked) * 100, 1),
             "avg_return_pct": round(sum(returns) / len(returns), 2) if returns else 0.0,
             "avg_vs_market_pct": round(sum(vs_market) / len(vs_market), 2) if vs_market else 0.0,
             "best_trade": {

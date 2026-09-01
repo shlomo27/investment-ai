@@ -68,9 +68,16 @@ const Performance: React.FC = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
             {
+              // Measured over calls that actually moved. A NEUTRAL is a stock
+              // that went nowhere in thirty days, not a failed call, and
+              // counting it as one printed 18.1% directly above "13W / 3L" —
+              // a subtitle from which any reader computes 81%. The neutral
+              // count is stated so the sample is not overstated either.
               label: isHe ? "אחוז הצלחה" : "Win Rate",
               value: `${summary.win_rate_pct}%`,
-              sub: `${summary.win_count}W / ${summary.loss_count}L`,
+              sub: isHe
+                ? `${summary.win_count} מוצלחות / ${summary.loss_count} כושלות · ${summary.neutral_count} ללא שינוי`
+                : `${summary.win_count}W / ${summary.loss_count}L · ${summary.neutral_count} flat`,
               color: summary.win_rate_pct >= 55 ? "text-green-400" : summary.win_rate_pct >= 45 ? "text-yellow-400" : "text-red-400",
             },
             {
@@ -80,9 +87,12 @@ const Performance: React.FC = () => {
               color: summary.avg_return_pct >= 0 ? "text-green-400" : "text-red-400",
             },
             {
-              label: isHe ? "Alpha vs S&P 500" : "Alpha vs S&P",
+              // Distinct from the cumulative alpha on the chart below, which
+              // compounds a portfolio over time. Both were labelled "Alpha vs
+              // S&P 500" and showed opposite signs on the same screen.
+              label: isHe ? "עודף תשואה לעסקה" : "Excess return per trade",
               value: `${summary.avg_vs_market_pct > 0 ? "+" : ""}${summary.avg_vs_market_pct}%`,
-              sub: isHe ? "מעל השוק" : "above market",
+              sub: isHe ? "ממוצע מול S&P 500" : "avg vs S&P 500",
               color: summary.avg_vs_market_pct >= 0 ? "text-green-400" : "text-red-400",
             },
             {
