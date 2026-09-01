@@ -10,7 +10,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
-from app.db.models.recommendation import Recommendation, RecommendationStatus, RecommendationType
+from app.db.models.recommendation import Recommendation, RecommendationType
 
 logger = structlog.get_logger(__name__)
 
@@ -29,10 +29,19 @@ class PerformanceService:
         """
         cutoff = datetime.now(timezone.utc) - timedelta(days=OUTCOME_CHECK_DAYS)
 
+        # Every call that reached thirty days gets scored, whatever became of
+        # it since. Restricting this to status APPROVED silently dropped two
+        # groups from the track record: recommendations a user engaged with
+        # (PRESENTED_TO_USER, ACTIONED) and, more damagingly, any that a
+        # re-analysis superseded before day thirty. Supersession is not random
+        # — the committee revisits a stock precisely when something changed —
+        # so discarding those calls flatters the win rate with survivorship
+        # bias. approved_at is set only on the approval path, so it identifies
+        # a genuine call without needing the current status at all.
         result = await db.execute(
             select(Recommendation).where(
                 and_(
-                    Recommendation.status == RecommendationStatus.APPROVED,
+                    Recommendation.approved_at.isnot(None),
                     Recommendation.approved_at <= cutoff,
                     Recommendation.outcome_tracked_at.is_(None),
                     Recommendation.current_price_at_recommendation.isnot(None),
