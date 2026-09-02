@@ -1557,6 +1557,107 @@ const FundDashboard: React.FC = () => {
                         {isHe ? "ציטוטים מרובים (פרה-סקרינר): " : "Batch quotes (screener): "}
                         {simStep[step].batch_quotes?.detail}
                       </div>
+
+                      {/* A probe says whether a provider answers right now; this
+                          says how each has behaved across every real analysis
+                          this week, and whether the breaker is skipping it. */}
+                      {simStep[step].health && !simStep[step].health.error && (
+                        <div className="mt-3">
+                          <p className="text-xs text-gray-400 font-medium mb-1">
+                            {isHe ? "בריאות הספקים — 7 ימים אחרונים, מתוך ניתוחים אמיתיים" : "Provider health — last 7 days, from real analyses"}
+                          </p>
+                          <div className="overflow-x-auto">
+                            <table className="text-xs w-full">
+                              <thead className="text-gray-500">
+                                <tr>
+                                  <th className="text-right py-1 pr-2">{isHe ? "ספק" : "Provider"}</th>
+                                  <th className="text-right py-1 pr-2">{isHe ? "הצליח" : "OK"}</th>
+                                  <th className="text-right py-1 pr-2">{isHe ? "נכשל" : "Fail"}</th>
+                                  <th className="text-right py-1 pr-2">%</th>
+                                  <th className="text-right py-1">{isHe ? "מצב" : "State"}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Object.entries(simStep[step].health as Record<string, any>).map(([name, h]) => {
+                                  const pct = h.success_pct;
+                                  const tone =
+                                    pct === null || pct === undefined ? "text-gray-500"
+                                    : pct >= 80 ? "text-green-300"
+                                    : pct >= 40 ? "text-yellow-300"
+                                    : "text-red-300";
+                                  return (
+                                    <tr key={name} className="border-t border-gray-800">
+                                      <td className="py-1 pr-2 font-mono text-gray-200">{name}</td>
+                                      <td className="py-1 pr-2 text-gray-300">{h.ok}</td>
+                                      <td className="py-1 pr-2 text-gray-300">{h.fail}</td>
+                                      <td className={`py-1 pr-2 font-medium ${tone}`}>{pct ?? "—"}</td>
+                                      <td className="py-1 text-gray-400">
+                                        {h.skipped_now
+                                          ? (isHe ? `מדולג ${Math.ceil(h.skipped_for_seconds / 60)} דק׳` : `skipped ${Math.ceil(h.skipped_for_seconds / 60)}m`)
+                                          : h.consecutive_failures > 0
+                                            ? (isHe ? `${h.consecutive_failures} כשלונות ברצף` : `${h.consecutive_failures} in a row`)
+                                            : (isHe ? "פעיל" : "active")}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Which of the figures a verdict rests on actually arrive,
+                          and from which layer. "FCF missing for FISV" is an
+                          anecdote; "FCF missing in 38% of analyses and FMP filled
+                          none" names the fix. */}
+                      {simStep[step].fundamentals && !simStep[step].fundamentals.error && (
+                        <div className="mt-3">
+                          <p className="text-xs text-gray-400 font-medium mb-1">
+                            {isHe ? "כיסוי נתוני יסוד — כמה מהניתוחים קיבלו כל נתון, ומאיזה מקור" : "Fundamentals coverage — how often each figure arrived, and from where"}
+                          </p>
+                          <div className="overflow-x-auto">
+                            <table className="text-xs w-full">
+                              <thead className="text-gray-500">
+                                <tr>
+                                  <th className="text-right py-1 pr-2">{isHe ? "נתון" : "Field"}</th>
+                                  <th className="text-right py-1 pr-2">{isHe ? "התקבל" : "Got"}</th>
+                                  <th className="text-right py-1 pr-2">{isHe ? "חסר" : "Missing"}</th>
+                                  <th className="text-right py-1 pr-2">%</th>
+                                  <th className="text-right py-1">{isHe ? "מקור" : "Filled by"}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Object.entries(simStep[step].fundamentals as Record<string, any>).map(([field, f]) => {
+                                  const pct = f.coverage_pct;
+                                  const tone =
+                                    pct === null || pct === undefined ? "text-gray-500"
+                                    : pct >= 90 ? "text-green-300"
+                                    : pct >= 60 ? "text-yellow-300"
+                                    : "text-red-300";
+                                  const by = Object.entries(f.filled_by || {}) as [string, number][];
+                                  return (
+                                    <tr key={field} className="border-t border-gray-800">
+                                      <td className="py-1 pr-2 font-mono text-gray-200">{field}</td>
+                                      <td className="py-1 pr-2 text-gray-300">{f.present}</td>
+                                      <td className="py-1 pr-2 text-gray-300">{f.missing}</td>
+                                      <td className={`py-1 pr-2 font-medium ${tone}`}>{pct ?? "—"}</td>
+                                      <td className="py-1 text-gray-400">
+                                        {by.length ? by.map(([src, n]) => `${src} ${n}`).join(" · ") : "—"}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p className="text-xs text-gray-600 mt-1">
+                            {isHe
+                              ? "הספירה מתחילה מהפריסה הזאת ומתמלאת עם כל ניתוח."
+                              : "Counting starts from this deploy and fills in with each analysis."}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   ) : step === 6 && simStep[step].engines ? (
                     <div className="mt-2 space-y-1.5">

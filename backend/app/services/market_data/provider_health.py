@@ -143,6 +143,77 @@ async def reset() -> None:
         pass
 
 
+# ─── Fundamentals coverage ───────────────────────────────────────────────────
+#
+# Which of the figures a verdict actually rests on arrived, and from where.
+# "Free cash flow was missing for FISV" is one anecdote; "free cash flow is
+# missing for 38% of analyses and FMP has filled none of them this week" is a
+# diagnosis — and it names the fix (a dead FMP key) instead of leaving each
+# analysis to say "not verified" on its own.
+
+CRITICAL_FUNDAMENTALS = ("market_cap", "free_cash_flow", "revenue_growth",
+                         "profit_margin", "debt_to_equity")
+_FUND_PREFIX = "investment_ai:fundamentals_coverage:"
+
+
+async def record_fundamentals(data: Optional[dict], filled: Optional[list] = None) -> None:
+    """Log, per critical field, whether the completed fetch has it and which
+    layer supplied it. `filled` is the gap-filler's list of "field(source)"
+    tags; a present field with no tag came from the primary fetch."""
+    if not isinstance(data, dict):
+        return
+    tags = {}
+    for tag in filled or []:
+        if "(" in tag and tag.endswith(")"):
+            f, src = tag[:-1].split("(", 1)
+            tags[f] = src
+    try:
+        client = await _client()
+        try:
+            pipe = client.pipeline()
+            for f in CRITICAL_FUNDAMENTALS:
+                present = data.get(f) is not None
+                pipe.incr(f"{_FUND_PREFIX}{f}:{'present' if present else 'missing'}")
+                pipe.expire(f"{_FUND_PREFIX}{f}:{'present' if present else 'missing'}", _STAT_TTL)
+                if present:
+                    src = tags.get(f, "primary")
+                    pipe.incr(f"{_FUND_PREFIX}{f}:by:{src}")
+                    pipe.expire(f"{_FUND_PREFIX}{f}:by:{src}", _STAT_TTL)
+            await pipe.execute()
+        finally:
+            await client.aclose()
+    except Exception:
+        pass
+
+
+async def get_fundamentals_coverage() -> dict:
+    """Per critical field: how often it arrived, and which layers supplied it."""
+    try:
+        client = await _client()
+        try:
+            out = {}
+            for f in CRITICAL_FUNDAMENTALS:
+                present = int(await client.get(f"{_FUND_PREFIX}{f}:present") or 0)
+                missing = int(await client.get(f"{_FUND_PREFIX}{f}:missing") or 0)
+                total = present + missing
+                by = {}
+                for src in ("primary", "finnhub", "fmp", "alpaca", "polygon"):
+                    n = int(await client.get(f"{_FUND_PREFIX}{f}:by:{src}") or 0)
+                    if n:
+                        by[src] = n
+                out[f] = {
+                    "present": present,
+                    "missing": missing,
+                    "coverage_pct": round(present / total * 100, 1) if total else None,
+                    "filled_by": by,
+                }
+            return out
+        finally:
+            await client.aclose()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 def served_by(price_data: Optional[dict]) -> Optional[str]:
     """Which provider a price came from, if it was stamped."""
     if not isinstance(price_data, dict):

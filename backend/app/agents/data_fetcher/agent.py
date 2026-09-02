@@ -378,6 +378,8 @@ Respond in JSON format:
         market_cap_missing = not data.get("market_cap")  # None or 0
         fmp_needed = any(not data.get(f) for f in self._FMP_CRITICAL_FIELDS)
         if not missing and not market_cap_missing and not fmp_needed:
+            from app.services.market_data import provider_health
+            await provider_health.record_fundamentals(data, [])
             return data
         filled = []
 
@@ -454,6 +456,8 @@ Respond in JSON format:
 
         if filled:
             logger.info("Filled fundamental gaps", symbol=symbol, fields=filled)
+        from app.services.market_data import provider_health
+        await provider_health.record_fundamentals(data, filled)
         return data
 
     def _empty_sentiment(self) -> SocialSentiment:

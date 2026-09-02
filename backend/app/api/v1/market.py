@@ -1023,6 +1023,7 @@ async def price_source_diagnostics(
     # "it works when I test it" and "it works when the system needs it".
     from app.services.market_data import provider_health
     health = await provider_health.get_health()
+    fundamentals = await provider_health.get_fundamentals_coverage()
 
     return {
         "symbol": sym,
@@ -1030,6 +1031,7 @@ async def price_source_diagnostics(
         "working_count": len(working),
         "sources": results,
         "health": health,
+        "fundamentals": fundamentals,
         "batch_quotes": {
             "ok": batch_ok > 0,
             "detail": (f"FMP החזיר {batch_ok}/3 ציטוטים — המסלולים ההמוניים מכוסים"
