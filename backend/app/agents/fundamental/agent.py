@@ -730,7 +730,8 @@ CRITICAL RULES FOR JSON RESPONSE:
         pb          = data.get("price_to_book")
         ps          = data.get("price_to_sales")
         beta        = float(data.get("beta") or 1.2)
-        fcf         = float(data.get("free_cash_flow") or 0)
+        fcf_raw     = data.get("free_cash_flow")
+        fcf         = float(fcf_raw or 0)
         market_cap  = float(data.get("market_cap") or 0)
         rev_growth  = float(data.get("revenue_growth") or 0.05)
         earn_growth = float(data.get("earnings_growth") or 0.05)
@@ -784,6 +785,16 @@ CRITICAL RULES FOR JSON RESPONSE:
                     "fcf_base_mm":         round(fcf / 1e6, 1),
                     "shares_mm":           round(shares / 1e6, 1),
                     "yearly_projections":  yearly,
+                }
+            elif fcf_raw is None:
+                # Missing is not zero. Coercing None to 0 and then reporting
+                # "zero FCF" put "FCF shown as $0" into the committee's own
+                # write-up, and a reader takes a stated zero as a measured
+                # figure. Say what actually happened: nobody returned the
+                # number.
+                models["dcf"] = {
+                    "skipped": "FCF NOT REPORTED by any data source — DCF skipped. "
+                               "This is a data gap, not a zero: do not describe FCF as $0."
                 }
             else:
                 models["dcf"] = {"skipped": "Negative/zero FCF or missing market cap — DCF not applicable"}

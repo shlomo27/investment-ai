@@ -21,7 +21,24 @@ def current_date_block(as_of_iso: Optional[str] = None) -> str:
     """
     now = datetime.now(timezone.utc)
     today = now.strftime("%d %B %Y")
-    quarter = f"Q{(now.month - 1) // 3 + 1} {now.year}"
+    q_now = (now.month - 1) // 3 + 1
+    quarter = f"Q{q_now} {now.year}"
+
+    # Name the completed quarters outright. Asked to check "three consecutive
+    # quarters", a model has to derive quarter labels from today's date, and it
+    # does not: it reaches for labels from its training era and writes
+    # "verify against Q1-Q3 2024" in a report produced in 2026. Handing it the
+    # list removes the arithmetic it keeps getting wrong.
+    completed = []
+    q, y = q_now, now.year
+    for _ in range(4):
+        q -= 1
+        if q == 0:
+            q, y = 4, y - 1
+        completed.append(f"Q{q} {y}")
+    completed.reverse()
+    completed_str = ", ".join(completed)
+    latest_report = completed[-1]
 
     freshness = ""
     if as_of_iso:
@@ -33,6 +50,8 @@ def current_date_block(as_of_iso: Optional[str] = None) -> str:
 CURRENT DATE — READ THIS BEFORE REASONING ABOUT ANY TIMELINE
 ══════════════════════════════════════════════
 TODAY IS {today}. The current quarter is {quarter}.{freshness}
+The four most recently COMPLETED quarters are: {completed_str}.
+The latest quarterly report a company could have filed covers {latest_report}.
 
 Your training data ends well before today. Anything you "remember" about this
 company may be out of date, and you must not present it as current.
@@ -47,6 +66,8 @@ BINDING RULES:
   numbers supplied in this prompt; if a number you need is not here, say it
   is unavailable.
 ✓ Every date you write must be explicit and must fall AFTER {today}.
+✓ When you tell the reader to verify a trend against filings, name quarters
+  from the list above ({completed_str}) — never a quarter from an earlier year.
 ✓ "Within 18 months" means between {today} and {now.year + 1}-{now.month:02d}.
 ✓ When your knowledge and the supplied data disagree, THE SUPPLIED DATA WINS.
 """
