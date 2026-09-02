@@ -349,14 +349,24 @@ async def _run_news_watch() -> dict:
             if news_action == "WAIT" and ta_signal == "WAIT":
                 continue
 
-            # Cooldown: don't re-alert the same symbol+decision within 4h, even
-            # as fresh articles keep publishing. Prevents a stock that's "in the
-            # news" from pinging holders every 30-min run.
+            # Alert on a CHANGE of direction, not on the passage of time.
+            #
+            # This was a four-hour cooldown, which meant the suppression simply
+            # expired: GOOGL alerted "קנה" at 12:22 and again at 16:22, exactly
+            # four hours later, with the same verdict and nothing new for the
+            # holder to act on. A stock that stays in the news re-alerted every
+            # four hours indefinitely. The direction turning positive is the
+            # event worth a message; it staying positive is not.
+            #
+            # The key is held for a week so a persisting verdict stays quiet,
+            # and any genuine flip still alerts on the very next run.
             cd_key = f"investment_ai:news_alert:{symbol}"
             prev_decision = await redis_client.get(cd_key)
-            if prev_decision and prev_decision.decode() == decision:
+            prev_decision = prev_decision.decode() if prev_decision else None
+            if prev_decision == decision:
+                await redis_client.expire(cd_key, 7 * 24 * 3600)
                 continue
-            await redis_client.set(cd_key, decision, ex=4 * 3600)
+            await redis_client.set(cd_key, decision, ex=7 * 24 * 3600)
 
             sources_str = ", ".join(list({a["source"] for a in new_articles})[:3])
             title  = f"{emoji} {symbol}: {decision} | {sources_str}{x_flag}"
