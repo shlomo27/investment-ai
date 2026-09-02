@@ -363,13 +363,36 @@ async def _run_news_watch() -> dict:
             cd_key = f"investment_ai:news_alert:{symbol}"
             prev_decision = await redis_client.get(cd_key)
             prev_decision = prev_decision.decode() if prev_decision else None
-            if prev_decision == decision:
+
+            # Exception: a fresh, strong X moment breaks the silence even when
+            # the direction is unchanged. Something going viral can move a
+            # price on its own, which is the whole reason Grok is consulted
+            # here — and holding that back because the verdict happens to still
+            # read "buy" would suppress the one thing the holder could not have
+            # known already. Gated on its own key so a buzz that persists for
+            # days does not restart the four-hourly pinging in a new costume:
+            # the direction of the buzz must be new, or a day must have passed.
+            x_break = False
+            if strong_x:
+                x_key = f"investment_ai:news_x_buzz:{symbol}"
+                x_dir = "pos" if x_score > 0 else "neg"
+                prev_x = await redis_client.get(x_key)
+                if (prev_x.decode() if prev_x else None) != x_dir:
+                    x_break = True
+                    await redis_client.set(x_key, x_dir, ex=24 * 3600)
+
+            if prev_decision == decision and not x_break:
                 await redis_client.expire(cd_key, 7 * 24 * 3600)
                 continue
             await redis_client.set(cd_key, decision, ex=7 * 24 * 3600)
 
             sources_str = ", ".join(list({a["source"] for a in new_articles})[:3])
-            title  = f"{emoji} {symbol}: {decision} | {sources_str}{x_flag}"
+            # Name the reason when the verdict itself did not change, so the
+            # message cannot read as the repeat alert this gating exists to stop.
+            reason = ""
+            if x_break and prev_decision == decision:
+                reason = (" — באז חריג ב-X" if x_score > 0 else " — באז שלילי חריג ב-X")
+            title  = f"{emoji} {symbol}: {decision}{reason} | {sources_str}{x_flag}"
             detail = {
                 "type":            "NEWS_PLUS_TA",
                 "symbol":          symbol,
