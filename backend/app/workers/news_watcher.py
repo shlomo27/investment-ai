@@ -308,6 +308,25 @@ async def _run_news_watch() -> dict:
             summary     = analysis.get("summary", "")
             confidence  = analysis.get("confidence", "LOW")
 
+            # Publish the news read so the technical path can see it. The
+            # entry-point alert announces that "both sides agree" from the
+            # fundamental call and the technical signal alone, and had no way
+            # to know the news watcher had just flagged the opposite — so a
+            # stock could receive "conflicting signals, examine" and "both
+            # sides agree" within the same minute. Stored on every run, alert
+            # or not, since a negative read that is too weak to alert on is
+            # exactly what must still temper a confident entry call.
+            try:
+                import json as _json
+                await redis_client.set(
+                    f"investment_ai:news_view:{symbol}",
+                    _json.dumps({"action": news_action, "sentiment": sentiment,
+                                 "summary": summary[:200]}),
+                    ex=24 * 3600,
+                )
+            except Exception:
+                pass
+
             ta_signal, ta_score = "WAIT", 50
             try:
                 from app.agents.workflow import run_technical_workflow

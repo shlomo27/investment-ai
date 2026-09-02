@@ -173,6 +173,26 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
                 )).first()
             entry_point = live_buy is not None
 
+        # Never claim agreement over a negative news read. The entry-point
+        # message weighed the fundamental call against the technical signal and
+        # nothing else, so GOOGL could be told "both sides agree" in the same
+        # minute the news watcher reported a credibility crisis and labelled it
+        # "conflicting signals — examine". Of the two messages the confident
+        # one was the less informed, which is the worst way round.
+        news_negative = False
+        news_note = ""
+        if entry_point:
+            try:
+                import json as _json
+                raw_view = await r.get(f"investment_ai:news_view:{symbol}")
+                view = _json.loads(raw_view) if raw_view else {}
+                if (view.get("action") == "SELL"
+                        or str(view.get("sentiment", "")).upper() in ("NEGATIVE", "BEARISH")):
+                    news_negative = True
+                    news_note = str(view.get("summary") or "")[:140]
+            except Exception:
+                pass
+
         if downgraded:
             prev_label = SIGNAL_LABELS.get(prev_signal, prev_signal)
             # WAIT means wait. The old wording — a down arrow and "the signal
@@ -188,6 +208,12 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
                      f"{price_str} (ניתוח טכני, ציון {score:.0f}/100). "
                      f"זה אינו סיגנל מכירה: מי שמחזיק — אין פעולה נדרשת. "
                      f"מי שממתין לכניסה — כדאי להמתין. סיגנל מכירה יגיע בנפרד ויאמר זאת במפורש.")
+        elif entry_point and news_negative:
+            title = (f"⚡ {symbol}: הסיגנל הטכני חיובי וההמלצה עדיין קנייה, "
+                     f"אבל החדשות האחרונות שליליות — אין כאן הסכמה מלאה"
+                     f"{price_str} (ציון טכני {score:.0f}/100)."
+                     + (f" {news_note}" if news_note else "")
+                     + " 👈 בדוק את הניתוח המלא לפני פעולה.")
         elif entry_point:
             title = (f"🟢 {symbol}: נקודת הכניסה הגיעה — ההמלצה (קנייה) נפגשה עם סיגנל טכני חיובי. "
                      f"שני הצדדים מסכימים{price_str} (ציון טכני {score:.0f}/100). 👈 בדוק במערכת.")
