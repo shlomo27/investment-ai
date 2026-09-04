@@ -419,6 +419,19 @@ async def _run_news_watch() -> dict:
             if strong_x:
                 x_flag = " 🔥X" if x_score > 0 else " 🧊X"
 
+            # Size the insider activity when the news read is negative. A Form 4
+            # story is the commonest kind of negative headline we surface, and
+            # "an executive sold shares" is not something a holder can weigh
+            # without knowing how much of their position it was. Fetched only
+            # on negative reads, so the extra call stays rare.
+            insider = None
+            if news_action == "SELL":
+                try:
+                    from app.services.market_data.finnhub_service import get_finnhub_service
+                    insider = await get_finnhub_service().get_insider_transactions(symbol)
+                except Exception as ins_exc:
+                    logger.debug(f"[news_watcher] insider context failed for {symbol}: {ins_exc}")
+
             emoji, decision = _COMBINED.get((news_action, ta_signal), ("📊", "עקוב"))
 
             # When BOTH news and TA say WAIT there is no actionable direction —
@@ -485,6 +498,7 @@ async def _run_news_watch() -> dict:
                 "x_buzz_summary":  x_summary,
                 "combined":        decision,
                 "guidance":        _guidance(news_action, ta_signal),
+                "insider":         insider,
                 "sources":         list({a["source"] for a in new_articles}),
                 "articles":        [{"title": a["title"], "source": a["source"], "url": a.get("url","")} for a in new_articles[:3]],
             }

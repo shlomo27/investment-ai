@@ -159,6 +159,70 @@ class FinnhubService:
 
         return result
 
+    async def get_insider_transactions(self, symbol: str, months: int = 6) -> Optional[Dict[str, Any]]:
+        """Share-level insider activity, which our EDGAR source cannot provide.
+
+        EDGAR full-text search returns filing metadata only — who filed and
+        when — so a Form 4 could be reported but never sized. "An executive
+        sold shares" is not information a holder can weigh; "sold 17,557
+        shares, 42% of the position" is. Finnhub returns the share counts and
+        the holding after the trade, which is what makes the percentage
+        computable at all.
+        """
+        if not self.is_configured():
+            return None
+        try:
+            frm = (datetime.now(timezone.utc) - timedelta(days=months * 30)).strftime("%Y-%m-%d")
+            to = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"{BASE_URL}/stock/insider-transactions",
+                    params={"symbol": symbol, "from": frm, "to": to},
+                    headers=self._headers(),
+                )
+                if resp.status_code != 200:
+                    return None
+                rows = (resp.json() or {}).get("data") or []
+
+            bought = sold = 0
+            recent = []
+            for r in rows:
+                change = r.get("change")
+                if change is None:
+                    continue
+                change = int(change)
+                if change > 0:
+                    bought += change
+                else:
+                    sold += -change
+                held_after = r.get("share")
+                pct = None
+                if change < 0 and held_after is not None:
+                    before = int(held_after) + (-change)
+                    if before > 0:
+                        pct = round(-change / before * 100, 1)
+                recent.append({
+                    "name": r.get("name"),
+                    "change": change,
+                    "held_after": held_after,
+                    "pct_of_holding": pct,
+                    "price": r.get("transactionPrice"),
+                    "date": r.get("transactionDate") or r.get("filingDate"),
+                })
+
+            recent.sort(key=lambda x: abs(x["change"] or 0), reverse=True)
+            return {
+                "months": months,
+                "filings": len(recent),
+                "shares_bought": bought,
+                "shares_sold": sold,
+                "net_shares": bought - sold,
+                "largest": recent[:3],
+            }
+        except Exception as e:
+            logger.debug("Finnhub insider transactions failed", symbol=symbol, error=str(e))
+            return None
+
     async def get_news(self, symbol: str, days_back: int = 7) -> List[NewsItem]:
         """Company news from Finnhub — supplements NewsAPI."""
         if not self.is_configured():

@@ -546,6 +546,36 @@ const Recommendations: React.FC = () => {
                               {notif.internal_detail.current_price ? ` · $${Number(notif.internal_detail.current_price).toFixed(2)}` : ""}
                             </p>
                           )}
+                          {/* Size the insider activity. "An executive sold
+                              shares" is not something a holder can weigh; the
+                              share count, the price and what fraction of the
+                              position it was are what make it a fact rather
+                              than a mood. */}
+                          {notif.internal_detail.insider?.filings > 0 && (
+                            <div>
+                              <p>
+                                <span className="text-gray-500 font-medium">{isHe ? "מסחר פנימי: " : "Insider activity: "}</span>
+                                {isHe
+                                  ? `${notif.internal_detail.insider.filings} דיווחים ב-${notif.internal_detail.insider.months} חודשים · `
+                                  : `${notif.internal_detail.insider.filings} filings over ${notif.internal_detail.insider.months} months · `}
+                                <span className={notif.internal_detail.insider.net_shares >= 0 ? "text-green-400" : "text-red-400"}>
+                                  {isHe ? "נטו " : "net "}
+                                  {notif.internal_detail.insider.net_shares >= 0 ? "+" : ""}
+                                  {Number(notif.internal_detail.insider.net_shares).toLocaleString("en")}
+                                  {isHe ? " מניות" : " shares"}
+                                </span>
+                              </p>
+                              {(notif.internal_detail.insider.largest || []).map((t: any, i: number) => (
+                                <p key={i} className="text-gray-500 pr-3">
+                                  {t.name} · {t.change < 0 ? (isHe ? "מכר" : "sold") : (isHe ? "קנה" : "bought")}{" "}
+                                  {Math.abs(t.change).toLocaleString("en")}{isHe ? " מניות" : " shares"}
+                                  {t.pct_of_holding != null ? (isHe ? ` (${t.pct_of_holding}% מהחזקתו)` : ` (${t.pct_of_holding}% of holding)`) : ""}
+                                  {t.price ? ` · $${Number(t.price).toFixed(2)}` : ""}
+                                  {t.date ? ` · ${t.date}` : ""}
+                                </p>
+                              ))}
+                            </div>
+                          )}
                           {notif.internal_detail.x_buzz_posts > 0 && (
                             <p>
                               <span className="text-gray-500 font-medium">{isHe ? "רשת X: " : "X buzz: "}</span>
