@@ -197,10 +197,18 @@ def _guidance(news_action: str, ta_signal: str) -> dict:
     WATCHING = ("המערכת ממשיכה לעקוב אחרי המניה כל 30 דקות. "
                 "אם הסיגנל הטכני או קריאת החדשות ישתנו — תקבל התראה. "
                 "עד אז אין צורך לבדוק ידנית.")
+    # Short form for the branches that end in a call to act. Every branch has
+    # to close the loop, positive ones included: a reader told "this is a
+    # possible entry point" and nothing more does not know whether they must
+    # decide now or will hear again if it changes. The long form would blunt a
+    # call to act by ending on "no need to check"; this states the follow-up
+    # without softening the instruction.
+    WATCHING_SHORT = "אם המצב ישתנה — תקבל התראה."
 
     if news_action == "SELL" and bearish_ta:
         return {
-            "holder": "החדשות והניתוח הטכני שליליים שניהם. זהו סיגנל מכירה — שקול לצמצם או לצאת.",
+            "holder": "החדשות והניתוח הטכני שליליים שניהם. זהו סיגנל מכירה — "
+                      "שקול לצמצם או לצאת. " + WATCHING_SHORT,
             "watcher": "אל תיכנס כעת. " + WATCHING,
         }
     if news_action == "SELL" and bullish_ta:
@@ -218,7 +226,8 @@ def _guidance(news_action: str, ta_signal: str) -> dict:
     if news_action == "BUY" and bullish_ta:
         return {
             "holder": "החדשות והטכני חיוביים שניהם. אם אתה מחזיק — אין סיבה לשנות. " + WATCHING,
-            "watcher": "זו נקודת כניסה אפשרית. בדוק את הניתוח המלא, את יעד המחיר ואת הסטופ.",
+            "watcher": "זו נקודת כניסה אפשרית. בדוק את הניתוח המלא, את יעד המחיר "
+                       "ואת הסטופ. " + WATCHING_SHORT,
         }
     if news_action == "BUY" and bearish_ta:
         return {
@@ -232,13 +241,15 @@ def _guidance(news_action: str, ta_signal: str) -> dict:
         }
     if bearish_ta:
         return {
-            "holder": "הסיגנל הטכני שלילי, ללא חדשות מהותיות. שקול לבדוק את הפוזיציה.",
+            "holder": "הסיגנל הטכני שלילי, ללא חדשות מהותיות. שקול לבדוק את הפוזיציה. "
+                      + WATCHING_SHORT,
             "watcher": "אל תיכנס כעת. " + WATCHING,
         }
     if bullish_ta:
         return {
             "holder": "הסיגנל הטכני חיובי, ללא חדשות מהותיות. אין פעולה נדרשת. " + WATCHING,
-            "watcher": "התזמון תומך, אך אין כאן אישור מהחדשות. בדוק את הניתוח המלא.",
+            "watcher": "התזמון תומך, אך אין כאן אישור מהחדשות. בדוק את הניתוח המלא. "
+                       + WATCHING_SHORT,
         }
     return {"holder": "אין פעולה נדרשת. " + WATCHING, "watcher": "המתן. " + WATCHING}
 
