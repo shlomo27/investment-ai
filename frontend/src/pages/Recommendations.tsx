@@ -511,6 +511,24 @@ const Recommendations: React.FC = () => {
                       )}
                       {expandedNotif === notif.id && notif.internal_detail && (
                         <div className="mt-3 pt-3 border-t border-gray-800 space-y-2 text-xs text-gray-400">
+                          {/* What to do, before the raw facts. The alert used to
+                              state a label — "negative news, monitor" — and stop
+                              there, leaving a holder unable to tell whether they
+                              were being told to sell. A holder and someone
+                              considering entry need different answers, so both
+                              are spelled out. */}
+                          {notif.internal_detail.guidance && (
+                            <div className="rounded-lg bg-gray-800/60 border border-gray-700 p-2 space-y-1">
+                              <p className="text-gray-300">
+                                <span className="text-gray-500 font-medium">{isHe ? "אם אתה מחזיק: " : "If you hold: "}</span>
+                                {notif.internal_detail.guidance.holder}
+                              </p>
+                              <p className="text-gray-300">
+                                <span className="text-gray-500 font-medium">{isHe ? "אם שקלת להיכנס: " : "If considering entry: "}</span>
+                                {notif.internal_detail.guidance.watcher}
+                              </p>
+                            </div>
+                          )}
                           {notif.internal_detail.news_summary && (
                             <p>
                               <span className="text-gray-500 font-medium">{isHe ? "סיכום החדשות: " : "News summary: "}</span>
@@ -531,8 +549,14 @@ const Recommendations: React.FC = () => {
                           {notif.internal_detail.x_buzz_posts > 0 && (
                             <p>
                               <span className="text-gray-500 font-medium">{isHe ? "רשת X: " : "X buzz: "}</span>
-                              {notif.internal_detail.x_buzz_posts} {isHe ? "פוסטים, סנטימנט" : "posts, sentiment"}{" "}
-                              {Number(notif.internal_detail.x_buzz_score).toFixed(2)}
+                              {notif.internal_detail.x_buzz_posts} {isHe ? "פוסטים" : "posts"} ·{" "}
+                              {/* 🔥 in the title means positive buzz, but next to
+                                  "negative news" it reads as intensity and made an
+                                  alert look worse than it was. Name the direction. */}
+                              {Number(notif.internal_detail.x_buzz_score) > 0
+                                ? (isHe ? "סנטימנט חיובי" : "positive sentiment")
+                                : (isHe ? "סנטימנט שלילי" : "negative sentiment")}{" "}
+                              ({Number(notif.internal_detail.x_buzz_score).toFixed(2)})
                             </p>
                           )}
                           {notif.internal_detail.senior_notes && (

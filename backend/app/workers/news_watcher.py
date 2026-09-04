@@ -173,6 +173,65 @@ _COMBINED = {
 }
 
 
+def _guidance(news_action: str, ta_signal: str) -> dict:
+    """What the reader should take from this alert.
+
+    The alert stated a label — "negative news — monitor" — and left it there.
+    "Monitor" is not an instruction: a holder reading it does not know whether
+    they are being told to sell, and someone considering entry does not know
+    whether to wait. Both need to hear it in the same three states the rest of
+    the product uses, and they need DIFFERENT answers, because a fact that
+    means "no action" for a holder can still mean "do not enter" for everyone
+    else.
+    """
+    bearish_ta = ta_signal in ("SELL_NOW", "STRONG_SELL")
+    bullish_ta = ta_signal in ("BUY_NOW", "STRONG_BUY")
+
+    if news_action == "SELL" and bearish_ta:
+        return {
+            "holder": "החדשות והניתוח הטכני שליליים שניהם. זהו סיגנל מכירה — שקול לצמצם או לצאת.",
+            "watcher": "אל תיכנס כעת.",
+        }
+    if news_action == "SELL" and bullish_ta:
+        return {
+            "holder": "החדשות שליליות אך הטכני חיובי. אין כאן סיגנל מכירה, אבל גם אין הסכמה — "
+                      "קרא את הניתוח המלא לפני שאתה פועל.",
+            "watcher": "המתן. שני הצדדים אינם מסכימים.",
+        }
+    if news_action == "SELL":
+        return {
+            "holder": "חדשות שליליות, הניתוח הטכני נייטרלי. זה אינו סיגנל מכירה — "
+                      "אין פעולה נדרשת כרגע, אך שווה לקרוא את הכתבה ולעקוב.",
+            "watcher": "המתן עד שהתמונה תתבהר.",
+        }
+    if news_action == "BUY" and bullish_ta:
+        return {
+            "holder": "החדשות והטכני חיוביים שניהם. אם אתה מחזיק — אין סיבה לשנות.",
+            "watcher": "זו נקודת כניסה אפשרית. בדוק את הניתוח המלא, את יעד המחיר ואת הסטופ.",
+        }
+    if news_action == "BUY" and bearish_ta:
+        return {
+            "holder": "החדשות חיוביות אך הטכני שלילי — התזמון אינו תומך. אין פעולה נדרשת.",
+            "watcher": "המתן לייצוב הסיגנל הטכני.",
+        }
+    if news_action == "BUY":
+        return {
+            "holder": "חדשות חיוביות, הטכני נייטרלי. אין פעולה נדרשת.",
+            "watcher": "עדיין לא נקודת כניסה — הטכני לא אישר.",
+        }
+    if bearish_ta:
+        return {
+            "holder": "הסיגנל הטכני שלילי, ללא חדשות מהותיות. שקול לבדוק את הפוזיציה.",
+            "watcher": "אל תיכנס כעת.",
+        }
+    if bullish_ta:
+        return {
+            "holder": "הסיגנל הטכני חיובי, ללא חדשות מהותיות. אין פעולה נדרשת.",
+            "watcher": "התזמון תומך, אך אין כאן אישור מהחדשות. בדוק את הניתוח המלא.",
+        }
+    return {"holder": "אין פעולה נדרשת.", "watcher": "המתן."}
+
+
 async def _analyze_news_with_llm(symbol: str, articles: list) -> dict:
     """Claude Haiku analysis — ~$0.001/call. Falls back to NEUTRAL/WAIT/LOW on error."""
     from app.core.config import settings
@@ -425,6 +484,7 @@ async def _run_news_watch() -> dict:
                 "x_buzz_posts":    x_posts,
                 "x_buzz_summary":  x_summary,
                 "combined":        decision,
+                "guidance":        _guidance(news_action, ta_signal),
                 "sources":         list({a["source"] for a in new_articles}),
                 "articles":        [{"title": a["title"], "source": a["source"], "url": a.get("url","")} for a in new_articles[:3]],
             }
