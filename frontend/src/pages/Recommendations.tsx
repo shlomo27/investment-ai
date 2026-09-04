@@ -517,16 +517,30 @@ const Recommendations: React.FC = () => {
                               were being told to sell. A holder and someone
                               considering entry need different answers, so both
                               are spelled out. */}
-                          {notif.internal_detail.guidance && (
+                          {(notif.internal_detail.guidance_for_me || notif.internal_detail.guidance) && (
                             <div className="rounded-lg bg-gray-800/60 border border-gray-700 p-2 space-y-1">
-                              <p className="text-gray-300">
-                                <span className="text-gray-500 font-medium">{isHe ? "אם אתה מחזיק: " : "If you hold: "}</span>
-                                {notif.internal_detail.guidance.holder}
-                              </p>
-                              <p className="text-gray-300">
-                                <span className="text-gray-500 font-medium">{isHe ? "אם שקלת להיכנס: " : "If considering entry: "}</span>
-                                {notif.internal_detail.guidance.watcher}
-                              </p>
+                              {notif.internal_detail.guidance_for_me ? (
+                                <p className="text-gray-300">
+                                  <span className="text-gray-500 font-medium">
+                                    {notif.internal_detail.i_hold
+                                      ? (isHe ? "אתה מחזיק את המניה: " : "You hold this stock: ")
+                                      : (isHe ? "אתה עוקב אחרי המניה: " : "You follow this stock: ")}
+                                  </span>
+                                  {notif.internal_detail.guidance_for_me}
+                                </p>
+                              ) : (
+                                <>
+                                  {/* Alerts sent before per-recipient guidance existed. */}
+                                  <p className="text-gray-300">
+                                    <span className="text-gray-500 font-medium">{isHe ? "אם אתה מחזיק: " : "If you hold: "}</span>
+                                    {notif.internal_detail.guidance.holder}
+                                  </p>
+                                  <p className="text-gray-300">
+                                    <span className="text-gray-500 font-medium">{isHe ? "אם אתה עוקב בלבד: " : "If you only follow: "}</span>
+                                    {notif.internal_detail.guidance.watcher}
+                                  </p>
+                                </>
+                              )}
                             </div>
                           )}
                           {notif.internal_detail.news_summary && (

@@ -270,8 +270,13 @@ async def _analyze_news_with_llm(symbol: str, articles: list) -> dict:
                 "summary": "", "_llm_failed": True}
 
 
-async def _get_recipient_ids(symbol: str) -> list:
-    """Union of portfolio holders (qty>0) and watchlist alert users."""
+async def _get_recipient_ids(symbol: str, holders_only: bool = False) -> list:
+    """Union of portfolio holders (qty>0) and watchlist alert users.
+
+    holders_only returns just the holders, so an alert can address each reader
+    as what they actually are instead of printing both cases and leaving them
+    to work out which line applies.
+    """
     from app.core.database import AsyncSessionLocal
     from app.db.models.portfolio import Portfolio
     from app.db.models.watchlist import Watchlist
@@ -285,7 +290,10 @@ async def _get_recipient_ids(symbol: str) -> list:
                 Watchlist.symbol==symbol, Watchlist.alert_on_technical_signal==True
             ).distinct()
         )
-        return list({r[0] for r in pf.all()} | {r[0] for r in wl.all()})
+        holders = {r[0] for r in pf.all()}
+        if holders_only:
+            return list(holders)
+        return list(holders | {r[0] for r in wl.all()})
 
 
 async def _run_news_watch() -> dict:
@@ -503,10 +511,24 @@ async def _run_news_watch() -> dict:
                 "articles":        [{"title": a["title"], "source": a["source"], "url": a.get("url","")} for a in new_articles[:3]],
             }
 
+            # Address each reader as what they are. The alert reaches holders
+            # and watchlist followers, and printing both the holder case and
+            # the "if you were considering entry" case left every reader to
+            # work out which half was theirs — the half that did not apply
+            # being, for a holder, a suggestion to wait before buying a stock
+            # they already own.
+            holder_ids = set(await _get_recipient_ids(symbol, holders_only=True))
+            guide = detail["guidance"]
+
             async with AsyncSessionLocal() as db:
                 for uid in recipient_ids:
+                    per_user = dict(detail)
+                    per_user["guidance_for_me"] = (
+                        guide["holder"] if uid in holder_ids else guide["watcher"]
+                    )
+                    per_user["i_hold"] = uid in holder_ids
                     await notifier.send_notification(
-                        user_id=uid, recommendation_id=None, internal_detail=detail,
+                        user_id=uid, recommendation_id=None, internal_detail=per_user,
                         db=db, notification_type=NotificationType.ALERT, title=title,
                     )
 
