@@ -187,49 +187,60 @@ def _guidance(news_action: str, ta_signal: str) -> dict:
     bearish_ta = ta_signal in ("SELL_NOW", "STRONG_SELL")
     bullish_ta = ta_signal in ("BUY_NOW", "STRONG_BUY")
 
+    # Telling someone "no action needed" and stopping leaves them to decide how
+    # often to come back and check — which is the work the system exists to do
+    # for them. Every branch that ends in waiting says who is watching, how
+    # often, and what would trigger the next message. It is a promise the
+    # system actually keeps: this symbol is held or followed by the reader, so
+    # both the technical scan and the news read cover it every 30 minutes and
+    # alert on a confirmed change.
+    WATCHING = ("המערכת ממשיכה לעקוב אחרי המניה כל 30 דקות. "
+                "אם הסיגנל הטכני או קריאת החדשות ישתנו — תקבל התראה. "
+                "עד אז אין צורך לבדוק ידנית.")
+
     if news_action == "SELL" and bearish_ta:
         return {
             "holder": "החדשות והניתוח הטכני שליליים שניהם. זהו סיגנל מכירה — שקול לצמצם או לצאת.",
-            "watcher": "אל תיכנס כעת.",
+            "watcher": "אל תיכנס כעת. " + WATCHING,
         }
     if news_action == "SELL" and bullish_ta:
         return {
             "holder": "החדשות שליליות אך הטכני חיובי. אין כאן סיגנל מכירה, אבל גם אין הסכמה — "
-                      "קרא את הניתוח המלא לפני שאתה פועל.",
-            "watcher": "המתן. שני הצדדים אינם מסכימים.",
+                      "קרא את הניתוח המלא לפני שאתה פועל. " + WATCHING,
+            "watcher": "המתן. שני הצדדים אינם מסכימים. " + WATCHING,
         }
     if news_action == "SELL":
         return {
             "holder": "חדשות שליליות, הניתוח הטכני נייטרלי. זה אינו סיגנל מכירה — "
-                      "אין פעולה נדרשת כרגע, אך שווה לקרוא את הכתבה ולעקוב.",
-            "watcher": "המתן עד שהתמונה תתבהר.",
+                      "אין פעולה נדרשת כרגע, אך שווה לקרוא את הכתבה. " + WATCHING,
+            "watcher": "המתן עד שהתמונה תתבהר. " + WATCHING,
         }
     if news_action == "BUY" and bullish_ta:
         return {
-            "holder": "החדשות והטכני חיוביים שניהם. אם אתה מחזיק — אין סיבה לשנות.",
+            "holder": "החדשות והטכני חיוביים שניהם. אם אתה מחזיק — אין סיבה לשנות. " + WATCHING,
             "watcher": "זו נקודת כניסה אפשרית. בדוק את הניתוח המלא, את יעד המחיר ואת הסטופ.",
         }
     if news_action == "BUY" and bearish_ta:
         return {
-            "holder": "החדשות חיוביות אך הטכני שלילי — התזמון אינו תומך. אין פעולה נדרשת.",
-            "watcher": "המתן לייצוב הסיגנל הטכני.",
+            "holder": "החדשות חיוביות אך הטכני שלילי — התזמון אינו תומך. אין פעולה נדרשת. " + WATCHING,
+            "watcher": "המתן לייצוב הסיגנל הטכני. " + WATCHING,
         }
     if news_action == "BUY":
         return {
-            "holder": "חדשות חיוביות, הטכני נייטרלי. אין פעולה נדרשת.",
-            "watcher": "עדיין לא נקודת כניסה — הטכני לא אישר.",
+            "holder": "חדשות חיוביות, הטכני נייטרלי. אין פעולה נדרשת. " + WATCHING,
+            "watcher": "עדיין לא נקודת כניסה — הטכני לא אישר. " + WATCHING,
         }
     if bearish_ta:
         return {
             "holder": "הסיגנל הטכני שלילי, ללא חדשות מהותיות. שקול לבדוק את הפוזיציה.",
-            "watcher": "אל תיכנס כעת.",
+            "watcher": "אל תיכנס כעת. " + WATCHING,
         }
     if bullish_ta:
         return {
-            "holder": "הסיגנל הטכני חיובי, ללא חדשות מהותיות. אין פעולה נדרשת.",
+            "holder": "הסיגנל הטכני חיובי, ללא חדשות מהותיות. אין פעולה נדרשת. " + WATCHING,
             "watcher": "התזמון תומך, אך אין כאן אישור מהחדשות. בדוק את הניתוח המלא.",
         }
-    return {"holder": "אין פעולה נדרשת.", "watcher": "המתן."}
+    return {"holder": "אין פעולה נדרשת. " + WATCHING, "watcher": "המתן. " + WATCHING}
 
 
 async def _analyze_news_with_llm(symbol: str, articles: list) -> dict:
