@@ -1525,6 +1525,50 @@ async def earnings_status(
 
 # ─── Master List ──────────────────────────────────────────────────────────────
 
+@router.get("/analyses/pause")
+async def get_analyses_pause(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Whether paid analyses are currently paused, and until when."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.workers.cost_guard import get_pause_status
+
+    return await get_pause_status()
+
+
+@router.post("/analyses/pause")
+async def set_analyses_pause(
+    hours: int = 24,
+    reason: str = "",
+    current_user: User = Depends(get_current_active_user),
+):
+    """Stop every paid analysis for a set number of hours.
+
+    Always bounded: a kill switch with no deadline gets forgotten, and a system
+    that has been silently dead for a fortnight is worse than one that costs
+    money. Free work — the technical scan and its alerts — keeps running, so
+    the product stays alive for anyone looking at it.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.workers.cost_guard import pause_analyses
+
+    return await pause_analyses(hours=hours, reason=reason)
+
+
+@router.delete("/analyses/pause")
+async def clear_analyses_pause(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Resume paid analyses now."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.workers.cost_guard import resume_analyses
+
+    return await resume_analyses()
+
+
 @router.post("/recommendations/retire-stale")
 async def retire_stale_recommendations_endpoint(
     current_user: User = Depends(get_current_active_user),

@@ -265,6 +265,17 @@ class SentimentService:
         the call fails. .TA symbols are skipped (little Hebrew X coverage).
         """
         empty = {"score": 0.0, "count": 0, "posts": [], "themes": []}
+
+        # Grok bills per search, and this is reached from several paths — the
+        # deep analysis, the news pass, and on-demand screens. Check the pause
+        # here rather than at each caller, so no route can spend around it.
+        try:
+            from app.workers.cost_guard import is_analysis_paused
+            if await is_analysis_paused():
+                return empty
+        except Exception:
+            pass
+
         api_key = (settings.XAI_API_KEY or "").strip()
         if not api_key:
             return empty

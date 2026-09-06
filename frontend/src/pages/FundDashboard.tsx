@@ -93,6 +93,27 @@ const FundDashboard: React.FC = () => {
   const [demoLabel, setDemoLabel] = useState("");
   const [demoCopied, setDemoCopied] = useState(false);
   const [staleResult, setStaleResult] = useState<string | null>(null);
+  const [pause, setPause] = useState<Awaited<ReturnType<typeof marketApi.getAnalysesPause>> | null>(null);
+  const [pauseBusy, setPauseBusy] = useState(false);
+
+  const loadPause = async () => {
+    try { setPause(await marketApi.getAnalysesPause()); } catch { /* admin only */ }
+  };
+  useEffect(() => { loadPause(); }, []);
+
+  const handlePause = async (hours: number) => {
+    setPauseBusy(true);
+    try { await marketApi.pauseAnalyses(hours); await loadPause(); }
+    catch (e: any) { alert(e?.response?.data?.detail || "Failed"); }
+    setPauseBusy(false);
+  };
+
+  const handleResume = async () => {
+    setPauseBusy(true);
+    try { await marketApi.resumeAnalyses(); await loadPause(); }
+    catch (e: any) { alert(e?.response?.data?.detail || "Failed"); }
+    setPauseBusy(false);
+  };
   const [staleBusy, setStaleBusy] = useState(false);
 
   // The retirement runs daily at 06:00; this clears a card that has outlived
@@ -688,6 +709,55 @@ const FundDashboard: React.FC = () => {
                 </p>
               </div>
             )}
+
+            {/* Deliberate spend stop. Bounded on purpose: a kill switch with no
+                deadline gets forgotten, and a system silently dead for a
+                fortnight is worse than one that costs money. */}
+            <div className="mt-4 pt-4 border-t border-gray-800">
+              <p className="text-sm text-gray-300">
+                {isHe ? "עצירת ניתוחים בתשלום" : "Pause paid analyses"}
+              </p>
+              <p className="text-xs text-gray-500 mb-2">
+                {isHe
+                  ? "עוצר את כל הקריאות שעולות כסף (Claude, GPT, Gemini, Grok). הניתוח הטכני וההתראות שלו ממשיכים — הם חינם."
+                  : "Stops every call that costs money (Claude, GPT, Gemini, Grok). The technical scan and its alerts keep running — they are free."}
+              </p>
+              {pause?.paused ? (
+                <div className="rounded-lg bg-yellow-900/20 border border-yellow-700/40 p-2">
+                  <p className="text-xs text-yellow-300">
+                    {isHe ? "הניתוחים מושהים" : "Analyses are paused"}
+                    {pause.until
+                      ? ` · ${isHe ? "עד" : "until"} ${new Date(pause.until).toLocaleString(isHe ? "he-IL" : "en-US")}`
+                      : ""}
+                  </p>
+                  <button
+                    onClick={handleResume}
+                    disabled={pauseBusy}
+                    className="mt-2 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-green-300 border border-gray-700 hover:border-green-700 disabled:text-gray-600"
+                  >
+                    {isHe ? "חדש ניתוחים עכשיו" : "Resume now"}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {[
+                    { h: 24, he: "24 שעות", en: "24 hours" },
+                    { h: 72, he: "3 ימים", en: "3 days" },
+                    { h: 168, he: "שבוע", en: "1 week" },
+                    { h: 720, he: "30 יום", en: "30 days" },
+                  ].map((o) => (
+                    <button
+                      key={o.h}
+                      onClick={() => handlePause(o.h)}
+                      disabled={pauseBusy}
+                      className="px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-yellow-300 border border-gray-700 hover:border-yellow-700 disabled:text-gray-600"
+                    >
+                      {isHe ? o.he : o.en}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div className="mt-4 pt-4 border-t border-gray-800">
               <div className="flex items-center justify-between gap-3">

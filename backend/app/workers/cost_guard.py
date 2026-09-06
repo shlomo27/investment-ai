@@ -54,8 +54,86 @@ async def get_today_spend() -> float:
         return 0.0
 
 
+# ─── Deliberate pause ─────────────────────────────────────────────────────────
+# Distinct from the outage gate below: that one is set BY a failure and cleared
+# by the next success, so it cannot express "stop spending, I mean it". This is
+# set by a person, survives successful analyses, and lifts only when its own
+# deadline passes or someone clears it. It always carries an expiry — a kill
+# switch with no deadline gets forgotten, and a system that has been silently
+# dead for a fortnight is worse than one that costs money.
+_PAUSE_KEY = "investment_ai:analyses_paused_until"
+MAX_PAUSE_DAYS = 30
+
+
+async def pause_analyses(hours: int, reason: str = "") -> dict:
+    """Stop every paid analysis for `hours`. Returns the resulting state."""
+    import json
+    from datetime import datetime, timezone, timedelta
+
+    hours = max(1, min(int(hours), MAX_PAUSE_DAYS * 24))
+    until = datetime.now(timezone.utc) + timedelta(hours=hours)
+    try:
+        r = await _redis()
+        await r.set(_PAUSE_KEY,
+                    json.dumps({"until": until.isoformat(), "reason": reason}),
+                    ex=hours * 3600)
+        await r.aclose()
+    except Exception as exc:
+        return {"paused": False, "error": str(exc)}
+    return {"paused": True, "until": until.isoformat(), "hours": hours, "reason": reason}
+
+
+async def resume_analyses() -> dict:
+    try:
+        r = await _redis()
+        await r.delete(_PAUSE_KEY)
+        await r.aclose()
+    except Exception as exc:
+        return {"paused": False, "error": str(exc)}
+    return {"paused": False}
+
+
+async def get_pause_status() -> dict:
+    import json
+
+    try:
+        r = await _redis()
+        raw = await r.get(_PAUSE_KEY)
+        ttl = await r.ttl(_PAUSE_KEY) if raw else -2
+        await r.aclose()
+    except Exception:
+        return {"paused": False}
+    if not raw:
+        return {"paused": False}
+    try:
+        state = json.loads(raw)
+    except (ValueError, TypeError):
+        state = {}
+    return {"paused": True, "until": state.get("until"),
+            "reason": state.get("reason", ""),
+            "seconds_left": max(0, ttl) if ttl and ttl > 0 else None}
+
+
+async def is_analysis_paused() -> bool:
+    try:
+        r = await _redis()
+        v = await r.get(_PAUSE_KEY)
+        await r.aclose()
+        return bool(v)
+    except Exception:
+        return False  # Redis down must not silently halt the system
+
+
 async def budget_exceeded() -> bool:
-    """True if a daily cap is set (>0) and today's estimated spend reached it."""
+    """True if analyses are paused, or a daily cap is set and today's spend
+    reached it.
+
+    The pause is folded in here rather than added as a separate check at each
+    call site: every path that spends money already consults this, so one
+    switch covers all of them and no future path can forget it.
+    """
+    if await is_analysis_paused():
+        return True
     from app.core.config import settings
     cap = settings.DAILY_CLAUDE_BUDGET_USD or 0.0
     if cap <= 0:

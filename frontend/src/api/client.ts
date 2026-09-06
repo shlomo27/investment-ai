@@ -565,6 +565,26 @@ export const marketApi = {
     return response.data;
   },
 
+  getAnalysesPause: async (): Promise<{
+    paused: boolean;
+    until?: string;
+    reason?: string;
+    seconds_left?: number | null;
+  }> => {
+    const response = await api.get("/market/analyses/pause");
+    return response.data;
+  },
+
+  pauseAnalyses: async (hours: number, reason = ""): Promise<any> => {
+    const response = await api.post("/market/analyses/pause", null, { params: { hours, reason } });
+    return response.data;
+  },
+
+  resumeAnalyses: async (): Promise<any> => {
+    const response = await api.delete("/market/analyses/pause");
+    return response.data;
+  },
+
   retireStaleRecommendations: async (): Promise<any> => {
     const response = await api.post("/market/recommendations/retire-stale");
     return response.data;

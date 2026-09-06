@@ -329,6 +329,14 @@ async def _run_news_watch() -> dict:
     from sqlalchemy import select
     import redis.asyncio as aioredis
 
+    # The news pass spends on its own account — Claude Haiku for the article
+    # read and Grok for the X sentiment — and never consulted the budget guard,
+    # so it would have kept billing straight through a deliberate pause.
+    from app.workers.cost_guard import is_analysis_paused
+    if await is_analysis_paused():
+        logger.info("[news_watcher] analyses paused — skipping")
+        return {"skipped": True, "reason": "analyses paused"}
+
     redis_client = aioredis.from_url(settings.REDIS_URL)
     notifier = NotificationService()
     bearer = getattr(settings, "TWITTER_BEARER_TOKEN", "")
