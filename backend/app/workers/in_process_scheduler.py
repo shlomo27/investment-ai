@@ -78,11 +78,36 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         prev_raw = await r.get(last_signal_key)
         prev_signal = prev_raw.decode() if prev_raw else None
 
+        import json as _json
+        import time as _time
+
+        def _load_pending(raw):
+            if not raw:
+                return {}
+            try:
+                return _json.loads(raw)
+            except (ValueError, TypeError):
+                return {}
+
         # Alert on TRANSITIONS only — a signal that merely persists past the
         # 4h cooldown must not re-alert ("קנה (קודם: קנה)" repeats confused
         # holders into thinking something changed).
         if prev_signal == signal:
-            await r.delete(pending_key)          # a flicker that reverted
+            # Decay the pending change rather than discarding it. Deleting it
+            # outright meant a signal drifting across its threshold — flipping
+            # WAIT, BUY, WAIT as the score hovers — reset the counter on every
+            # bounce and could never reach confirmation, so a genuine multi-day
+            # drift stayed silent forever. GOOGL fell from a 61 technical score
+            # to 53 over three days and the holder heard nothing. Decaying lets
+            # a change that shows up more often than not still accumulate,
+            # while a true revert decays to nothing and clears.
+            pending = _load_pending(await r.get(pending_key))
+            count = int(pending.get("count", 0)) - 1
+            if pending and count > 0:
+                pending["count"] = count
+                await r.set(pending_key, _json.dumps(pending), ex=6 * 3600)
+            else:
+                await r.delete(pending_key)
             await r.expire(last_signal_key, 7 * 24 * 3600)
             return False
 
@@ -97,24 +122,19 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         # and BUY again minutes later on a 1.7% price move, and the holder got
         # two alerts describing a reversal that never happened. Requiring the
         # new state to persist costs one scan of delay and removes the whipsaw.
-        import json as _json
-        import time as _time
-
-        pending_raw = await r.get(pending_key)
-        pending = {}
-        if pending_raw:
-            try:
-                pending = _json.loads(pending_raw)
-            except (ValueError, TypeError):
-                pending = {}
-
+        pending = _load_pending(await r.get(pending_key))
         now_ts = _time.time()
+
         if pending.get("signal") != signal:
-            await r.set(pending_key, _json.dumps({"signal": signal, "first_seen": now_ts}),
-                        ex=6 * 3600)
-            logger.debug(f"[ta] {symbol}: {prev_signal} -> {signal} awaiting confirmation")
-            return False
-        if now_ts - float(pending.get("first_seen") or now_ts) < CONFIRM_SECONDS:
+            pending = {"signal": signal, "first_seen": now_ts, "count": 1}
+        else:
+            pending["count"] = int(pending.get("count", 1)) + 1
+        await r.set(pending_key, _json.dumps(pending), ex=6 * 3600)
+
+        elapsed = now_ts - float(pending.get("first_seen") or now_ts)
+        if int(pending.get("count", 1)) < 2 or elapsed < CONFIRM_SECONDS:
+            logger.debug(f"[ta] {symbol}: {prev_signal} -> {signal} "
+                         f"awaiting confirmation (count={pending.get('count')})")
             return False
 
         # Confirmed: the change held. Commit it and alert.

@@ -1573,6 +1573,83 @@ async def ta_scan_diagnostics(
     return out
 
 
+@router.get("/diagnostics/signal-state/{symbol}")
+async def signal_state(
+    symbol: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """The alerting state machine for one symbol, as it actually stands.
+
+    "I did not get an alert" has several possible causes that look identical
+    from outside: the confirmed baseline already equals the current signal, a
+    change is still awaiting confirmation, the same signal alerted recently and
+    is inside its cooldown, or nobody is subscribed. Show all four rather than
+    reasoning about which it might be.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.portfolio import Portfolio
+    from app.db.models.watchlist import Watchlist
+    from sqlalchemy import select as _sel
+    import json as _json
+    import redis.asyncio as aioredis
+
+    sym = symbol.upper()
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        confirmed = await r.get(f"investment_ai:ta_last_signal:{sym}")
+        confirmed_ttl = await r.ttl(f"investment_ai:ta_last_signal:{sym}")
+        pending_raw = await r.get(f"investment_ai:ta_pending_signal:{sym}")
+        cooldown = await r.get(f"investment_ai:ta_alert:{sym}")
+        cooldown_ttl = await r.ttl(f"investment_ai:ta_alert:{sym}")
+    finally:
+        await r.aclose()
+
+    def _dec(v):
+        return v.decode() if isinstance(v, bytes) else v
+
+    pending = None
+    if pending_raw:
+        try:
+            pending = _json.loads(_dec(pending_raw))
+        except (ValueError, TypeError):
+            pending = {"raw": _dec(pending_raw)}
+
+    async with AsyncSessionLocal() as db:
+        holders = {row[0] for row in (await db.execute(
+            _sel(Portfolio.user_id).where(Portfolio.symbol == sym, Portfolio.quantity > 0).distinct()
+        )).all()}
+        watchers = {row[0] for row in (await db.execute(
+            _sel(Watchlist.user_id).where(
+                Watchlist.symbol == sym,
+                Watchlist.alert_on_technical_signal == True,
+            ).distinct()
+        )).all()}
+        watch_rows = (await db.execute(
+            _sel(Watchlist.user_id, Watchlist.alert_on_technical_signal)
+            .where(Watchlist.symbol == sym)
+        )).all()
+
+    return {
+        "symbol": sym,
+        "confirmed_signal": _dec(confirmed),
+        "confirmed_expires_in_seconds": confirmed_ttl if confirmed_ttl and confirmed_ttl > 0 else None,
+        "pending_change": pending,
+        "cooldown_signal": _dec(cooldown),
+        "cooldown_expires_in_seconds": cooldown_ttl if cooldown_ttl and cooldown_ttl > 0 else None,
+        "recipients": {
+            "holders": len(holders),
+            "watchers_with_alerts_on": len(watchers),
+            "on_watchlist_total": len(watch_rows),
+            "watchlist_rows": [
+                {"user_id": u, "alerts_enabled": bool(a)} for u, a in watch_rows
+            ],
+        },
+    }
+
+
 @router.get("/analyses/pause")
 async def get_analyses_pause(
     current_user: User = Depends(get_current_active_user),

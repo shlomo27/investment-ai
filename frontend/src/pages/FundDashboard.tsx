@@ -96,6 +96,13 @@ const FundDashboard: React.FC = () => {
   const [pause, setPause] = useState<Awaited<ReturnType<typeof marketApi.getAnalysesPause>> | null>(null);
   const [pauseBusy, setPauseBusy] = useState(false);
   const [taScan, setTaScan] = useState<Awaited<ReturnType<typeof marketApi.getTaScanDiagnostics>> | null>(null);
+  const [sigSymbol, setSigSymbol] = useState("");
+  const [sigState, setSigState] = useState<any>(null);
+  const checkSignalState = async () => {
+    if (!sigSymbol.trim()) return;
+    try { setSigState(await marketApi.getSignalState(sigSymbol.trim().toUpperCase())); }
+    catch (e: any) { setSigState({ error: e?.response?.data?.detail || "Failed" }); }
+  };
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
@@ -769,6 +776,67 @@ const FundDashboard: React.FC = () => {
                     </p>
                   )}
                 </>
+              )}
+            </div>
+
+            {/* Why one symbol did or did not alert. The four possible causes
+                look identical from outside, so show all four instead of
+                reasoning about which it might be. */}
+            <div className="mt-4 pt-4 border-t border-gray-800">
+              <p className="text-sm text-gray-300">
+                {isHe ? "בדיקת מצב התראות למניה" : "Alert state for one symbol"}
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <input
+                  value={sigSymbol}
+                  onChange={(e) => setSigSymbol(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") checkSignalState(); }}
+                  placeholder={isHe ? "סימול (למשל GOOGL)" : "Symbol (e.g. GOOGL)"}
+                  className="flex-1 px-3 py-1.5 rounded-lg text-xs bg-gray-900 text-gray-200 border border-gray-800 placeholder-gray-600 focus:border-blue-600 focus:outline-none"
+                />
+                <button
+                  onClick={checkSignalState}
+                  disabled={!sigSymbol.trim()}
+                  className="shrink-0 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-blue-300 border border-gray-700 hover:border-blue-700 disabled:text-gray-600"
+                >
+                  {isHe ? "בדוק" : "Check"}
+                </button>
+              </div>
+              {sigState && (
+                <div className="mt-2 p-2 rounded-lg bg-gray-800/60 border border-gray-700 text-xs space-y-1">
+                  {sigState.error ? (
+                    <p className="text-red-400">{sigState.error}</p>
+                  ) : (
+                    <>
+                      <p className="text-gray-300">
+                        <span className="text-gray-500">{isHe ? "סיגנל מאושר אחרון: " : "Confirmed signal: "}</span>
+                        <span dir="ltr">{sigState.confirmed_signal || (isHe ? "— אין" : "— none")}</span>
+                      </p>
+                      <p className="text-gray-300">
+                        <span className="text-gray-500">{isHe ? "שינוי ממתין לאימות: " : "Pending change: "}</span>
+                        <span dir="ltr">
+                          {sigState.pending_change
+                            ? `${sigState.pending_change.signal} (×${sigState.pending_change.count ?? 1})`
+                            : (isHe ? "אין" : "none")}
+                        </span>
+                      </p>
+                      <p className="text-gray-300">
+                        <span className="text-gray-500">{isHe ? "צינון פעיל: " : "Cooldown: "}</span>
+                        <span dir="ltr">
+                          {sigState.cooldown_signal
+                            ? `${sigState.cooldown_signal} · ${Math.ceil((sigState.cooldown_expires_in_seconds || 0) / 60)}m`
+                            : (isHe ? "אין" : "none")}
+                        </span>
+                      </p>
+                      <p className={sigState.recipients?.holders + sigState.recipients?.watchers_with_alerts_on > 0 ? "text-gray-300" : "text-red-400"}>
+                        <span className="text-gray-500">{isHe ? "נמענים: " : "Recipients: "}</span>
+                        {isHe
+                          ? `${sigState.recipients?.holders ?? 0} מחזיקים · ${sigState.recipients?.watchers_with_alerts_on ?? 0} עוקבים עם התראות (מתוך ${sigState.recipients?.on_watchlist_total ?? 0} ברשימת מעקב)`
+                          : `${sigState.recipients?.holders ?? 0} holders · ${sigState.recipients?.watchers_with_alerts_on ?? 0} watchers with alerts on (of ${sigState.recipients?.on_watchlist_total ?? 0} watching)`}
+                      </p>
+                    </>
+                  )}
+                </div>
               )}
             </div>
 
