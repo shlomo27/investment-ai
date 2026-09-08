@@ -33,6 +33,27 @@ class TechnicalAnalystAgent:
         self.yahoo_service = YahooFinanceService()
         self.tase_service = TASEService()
 
+    async def _bars_from_alpaca(self, symbol: str):
+        """OHLCV bars from Alpaca as a Yahoo-shaped DataFrame, or None."""
+        try:
+            import pandas as pd
+            from app.services.market_data.alpaca_service import get_alpaca_service
+
+            bars = await get_alpaca_service().get_historical_bars(symbol, limit=250)
+            if not bars:
+                return None
+            df = pd.DataFrame(bars)
+            df["Date"] = pd.to_datetime(df["date"])
+            df = df.set_index("Date").rename(columns={
+                "open": "Open", "high": "High", "low": "Low",
+                "close": "Close", "volume": "Volume",
+            })[["Open", "High", "Low", "Close", "Volume"]]
+            logger.info("Technical bars served by Alpaca", symbol=symbol, bars=len(df))
+            return df
+        except Exception as exc:
+            logger.warning("Alpaca bars fallback failed", symbol=symbol, error=str(exc))
+            return None
+
     async def analyze(self, symbol: str, exchange: str, period: str = "1y", fallback_price: float | None = None) -> Dict[str, Any]:
         """
         Main analysis method. Fetches historical data and computes all technical indicators.
@@ -47,6 +68,15 @@ class TechnicalAnalystAgent:
                 df = await self.tase_service.get_tase_historical(symbol)
             else:
                 df = await self.yahoo_service.get_historical_prices(symbol, period)
+                # Yahoo is the only source of bars this path ever had, and it
+                # answers from a blocked IP range on Railway — so the free,
+                # always-on half of the product failed on exactly the stocks
+                # Yahoo happened to refuse, and the screen showed "Analysis
+                # failed" or span forever. Alpaca already serves bars for the
+                # bulk screener; use it here too rather than degrading to the
+                # info-derived fallback, which produces a far weaker read.
+                if df is None or df.empty:
+                    df = await self._bars_from_alpaca(symbol)
 
             if df is None or df.empty:
                 logger.warning("No historical price bars, falling back to info-derived analysis", symbol=symbol)
