@@ -565,6 +565,20 @@ export const marketApi = {
     return response.data;
   },
 
+  getTaScanDiagnostics: async (): Promise<{
+    ran: boolean;
+    detail?: string;
+    last_run?: string;
+    minutes_ago?: number | null;
+    scanned?: number;
+    success?: number;
+    alerted?: number;
+    errors?: number;
+  }> => {
+    const response = await api.get("/market/diagnostics/ta-scan");
+    return response.data;
+  },
+
   getAnalysesPause: async (): Promise<{
     paused: boolean;
     until?: string;

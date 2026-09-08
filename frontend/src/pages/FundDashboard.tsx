@@ -95,6 +95,19 @@ const FundDashboard: React.FC = () => {
   const [staleResult, setStaleResult] = useState<string | null>(null);
   const [pause, setPause] = useState<Awaited<ReturnType<typeof marketApi.getAnalysesPause>> | null>(null);
   const [pauseBusy, setPauseBusy] = useState(false);
+  const [taScan, setTaScan] = useState<Awaited<ReturnType<typeof marketApi.getTaScanDiagnostics>> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const d = await marketApi.getTaScanDiagnostics();
+        if (!cancelled) setTaScan(d);
+      } catch { /* admin only */ }
+    };
+    tick();
+    const timer = window.setInterval(tick, 60_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
 
   const loadPause = async () => {
     try { setPause(await marketApi.getAnalysesPause()); } catch { /* admin only */ }
@@ -709,6 +722,55 @@ const FundDashboard: React.FC = () => {
                 </p>
               </div>
             )}
+
+            {/* Whether the free half of the product is actually running.
+                The scan already wrote a heartbeat after every pass and nothing
+                displayed it, so "no alerts" could mean the job is dead, or
+                failing on every symbol, or working with nothing to report. */}
+            <div className="mt-4 pt-4 border-t border-gray-800">
+              <p className="text-sm text-gray-300">
+                {isHe ? "סריקה טכנית (חינם, רצה כל 30 דקות)" : "Technical scan (free, every 30 min)"}
+              </p>
+              {taScan === null ? (
+                <p className="text-xs text-gray-500 mt-1">{isHe ? "טוען..." : "Loading..."}</p>
+              ) : !taScan.ran ? (
+                <p className="text-xs text-red-400 mt-1">
+                  {isHe
+                    ? "לא נרשמה אף ריצה מוצלחת — הסריקה לא השלימה מעבר."
+                    : "No completed pass recorded — the scan has not finished a run."}
+                </p>
+              ) : (
+                <>
+                  <p className={`text-xs mt-1 ${
+                    (taScan.minutes_ago ?? 999) <= 45 ? "text-green-400"
+                    : (taScan.minutes_ago ?? 999) <= 180 ? "text-yellow-400"
+                    : "text-red-400"
+                  }`}>
+                    {isHe ? "ריצה אחרונה: לפני " : "Last run: "}
+                    {taScan.minutes_ago != null ? `${taScan.minutes_ago} ${isHe ? "דקות" : "min ago"}` : "—"}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {isHe
+                      ? `נסרקו ${taScan.scanned ?? 0} · הצליחו ${taScan.success ?? 0} · שגיאות ${taScan.errors ?? 0} · התראות שנשלחו ${taScan.alerted ?? 0}`
+                      : `${taScan.scanned ?? 0} scanned · ${taScan.success ?? 0} ok · ${taScan.errors ?? 0} errors · ${taScan.alerted ?? 0} alerts`}
+                  </p>
+                  {(taScan.errors ?? 0) > 0 && (taScan.errors ?? 0) >= (taScan.success ?? 0) && (
+                    <p className="text-xs text-red-400 mt-1">
+                      {isHe
+                        ? "רוב הסריקות נכשלות — כנראה בעיית נתוני מחיר, לא בעיית התראות."
+                        : "Most scans are failing — this is a price-data problem, not an alerting one."}
+                    </p>
+                  )}
+                  {(taScan.errors ?? 0) === 0 && (taScan.alerted ?? 0) === 0 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {isHe
+                        ? "הסריקה עובדת ולא היו שינויי סיגנל מאומתים — כלומר אין על מה להתריע."
+                        : "The scan is working and no confirmed signal changes occurred — nothing to alert on."}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
 
             {/* Deliberate spend stop. Bounded on purpose: a kill switch with no
                 deadline gets forgotten, and a system silently dead for a

@@ -1525,6 +1525,54 @@ async def earnings_status(
 
 # ─── Master List ──────────────────────────────────────────────────────────────
 
+@router.get("/diagnostics/ta-scan")
+async def ta_scan_diagnostics(
+    current_user: User = Depends(get_current_active_user),
+):
+    """Did the technical scan run, and what did it find?
+
+    The scan writes a heartbeat after every completed pass — symbols scanned,
+    how many produced an analysis, how many alerted, how many errored — and
+    nothing ever displayed it. So "I stopped getting alerts" could mean the job
+    is not running, or running and failing on every symbol, or running fine
+    with nothing to report, and there was no way to tell those apart.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.core.config import settings
+    from datetime import datetime, timezone
+    import redis.asyncio as aioredis
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        raw = await r.get("investment_ai:ta_scan:heartbeat")
+    finally:
+        await r.aclose()
+
+    if not raw:
+        return {"ran": False,
+                "detail": "No heartbeat recorded — the scan has not completed a pass."}
+
+    text = raw.decode() if isinstance(raw, bytes) else raw
+    parts = text.split("|")
+    out = {"ran": True, "raw": text, "last_run": parts[0] if parts else None}
+    for part in parts[1:]:
+        if "=" in part:
+            k, v = part.split("=", 1)
+            try:
+                out[k] = int(v)
+            except ValueError:
+                out[k] = v
+    try:
+        last = datetime.fromisoformat(out["last_run"])
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        out["minutes_ago"] = round((datetime.now(timezone.utc) - last).total_seconds() / 60, 1)
+    except Exception:
+        out["minutes_ago"] = None
+    return out
+
+
 @router.get("/analyses/pause")
 async def get_analyses_pause(
     current_user: User = Depends(get_current_active_user),
