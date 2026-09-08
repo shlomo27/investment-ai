@@ -77,6 +77,16 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         pending_key = f"investment_ai:ta_pending_signal:{symbol}"
         prev_raw = await r.get(last_signal_key)
         prev_signal = prev_raw.decode() if prev_raw else None
+        # Keep the baseline alive on every observation, not only on the paths
+        # that write it. While a change waits for confirmation the code returns
+        # early without touching this key, so a symbol in a drawn-out
+        # transition — days of a score wobbling across its threshold — could
+        # let its seven-day baseline lapse. Once it did, prev_signal read as
+        # None, "downgraded" evaluated False, and the branch below committed
+        # the new non-actionable signal silently. That is how GOOGL came to sit
+        # at a confirmed WAIT having never told anyone it had left BUY.
+        if prev_signal:
+            await r.expire(last_signal_key, 7 * 24 * 3600)
 
         import json as _json
         import time as _time
@@ -113,6 +123,13 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
 
         downgraded = prev_signal in ACTIONABLE and signal not in ACTIONABLE
         if signal not in ACTIONABLE and not downgraded:
+            # Nothing to report: either there was no known previous signal, or
+            # the previous one was not actionable either. Record the baseline
+            # and say so in the log, since this is the one path that changes
+            # the recorded state without anybody hearing about it.
+            if prev_signal is None:
+                logger.info(f"[ta] {symbol}: baseline established at {signal} "
+                            f"(no previous signal on record)")
             await r.set(last_signal_key, signal, ex=7 * 24 * 3600)
             return False
 
