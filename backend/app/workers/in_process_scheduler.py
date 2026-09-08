@@ -356,6 +356,7 @@ async def job_daily_ta_scan():
     from app.db.models.master_list import MasterListEntry
     from app.db.models.asset import Asset
     from app.db.models.portfolio import Portfolio
+    from app.db.models.watchlist import Watchlist
     from app.db.models.recommendation import Recommendation, RecommendationStatus
     from app.agents.workflow import run_technical_workflow
     from sqlalchemy import select
@@ -392,8 +393,20 @@ async def job_daily_ta_scan():
                 ).distinct()
             )
             live_symbols = {r[0] for r in live_rows.all()}
+            # And every stock a user asked to be alerted about. The watchlist
+            # checkbox is called "alert on technical signal", and the alerting
+            # core does deliver to watchers — but nothing ever scanned a symbol
+            # that was only on someone's watchlist, so no signal was ever
+            # computed for it and no transition could fire. Ticking the box
+            # subscribed the user to a scan that was not happening.
+            watch_rows = await db.execute(
+                select(Watchlist.symbol).where(
+                    Watchlist.alert_on_technical_signal == True
+                ).distinct()
+            )
+            watched_symbols = {r[0] for r in watch_rows.all()}
 
-        symbols = sorted(master_symbols | held_symbols | live_symbols)
+        symbols = sorted(master_symbols | held_symbols | live_symbols | watched_symbols)
         if not symbols:
             logger.info("[ta_scan] no active master list symbols — skipping")
             return
