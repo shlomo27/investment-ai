@@ -597,6 +597,19 @@ async def _run_news_watch() -> dict:
     except Exception as e:
         logger.debug(f"[news_watcher] grok volume check failed: {e}")
 
+    # Record the pass. The buzz numbers were returned to a caller that discards
+    # them, so "is it watching X at all" had no answer short of reading logs.
+    try:
+        from datetime import datetime as _dt, timezone as _tz
+        await redis_client.set(
+            "investment_ai:news_scan:heartbeat",
+            f"{_dt.now(_tz.utc).isoformat()}|symbols={len(symbols)}|"
+            f"news_alerts={symbols_alerted}|buzz_alerts={buzz_alerts}",
+            ex=7 * 24 * 3600,
+        )
+    except Exception:
+        pass
+
     await redis_client.aclose()
     return {"symbols_checked": len(symbols), "symbols_alerted": symbols_alerted,
             "buzz_alerts": buzz_alerts}
@@ -715,7 +728,7 @@ async def _social_buzz_pass(redis_client, notifier) -> int:
             # Clean multi-line layout — Hebrew lines kept separate from the
             # English tweet sample so RTL doesn't scramble them.
             lines = [
-                f"📣 {symbol}: באזz חריג ברשת X",
+                f"📣 {symbol}: באז חריג ברשת X",
                 f"פעילות חריגה: {posts} פוסטים · {mood} ({score:+.2f})",
                 f"מה הפעיל את הבדיקה: {reason}",
                 f"{direction}. פעמים רבות התנועה בטוויטר מקדימה את החדשות.",

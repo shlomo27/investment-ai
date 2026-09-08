@@ -1546,30 +1546,50 @@ async def ta_scan_diagnostics(
     r = aioredis.from_url(settings.REDIS_URL)
     try:
         raw = await r.get("investment_ai:ta_scan:heartbeat")
+        news_raw = await r.get("investment_ai:news_scan:heartbeat")
+        paused = bool(await r.get("investment_ai:analyses_paused_until"))
     finally:
         await r.aclose()
 
+    def _parse(value):
+        """A heartbeat string into its fields, or None."""
+        if not value:
+            return None
+        text = value.decode() if isinstance(value, bytes) else value
+        bits = text.split("|")
+        parsed = {"raw": text, "last_run": bits[0] if bits else None}
+        for bit in bits[1:]:
+            if "=" in bit:
+                k, v = bit.split("=", 1)
+                try:
+                    parsed[k] = int(v)
+                except ValueError:
+                    parsed[k] = v
+        try:
+            last = datetime.fromisoformat(parsed["last_run"])
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            parsed["minutes_ago"] = round(
+                (datetime.now(timezone.utc) - last).total_seconds() / 60, 1)
+        except Exception:
+            parsed["minutes_ago"] = None
+        return parsed
+
+    # The news and social pass bills per call, so it is deliberately stopped by
+    # the pause. Report that rather than letting "no social alerts" read as a
+    # fault.
+    news = _parse(news_raw)
+    if news is not None:
+        news["paused"] = paused
+
     if not raw:
-        return {"ran": False,
+        return {"ran": False, "news_scan": news, "analyses_paused": paused,
                 "detail": "No heartbeat recorded — the scan has not completed a pass."}
 
-    text = raw.decode() if isinstance(raw, bytes) else raw
-    parts = text.split("|")
-    out = {"ran": True, "raw": text, "last_run": parts[0] if parts else None}
-    for part in parts[1:]:
-        if "=" in part:
-            k, v = part.split("=", 1)
-            try:
-                out[k] = int(v)
-            except ValueError:
-                out[k] = v
-    try:
-        last = datetime.fromisoformat(out["last_run"])
-        if last.tzinfo is None:
-            last = last.replace(tzinfo=timezone.utc)
-        out["minutes_ago"] = round((datetime.now(timezone.utc) - last).total_seconds() / 60, 1)
-    except Exception:
-        out["minutes_ago"] = None
+    out = _parse(raw) or {}
+    out["ran"] = True
+    out["news_scan"] = news
+    out["analyses_paused"] = paused
     return out
 
 

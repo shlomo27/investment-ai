@@ -779,6 +779,42 @@ const FundDashboard: React.FC = () => {
               )}
             </div>
 
+            {/* The news and social pass. It bills per call, so the pause
+                stops it deliberately — say that, rather than letting "no
+                social alerts" read as a fault. */}
+            <div className="mt-4 pt-4 border-t border-gray-800">
+              <p className="text-sm text-gray-300">
+                {isHe ? "סריקת חדשות ורשתות חברתיות (בתשלום)" : "News and social scan (paid)"}
+              </p>
+              {taScan?.analyses_paused ? (
+                <p className="text-xs text-yellow-400 mt-1">
+                  {isHe
+                    ? "מושהית כרגע — היא מבצעת חיפושי X בתשלום, ולכן נעצרת יחד עם שאר הניתוחים."
+                    : "Currently paused — it runs paid X searches, so it stops with the other analyses."}
+                </p>
+              ) : !taScan?.news_scan ? (
+                <p className="text-xs text-gray-500 mt-1">
+                  {isHe ? "טרם נרשמה ריצה." : "No pass recorded yet."}
+                </p>
+              ) : (
+                <>
+                  <p className={`text-xs mt-1 ${
+                    (taScan.news_scan.minutes_ago ?? 999) <= 45 ? "text-green-400" : "text-yellow-400"
+                  }`}>
+                    {isHe ? "ריצה אחרונה: לפני " : "Last run: "}
+                    {taScan.news_scan.minutes_ago != null
+                      ? `${taScan.news_scan.minutes_ago} ${isHe ? "דקות" : "min ago"}`
+                      : "—"}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {isHe
+                      ? `${taScan.news_scan.symbols ?? 0} מניות · ${taScan.news_scan.news_alerts ?? 0} התראות חדשות · ${taScan.news_scan.buzz_alerts ?? 0} התראות באז ב-X`
+                      : `${taScan.news_scan.symbols ?? 0} symbols · ${taScan.news_scan.news_alerts ?? 0} news alerts · ${taScan.news_scan.buzz_alerts ?? 0} X buzz alerts`}
+                  </p>
+                </>
+              )}
+            </div>
+
             {/* Why one symbol did or did not alert. The four possible causes
                 look identical from outside, so show all four instead of
                 reasoning about which it might be. */}

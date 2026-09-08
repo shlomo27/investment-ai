@@ -579,6 +579,15 @@ export const marketApi = {
     success?: number;
     alerted?: number;
     errors?: number;
+    analyses_paused?: boolean;
+    news_scan?: {
+      last_run?: string;
+      minutes_ago?: number | null;
+      symbols?: number;
+      news_alerts?: number;
+      buzz_alerts?: number;
+      paused?: boolean;
+    } | null;
   }> => {
     const response = await api.get("/market/diagnostics/ta-scan");
     return response.data;
