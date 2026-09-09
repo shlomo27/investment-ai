@@ -496,7 +496,23 @@ async def job_daily_ta_scan():
                         )).scalars().all()
                         for w in watch:
                             w.last_technical_analysis = ta
-                        if recs or watch:
+
+                        # And the stored price. Asset.last_price is written
+                        # only by the Celery tasks this scheduler replaced, so
+                        # nothing has updated it since each asset was created:
+                        # the watchlist showed BMRN at $56.50 on a day its own
+                        # research page said $64.84. Every screen reading that
+                        # column has been quoting a price frozen at creation.
+                        # The scan already has a fresh one for every symbol it
+                        # touches, at no extra cost.
+                        fresh_price = ta.get("current_price")
+                        asset_row = (await db.execute(
+                            select(Asset).where(Asset.symbol == symbol)
+                        )).scalar_one_or_none()
+                        if asset_row is not None and fresh_price and fresh_price > 0:
+                            asset_row.last_price = float(fresh_price)
+
+                        if recs or watch or asset_row is not None:
                             await db.commit()
 
                 if await process_signal_transition(symbol, ta, redis_client=redis_client):
