@@ -484,7 +484,19 @@ async def job_daily_ta_scan():
                         )).scalars().all()
                         for rec in recs:
                             rec.technical_analysis = ta
-                        if recs:
+                        # And onto the watchlist rows. This was written only by
+                        # a manual per-row click, never by the scan, so the
+                        # badge beside a followed stock froze at whenever the
+                        # user last pressed the button — BMRN showed WAIT on the
+                        # list while its own research page said BUY NOW the same
+                        # afternoon — and a stock never clicked showed nothing
+                        # at all, as though it were not being watched.
+                        watch = (await db.execute(
+                            select(Watchlist).where(Watchlist.symbol == symbol)
+                        )).scalars().all()
+                        for w in watch:
+                            w.last_technical_analysis = ta
+                        if recs or watch:
                             await db.commit()
 
                 if await process_signal_transition(symbol, ta, redis_client=redis_client):
