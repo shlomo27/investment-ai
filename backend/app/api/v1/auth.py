@@ -27,6 +27,12 @@ from app.db.models.user import User, RiskProfile
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+# Version of the terms and risk disclosure the user agreed to, stored with the
+# acceptance. Bump it whenever the substance of /terms.html changes, so a
+# dispute can be answered with which text that account actually saw — a bare
+# "accepted: true" cannot distinguish today's wording from last year's.
+TERMS_VERSION = "2026-09-14"
+
 
 # ─── Request/Response Schemas ──────────────────────────────────────────────────
 
@@ -37,10 +43,27 @@ class RegisterRequest(BaseModel):
     phone: Optional[str] = None
     preferred_language: str = "he"
 
+    # Acceptance of the terms and the risk warning, recorded at sign-up.
+    #
+    # Required rather than assumed: for a service that publishes investment
+    # analysis, "the user agreed to the risk disclosure" is a claim that has
+    # to be evidenced with a timestamp and the version they saw, not inferred
+    # from the fact that they managed to create an account.
+    accepted_terms: bool = False
+    accepted_terms_version: str = TERMS_VERSION
+
     @validator("password")
     def validate_password(cls, v):
         if not any(c.isdigit() for c in v):
             raise ValueError("Password must contain at least one digit")
+        return v
+
+    @validator("accepted_terms")
+    def must_accept(cls, v):
+        if not v:
+            raise ValueError(
+                "You must accept the terms of use and risk disclosure to register"
+            )
         return v
 
 
@@ -190,6 +213,10 @@ async def register(
         cash_balance=0.0,
         is_active=True,
         is_onboarded=False,
+        # Recorded from the server clock and against the version the client
+        # reported seeing, so the evidence does not depend on a device's clock.
+        accepted_terms_at=datetime.now(timezone.utc),
+        accepted_terms_version=request.accepted_terms_version or TERMS_VERSION,
     )
     db.add(user)
     await db.flush()

@@ -145,6 +145,13 @@ class Settings(BaseSettings):
     SENDGRID_FROM_EMAIL: str = "noreply@investment-ai.com"
     SENDGRID_FROM_NAME: str = "Investment AI"
 
+    # Subscriptions (RevenueCat, in front of the App Store and Play Store)
+    # RevenueCat posts subscription events to /api/v1/billing/webhook/revenuecat
+    # with this value in the Authorization header. The endpoint refuses to run
+    # when it is unset — an unauthenticated version of it hands a free
+    # subscription to anyone who finds the URL.
+    REVENUECAT_WEBHOOK_SECRET: str = ""
+
     # Firebase (Push Notifications)
     FIREBASE_CREDENTIALS_PATH: str = "/app/secrets/firebase-credentials.json"
     FIREBASE_CREDENTIALS_JSON: str = ""  # JSON string env var, takes priority over path

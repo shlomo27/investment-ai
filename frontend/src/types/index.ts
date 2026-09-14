@@ -104,6 +104,14 @@ export interface User {
   totp_enabled: boolean;
   telegram_linked?: boolean;
   created_at: string;
+
+  // Subscription. Descriptive only — every limit is enforced server-side,
+  // so editing these in a debugger changes what the UI draws and nothing else.
+  subscription_tier?: "FREE" | "PRO";
+  is_pro?: boolean;
+  subscription_expires_at?: string | null;
+  watchlist_limit?: number | null;
+  recommendation_limit?: number | null;
 }
 
 export interface Token {
@@ -470,6 +478,10 @@ export interface Recommendation {
   expected_return_pct?: number;
   trigger_type?: string;
   trigger_details?: string;
+  // Set by the server when the written reasoning was withheld for this
+  // account's tier. The fields above come back null in that case — show the
+  // upgrade panel, not an empty section, which reads as a failed analysis.
+  reasoning_locked?: boolean;
   asset_name?: string;
   sector?: string;
   risk_level?: string;

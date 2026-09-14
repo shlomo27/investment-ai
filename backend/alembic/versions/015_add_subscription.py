@@ -1,4 +1,4 @@
-"""Subscription tier, expiry and billing identity
+"""Subscription tier, billing identity, and terms acceptance
 
 The app is going to the stores as a consumer product with a free tier and a
 paid one, so entitlements have to live on the account rather than being
@@ -52,8 +52,20 @@ def upgrade() -> None:
         "ix_users_billing_customer_id", "users", ["billing_customer_id"]
     )
 
+    # Terms acceptance. Nullable because accounts created before the consumer
+    # launch never saw a terms screen — backfilling a timestamp would fabricate
+    # evidence that someone agreed to something they were never shown.
+    op.add_column(
+        "users", sa.Column("accepted_terms_at", sa.DateTime(timezone=True), nullable=True)
+    )
+    op.add_column(
+        "users", sa.Column("accepted_terms_version", sa.String(length=32), nullable=True)
+    )
+
 
 def downgrade() -> None:
+    op.drop_column("users", "accepted_terms_version")
+    op.drop_column("users", "accepted_terms_at")
     op.drop_index("ix_users_billing_customer_id", table_name="users")
     op.drop_column("users", "billing_customer_id")
     op.drop_column("users", "subscription_source")

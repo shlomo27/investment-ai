@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { useAppSelector } from "../store";
+import { useAppSelector, useAppDispatch } from "../store";
 import { recommendationsApi, ordersApi } from "../api/client";
 import { Recommendation, RecommendationType, OrderType, QuantitativeModels } from "../types";
 import ConfirmTradeModal from "../components/Trading/ConfirmTradeModal";
+import Paywall from "../components/Paywall";
+import { isNative } from "../platform";
+import { fetchCurrentUser } from "../store/slices/authSlice";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -634,6 +637,7 @@ const SIG_TEXT: Record<string, string> = {
 const ResearchReport: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
   const { user } = useAppSelector((s) => s.auth);
   const isHe = user?.preferred_language === "he";
 
@@ -641,6 +645,16 @@ const ResearchReport: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [tradeModal, setTradeModal] = useState<{ type: OrderType } | null>(null);
   const [quantLoading, setQuantLoading] = useState(false);
+  const [paywallOpen, setPaywallOpen] = useState(false);
+
+  const reloadRec = async () => {
+    if (!id) return;
+    try {
+      setRec(await recommendationsApi.getRecommendation(Number(id)));
+    } catch {
+      /* leave the current view in place rather than bouncing the user out */
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -726,6 +740,21 @@ const ResearchReport: React.FC = () => {
 
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="max-w-4xl mx-auto space-y-6">
+      {paywallOpen && (
+        <Paywall
+          isHe={isHe}
+          reason="research"
+          onClose={() => setPaywallOpen(false)}
+          onUpgraded={() => {
+            setPaywallOpen(false);
+            dispatch(fetchCurrentUser());
+            // Re-fetch: the reasoning fields came back null under the old tier,
+            // so the page has to ask again to actually receive them.
+            reloadRec();
+          }}
+        />
+      )}
+
       {/* Back */}
       <Link to="/recommendations" className="text-sm text-gray-400 hover:text-gray-200 flex items-center gap-1">
         ← {isHe ? "חזור להמלצות" : "Back to Recommendations"}
@@ -817,6 +846,40 @@ const ResearchReport: React.FC = () => {
           </Link>
         </div>
       </div>
+
+      {/* Reasoning withheld for this tier. Shown INSTEAD of the analysis
+          sections below, which the server returned as null — rendering
+          nothing there would read as "the analysis failed", which is worse
+          than a paywall and generates support mail. */}
+      {rec.reasoning_locked && (
+        <div className="bg-gray-900 border border-blue-900/40 rounded-2xl p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="text-blue-400 text-lg">🔒</span>
+            <h2 className="font-bold text-sm uppercase tracking-wide text-gray-300">
+              {isHe ? "הניתוח המלא" : "Full analysis"}
+            </h2>
+          </div>
+          <p className="text-sm text-gray-400 leading-relaxed">
+            {isHe
+              ? "הסיגנל, מחירי היעד והניתוח הטכני מוצגים למעלה. הניתוח הכלכלי המלא, נימוקי ועדת ההשקעות וניתוח החדשות זמינים למנויים — או לכל מניה שאתה עוקב אחריה."
+              : "The signal, target prices and technical analysis are shown above. The full fundamental analysis, investment committee reasoning and news analysis are available to subscribers — or on any stock you follow."}
+          </p>
+          {isNative() ? (
+            <button
+              onClick={() => setPaywallOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 py-2.5 rounded-xl text-sm"
+            >
+              {isHe ? "שדרג למנוי" : "Upgrade"}
+            </button>
+          ) : (
+            <p className="text-xs text-gray-500">
+              {isHe
+                ? "שדרוג זמין באפליקציה לאייפון ולאנדרואיד."
+                : "Upgrading is available in the iOS and Android app."}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Investment Thesis */}
       {fa?.thesis && (

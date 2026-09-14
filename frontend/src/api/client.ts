@@ -176,6 +176,12 @@ export const authApi = {
     full_name: string;
     phone?: string;
     preferred_language?: string;
+    // The server rejects a registration without this. It records when the
+    // account accepted the risk disclosure and which version it saw — for a
+    // service publishing investment analysis that has to be evidenced, not
+    // inferred from the fact that an account exists.
+    accepted_terms: boolean;
+    accepted_terms_version?: string;
   }): Promise<AuthResponse> => {
     const response = await api.post<AuthResponse>("/auth/register", data);
     const { tokens } = response.data;
@@ -232,6 +238,26 @@ export const authApi = {
 
   updateProfile: async (data: Partial<User> & { push_token?: string }): Promise<User> => {
     const response = await api.put<User>("/auth/profile", data);
+    return response.data;
+  },
+
+  /**
+   * What the server says this account is entitled to.
+   *
+   * Called after a purchase and on resume. Deliberately asks the server
+   * rather than trusting the store SDK on the device: the webhook is the only
+   * thing that grants PRO, and the SDK's view can be optimistic or stale.
+   */
+  subscriptionStatus: async (): Promise<{
+    tier: string;
+    is_pro: boolean;
+    expires_at: string | null;
+    source: string | null;
+    watchlist_limit: number | null;
+    recommendation_limit: number | null;
+    full_research: boolean;
+  }> => {
+    const response = await api.get("/billing/status");
     return response.data;
   },
 

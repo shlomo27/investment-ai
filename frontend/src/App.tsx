@@ -32,6 +32,7 @@ import Sidebar from "./components/Layout/Sidebar";
 // Services
 import { initPushNotifications } from "./services/pushNotifications";
 import { pushNavigate, setPushNavigator } from "./services/pushNavigation";
+import { initPurchases } from "./services/purchases";
 import { authApi } from "./api/client";
 import { useWebSocket } from "./hooks/useWebSocket";
 
@@ -127,6 +128,20 @@ const App: React.FC = () => {
       return () => clearInterval(interval);
     }
   }, [isAuthenticated, dispatch]);
+
+  // Bind the store SDK to this account. The billing webhook maps RevenueCat's
+  // app_user_id back to a row by this id, so without the bind a purchase lands
+  // on an anonymous RevenueCat identity that belongs to no account here and
+  // nothing is ever granted.
+  //
+  // Its own effect, keyed on the id: `user` is still null for a moment after
+  // isAuthenticated flips, so binding inside the effect above would skip the
+  // call on every fresh login and only work on a later re-render.
+  useEffect(() => {
+    if (isAuthenticated && user?.id) {
+      initPurchases(user.id).catch(() => {});
+    }
+  }, [isAuthenticated, user?.id]);
 
   // Real-time WebSocket connection for authenticated users
   useWebSocket(isAuthenticated ? user?.id : undefined, { enabled: isAuthenticated });

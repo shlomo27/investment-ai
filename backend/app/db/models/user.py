@@ -77,6 +77,16 @@ class User(Base):
     is_onboarded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # ── Terms acceptance ────────────────────────────────────────────────────
+    # Evidence, not a flag. For a service publishing investment analysis, "the
+    # user accepted the risk disclosure" has to be answerable with when, and
+    # with which wording — a bare boolean cannot tell today's text from last
+    # year's.
+    accepted_terms_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    accepted_terms_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
     # ── Subscription ────────────────────────────────────────────────────────
     subscription_tier: Mapped[SubscriptionTier] = mapped_column(
         SAEnum(SubscriptionTier, name="subscriptiontier"),
@@ -98,20 +108,6 @@ class User(Base):
     # restores on the next one. Kept even after a subscription lapses.
     billing_customer_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
 
-    @property
-    def is_pro(self) -> bool:
-        """Whether PRO entitlements are live right now.
-
-        Expiry is checked on read rather than by a scheduled downgrade job:
-        a job that fails to run would silently keep lapsed accounts paid, and
-        this comparison costs nothing.
-        """
-        if self.subscription_tier != SubscriptionTier.PRO:
-            return False
-        if self.subscription_expires_at is None:
-            # Only MANUAL grants are allowed to be open-ended.
-            return self.subscription_source == SubscriptionSource.MANUAL
-        return self.subscription_expires_at > datetime.now(timezone.utc)
     preferred_language: Mapped[str] = mapped_column(String(10), default="he", nullable=False)
     push_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Personal Telegram chat (private bot conversation) — linked from Settings;
@@ -134,6 +130,21 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+    @property
+    def is_pro(self) -> bool:
+        """Whether PRO entitlements are live right now.
+
+        Expiry is checked on read rather than by a scheduled downgrade job:
+        a job that fails to run would silently keep lapsed accounts paid, and
+        this comparison costs nothing.
+        """
+        if self.subscription_tier != SubscriptionTier.PRO:
+            return False
+        if self.subscription_expires_at is None:
+            # Only MANUAL grants are allowed to be open-ended.
+            return self.subscription_source == SubscriptionSource.MANUAL
+        return self.subscription_expires_at > datetime.now(timezone.utc)
 
     @property
     def telegram_linked(self) -> bool:

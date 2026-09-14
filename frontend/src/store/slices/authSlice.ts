@@ -1,6 +1,8 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import { User, RiskProfile } from "../../types";
 import { authApi } from "../../api/client";
+import { teardownPushNotifications } from "../../services/pushNotifications";
+import { logoutPurchases } from "../../services/purchases";
 
 interface AuthState {
   user: User | null;
@@ -46,6 +48,8 @@ export const registerUser = createAsyncThunk(
       full_name: string;
       phone?: string;
       preferred_language?: string;
+      accepted_terms: boolean;
+      accepted_terms_version?: string;
     },
     { rejectWithValue }
   ) => {
@@ -74,6 +78,14 @@ export const fetchCurrentUser = createAsyncThunk(
 );
 
 export const logoutUser = createAsyncThunk("auth/logout", async () => {
+  // Release the device identities before dropping the session. A push token
+  // left registered keeps delivering this user's alerts to a phone someone
+  // else may now be signed into, and a RevenueCat identity left bound would
+  // attribute the next account's purchase to this one.
+  //
+  // Both are best-effort and must never block sign-out: a user who taps
+  // logout has to end up signed out regardless of what a store SDK does.
+  await Promise.allSettled([teardownPushNotifications(), logoutPurchases()]);
   await authApi.logout();
 });
 

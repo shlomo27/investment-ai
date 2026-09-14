@@ -3,8 +3,12 @@ import { useAppSelector } from "../store";
 import { watchlistApi, marketApi } from "../api/client";
 import { WatchlistItem, TechnicalAnalysis } from "../types";
 import PriceChart from "../components/Charts/PriceChart";
+import Paywall from "../components/Paywall";
+import { fetchCurrentUser } from "../store/slices/authSlice";
+import { useAppDispatch } from "../store";
 
 const Watchlist: React.FC = () => {
+  const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
   const isHe = user?.preferred_language === "he";
 
@@ -19,6 +23,7 @@ const Watchlist: React.FC = () => {
   const [alertAbove, setAlertAbove] = useState<string>("");
   const [alertBelow, setAlertBelow] = useState<string>("");
   const [alertSaving, setAlertSaving] = useState(false);
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   useEffect(() => {
     fetchWatchlist();
@@ -67,7 +72,14 @@ const Watchlist: React.FC = () => {
       setSearchResults([]);
       fetchWatchlist();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Failed to add");
+      // 402 is the tier limit, not a fault. The detail is an object, so the
+      // old alert(detail) would have rendered "[object Object]".
+      if (e.response?.status === 402) {
+        setPaywallOpen(true);
+        return;
+      }
+      const detail = e.response?.data?.detail;
+      alert(typeof detail === "string" ? detail : isHe ? "ההוספה נכשלה" : "Failed to add");
     }
   };
 
@@ -133,6 +145,21 @@ const Watchlist: React.FC = () => {
 
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
+      {paywallOpen && (
+        <Paywall
+          isHe={isHe}
+          reason="watchlist"
+          onClose={() => setPaywallOpen(false)}
+          onUpgraded={() => {
+            setPaywallOpen(false);
+            // Refresh the user so the tier the rest of the UI reads is the
+            // upgraded one, then reload the list under the new limit.
+            dispatch(fetchCurrentUser());
+            fetchWatchlist();
+          }}
+        />
+      )}
+
       <h1 className="text-2xl font-bold">{isHe ? "רשימת מעקב" : "Watchlist"}</h1>
 
       {/* Search & Add */}

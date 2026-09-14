@@ -2,6 +2,10 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { loginUser, registerUser, setUser } from "../store/slices/authSlice";
+
+// Must match TERMS_VERSION in backend/app/api/v1/auth.py. Bump both together
+// whenever the substance of /terms.html changes.
+const TERMS_VERSION = "2026-09-14";
 import { authApi } from "../api/client";
 
 const Login: React.FC = () => {
@@ -24,6 +28,11 @@ const Login: React.FC = () => {
     full_name: "",
     phone: "",
     preferred_language: "he",
+    // The server rejects registration unless this is true. Unticked by
+    // default and never pre-ticked: consent that was pre-ticked is not
+    // consent, and this is the record that the risk disclosure was accepted.
+    accepted_terms: false,
+    accepted_terms_version: TERMS_VERSION,
   });
 
   const isHe = lang === "he";
@@ -254,9 +263,43 @@ const Login: React.FC = () => {
                   {isHe ? "לפחות 8 תווים כולל ספרה" : "At least 8 characters including a number"}
                 </p>
               </div>
+
+              {/* Risk disclosure + terms. Unticked by default and required by
+                  the server — a pre-ticked box is not consent, and this is the
+                  record that the risk warning was accepted. */}
+              <div className="bg-amber-500/5 border border-amber-500/30 rounded-lg p-3 space-y-2">
+                <p className="text-[11px] text-amber-300/90 leading-relaxed">
+                  {isHe
+                    ? "מסחר בניירות ערך כרוך בסיכון להפסד, לרבות אובדן מלוא ההשקעה. המערכת מספקת מידע וניתוח ממוכן בלבד ואינה מהווה ייעוץ השקעות אישי."
+                    : "Trading securities carries risk of loss, including your entire investment. This service provides automated information and analysis only, and is not personal investment advice."}
+                </p>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={registerForm.accepted_terms}
+                    onChange={(e) =>
+                      setRegisterForm({ ...registerForm, accepted_terms: e.target.checked })
+                    }
+                    className="mt-0.5 shrink-0 accent-blue-500"
+                    required
+                  />
+                  <span className="text-xs text-gray-300 leading-relaxed">
+                    {isHe ? "קראתי ואני מסכים ל" : "I have read and accept the "}
+                    <a href="/terms.html" target="_blank" rel="noreferrer" className="text-blue-400 underline">
+                      {isHe ? "תנאי השימוש" : "Terms of Use"}
+                    </a>
+                    {isHe ? " ול" : " and "}
+                    <a href="/privacy.html" target="_blank" rel="noreferrer" className="text-blue-400 underline">
+                      {isHe ? "מדיניות הפרטיות" : "Privacy Policy"}
+                    </a>
+                    {isHe ? ", ואני מאשר שאני בן 18 ומעלה." : ", and confirm I am 18 or older."}
+                  </span>
+                </label>
+              </div>
+
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || !registerForm.accepted_terms}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg py-3 font-medium transition-colors"
               >
                 {isLoading ? (isHe ? "נרשם..." : "Registering...") : (isHe ? "הרשמה" : "Register")}

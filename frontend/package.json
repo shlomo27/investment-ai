@@ -23,6 +23,7 @@
     "@capacitor/splash-screen": "^8",
     "@capacitor/status-bar": "^8",
     "@reduxjs/toolkit": "^2.2.3",
+    "@revenuecat/purchases-capacitor": "^13.5.1",
     "axios": "^1.7.2",
     "firebase": "^12.15.0",
     "lightweight-charts": "^5.2.0",

@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useAppDispatch, useAppSelector } from "../store";
-import { updateUserProfile } from "../store/slices/authSlice";
+import { updateUserProfile, fetchCurrentUser } from "../store/slices/authSlice";
 import { authApi } from "../api/client";
 import { requestPushPermission } from "../services/pushNotifications";
+import { isNative } from "../platform";
+import Paywall from "../components/Paywall";
 import { RiskProfile } from "../types";
 
 const PROFILE_META: Record<RiskProfile, { he: string; en: string; color: string }> = {
@@ -35,6 +37,7 @@ const Settings: React.FC = () => {
   const [delConfirm, setDelConfirm] = useState("");
   const [delError, setDelError] = useState("");
   const [delLoading, setDelLoading] = useState(false);
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   const [saved, setSaved] = useState(false);
   const [pushStatus, setPushStatus] = useState<"idle" | "requesting" | "done" | "denied">("idle");
@@ -206,6 +209,19 @@ const Settings: React.FC = () => {
 
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6 max-w-xl">
+      {paywallOpen && (
+        <Paywall
+          isHe={isHe}
+          onClose={() => setPaywallOpen(false)}
+          onUpgraded={() => {
+            setPaywallOpen(false);
+            // Re-read the account so the tier shown here — and everywhere
+            // else reading user.is_pro — is the upgraded one.
+            dispatch(fetchCurrentUser());
+          }}
+        />
+      )}
+
       <h1 className="text-2xl font-bold">{isHe ? "הגדרות" : "Settings"}</h1>
 
       {saved && (
@@ -558,6 +574,68 @@ const Settings: React.FC = () => {
       >
         {isLoading ? (isHe ? "שומר..." : "Saving...") : (isHe ? "שמור שינויים" : "Save Changes")}
       </button>
+
+      {/* ── Subscription ────────────────────────────────────────────────── */}
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-gray-300">
+          {isHe ? "מנוי" : "Subscription"}
+        </h2>
+
+        {user?.is_pro ? (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="bg-green-500/15 text-green-400 text-xs font-semibold px-2.5 py-1 rounded-full">
+                PRO
+              </span>
+              <span className="text-xs text-gray-400">
+                {isHe ? "מעקב והמלצות ללא הגבלה" : "Unlimited tracking and recommendations"}
+              </span>
+            </div>
+            {user?.subscription_expires_at && (
+              <p className="text-xs text-gray-500">
+                {isHe ? "מתחדש ב-" : "Renews on "}
+                {new Date(user.subscription_expires_at).toLocaleDateString(
+                  isHe ? "he-IL" : "en-US"
+                )}
+              </p>
+            )}
+            <p className="text-[11px] text-gray-500 leading-relaxed">
+              {isHe
+                ? "ניהול או ביטול המנוי מתבצע בהגדרות החשבון בחנות שבה רכשת."
+                : "Manage or cancel your subscription in your store account settings."}
+            </p>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="bg-gray-700 text-gray-300 text-xs font-semibold px-2.5 py-1 rounded-full">
+                {isHe ? "חינם" : "FREE"}
+              </span>
+              <span className="text-xs text-gray-400">
+                {isHe
+                  ? `מעקב אחרי ${user?.watchlist_limit ?? 2} מניות · ${user?.recommendation_limit ?? 5} המלצות`
+                  : `${user?.watchlist_limit ?? 2} stocks · ${user?.recommendation_limit ?? 5} recommendations`}
+              </span>
+            </div>
+            {/* No purchase route on the web build: Apple forbids the app
+                offering or pointing at payment outside In-App Purchase. */}
+            {isNative() ? (
+              <button
+                onClick={() => setPaywallOpen(true)}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-xl text-sm"
+              >
+                {isHe ? "שדרג למנוי" : "Upgrade"}
+              </button>
+            ) : (
+              <p className="text-xs text-gray-500">
+                {isHe
+                  ? "שדרוג זמין באפליקציה לאייפון ולאנדרואיד."
+                  : "Upgrading is available in the iOS and Android app."}
+              </p>
+            )}
+          </>
+        )}
+      </div>
 
       {/* ── Delete Account ──────────────────────────────────────────────── */}
       <div className="bg-gray-900 border border-red-900/40 rounded-2xl p-5 space-y-3">
