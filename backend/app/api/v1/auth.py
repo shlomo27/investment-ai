@@ -5,7 +5,7 @@ POST /register, POST /login, POST /logout, GET /me, PUT /profile
 from datetime import datetime, timezone
 from typing import List, Optional
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, Field, validator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -189,9 +189,15 @@ class AuthResponse(BaseModel):
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     request: RegisterRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Register a new user account."""
+    # Public sign-up is open to the internet now. Without a cap on the source,
+    # one script creates accounts until the database is full — and each one is
+    # a free tier that consumes rows and push deliveries.
+    await _rate_limit("register", _client_ip(http_request), limit=5, window_sec=3600)
+
     # Check if email already exists
     result = await db.execute(select(User).where(User.email == request.email.lower()))
     existing = result.scalar_one_or_none()
@@ -229,6 +235,56 @@ async def register(
         user=UserResponse.from_user(user),
         tokens=tokens,
     )
+
+
+async def _rate_limit(bucket: str, key: str, limit: int, window_sec: int):
+    """Fixed-window rate limit, keyed on whatever identifies the caller.
+
+    The existing login lockout is keyed on the email address, which stops
+    someone hammering one account but not someone scripting sign-ups or
+    rotating through addresses. Public registration needs a limit on the
+    source instead.
+
+    Fails OPEN when Redis is unreachable, matching _login_lockout_check: a
+    cache outage must not lock every user out of the product. That is the
+    right trade here because this limits abuse volume rather than guarding a
+    secret — the password check itself is never bypassed.
+    """
+    from app.core.config import settings
+
+    try:
+        import redis.asyncio as aioredis
+
+        r = aioredis.from_url(settings.REDIS_URL)
+        try:
+            k = f"investment_ai:ratelimit:{bucket}:{key}"
+            n = await r.incr(k)
+            if n == 1:
+                await r.expire(k, window_sec)
+            if n > limit:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="יותר מדי בקשות. נסה שוב מאוחר יותר.",
+                )
+        finally:
+            await r.aclose()
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # redis down — do not block legitimate users
+
+
+def _client_ip(request: Request) -> str:
+    """Caller's address, trusting the proxy header Railway sets.
+
+    Railway terminates TLS and forwards, so request.client.host is the
+    proxy for every caller and would rate-limit the whole world as one
+    client. The leftmost X-Forwarded-For entry is the originating address.
+    """
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 async def _login_lockout_check(email: str):
@@ -283,10 +339,16 @@ async def _login_fail_clear(email: str):
 @router.post("/login", response_model=AuthResponse)
 async def login(
     request: LoginRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Login with email and password."""
     email = request.email.lower()
+    # Two limits, because they stop different attacks. The per-email lockout
+    # below stops someone hammering one account; it does nothing against
+    # credential stuffing, which tries one password against thousands of
+    # addresses and never trips a per-email counter. This caps the source.
+    await _rate_limit("login", _client_ip(http_request), limit=30, window_sec=900)
     await _login_lockout_check(email)
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
@@ -844,3 +906,160 @@ async def delete_account(
     await db.commit()
     logger.info("Account deleted", email=email)
     return {"deleted": True}
+
+
+# ─── Password Reset ──────────────────────────────────────────────────────────
+#
+# A consumer app with no reset flow loses every user who forgets a password —
+# they cannot get back in, and the only thing left to do is uninstall.
+#
+# Two properties this deliberately maintains:
+#
+#   No account enumeration. Both the "unknown email" and "email sent" paths
+#   return the same body. Any difference — wording, status code, or response
+#   time — turns this endpoint into a way to test whether an address has an
+#   account here, which for a financial product tells an attacker who to
+#   target.
+#
+#   Tokens are stored hashed. Redis holds SHA-256 of the token, not the token,
+#   so a dump of the cache cannot be replayed into account takeovers.
+
+RESET_TOKEN_TTL_SEC = 30 * 60
+
+
+def _reset_key(token: str) -> str:
+    import hashlib
+
+    return "investment_ai:pwreset:" + hashlib.sha256(token.encode()).hexdigest()
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str = Field(min_length=16, max_length=256)
+    new_password: str = Field(min_length=8, max_length=128)
+
+    @validator("new_password")
+    def validate_password(cls, v):
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one digit")
+        return v
+
+
+# Identical for every outcome, on purpose — see the note above.
+_RESET_ACK = {
+    "ok": True,
+    "message_he": "אם קיים חשבון עם כתובת זו, נשלח אליו קישור לאיפוס סיסמה.",
+    "message_en": "If an account exists for that address, a reset link has been sent.",
+}
+
+
+@router.post("/password-reset/request")
+async def request_password_reset(
+    request: PasswordResetRequest,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Email a reset link, if the address has an account."""
+    await _rate_limit("pwreset", _client_ip(http_request), limit=5, window_sec=3600)
+
+    email = request.email.lower()
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+
+    # Inactive accounts are treated as absent: a revoked demo account must not
+    # be recoverable by whoever still has the address.
+    if user is None or not user.is_active:
+        return _RESET_ACK
+
+    import secrets as _secrets
+
+    from app.core.config import settings as _settings
+
+    token = _secrets.token_urlsafe(32)
+    try:
+        import redis.asyncio as aioredis
+
+        r = aioredis.from_url(_settings.REDIS_URL)
+        try:
+            await r.set(_reset_key(token), str(user.id), ex=RESET_TOKEN_TTL_SEC)
+        finally:
+            await r.aclose()
+    except Exception as e:
+        # Redis down means the token cannot be verified later, so sending the
+        # email would produce a link that fails. Fail closed here — unlike the
+        # rate limiter, issuing a broken reset is worse than issuing none.
+        logger.error("Password reset token storage failed", error=str(e))
+        return _RESET_ACK
+
+    base = (_settings.FRONTEND_URL or "").rstrip("/")
+    reset_url = f"{base}/reset-password?token={token}"
+
+    from app.services.notifications.service import send_password_reset_email
+
+    await send_password_reset_email(user.email, user.full_name, reset_url)
+    logger.info("Password reset requested", user_id=user.id)
+    return _RESET_ACK
+
+
+@router.post("/password-reset/confirm")
+async def confirm_password_reset(
+    request: PasswordResetConfirm,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Set a new password using a token from the reset email."""
+    await _rate_limit("pwreset_confirm", _client_ip(http_request), limit=10, window_sec=3600)
+
+    from app.core.config import settings as _settings
+
+    key = _reset_key(request.token)
+    user_id = None
+    try:
+        import redis.asyncio as aioredis
+
+        r = aioredis.from_url(_settings.REDIS_URL)
+        try:
+            raw = await r.get(key)
+            if raw:
+                user_id = int(raw)
+                # Consume before use: a token that survives its own redemption
+                # can be replayed from a browser history or a mail forward.
+                await r.delete(key)
+        finally:
+            await r.aclose()
+    except Exception as e:
+        logger.error("Password reset lookup failed", error=str(e))
+
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="הקישור אינו תקף או שפג תוקפו. בקש קישור חדש.",
+        )
+
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="הקישור אינו תקף או שפג תוקפו. בקש קישור חדש.",
+        )
+
+    user.hashed_password = get_password_hash(request.new_password)
+    await db.commit()
+
+    # Clear the brute-force lockout. Whoever just proved control of the mailbox
+    # would otherwise be locked out by the failed attempts that sent them here.
+    try:
+        import redis.asyncio as aioredis
+
+        r = aioredis.from_url(_settings.REDIS_URL)
+        try:
+            await r.delete(f"investment_ai:login_fail:{user.email}")
+        finally:
+            await r.aclose()
+    except Exception:
+        pass
+
+    logger.info("Password reset completed", user_id=user.id)
+    return {"ok": True}

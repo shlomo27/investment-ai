@@ -24,6 +24,7 @@ import Watchlist from "./pages/Watchlist";
 import Settings from "./pages/Settings";
 import Performance from "./pages/Performance";
 import NotFound from "./pages/NotFound";
+import ResetPassword from "./pages/ResetPassword";
 
 // Layout
 import Navbar from "./components/Layout/Navbar";
@@ -157,6 +158,10 @@ const App: React.FC = () => {
             isAuthenticated ? <Navigate to="/fund" replace /> : <Login />
           }
         />
+
+        {/* Password reset — public: the whole point is that the user cannot
+            sign in, so this must sit outside ProtectedRoute. */}
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Onboarding - authenticated but not yet onboarded */}
         <Route

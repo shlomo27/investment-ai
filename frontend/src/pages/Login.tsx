@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { loginUser, registerUser, setUser } from "../store/slices/authSlice";
 
@@ -204,6 +204,14 @@ const Login: React.FC = () => {
               >
                 {isLoading ? (isHe ? "מתחבר..." : "Logging in...") : (isHe ? "כניסה" : "Login")}
               </button>
+
+              {/* Without a way back in, a forgotten password is an uninstall. */}
+              <Link
+                to="/reset-password"
+                className="block text-center text-gray-500 hover:text-gray-300 text-xs pt-1"
+              >
+                {isHe ? "שכחת סיסמה?" : "Forgot your password?"}
+              </Link>
             </form>
           ) : (
             <form onSubmit={handleRegister} className="space-y-4">

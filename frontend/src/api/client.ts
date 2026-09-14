@@ -190,6 +190,27 @@ export const authApi = {
     return response.data;
   },
 
+  /**
+   * Ask for a reset link. Resolves the same way whether or not the address
+   * has an account — the server deliberately gives no signal either way, and
+   * the UI must not invent one.
+   */
+  requestPasswordReset: async (email: string): Promise<{ ok: boolean }> => {
+    const response = await api.post("/auth/password-reset/request", { email });
+    return response.data;
+  },
+
+  confirmPasswordReset: async (
+    token: string,
+    newPassword: string
+  ): Promise<{ ok: boolean }> => {
+    const response = await api.post("/auth/password-reset/confirm", {
+      token,
+      new_password: newPassword,
+    });
+    return response.data;
+  },
+
   login: async (email: string, password: string): Promise<AuthResponse | { requires_2fa: true; pre_auth_token: string }> => {
     const response = await api.post("/auth/login", { email, password });
     if (response.data.requires_2fa) return response.data;

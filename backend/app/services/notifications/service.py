@@ -462,3 +462,68 @@ def get_notification_service() -> NotificationService:
     if _notification_service is None:
         _notification_service = NotificationService()
     return _notification_service
+
+
+async def send_password_reset_email(email: str, name: str, reset_url: str) -> bool:
+    """Email a one-time password reset link.
+
+    Separate from NotificationService._send_email because that template always
+    links to the site root — a reset mail has to carry its own single-use URL,
+    and sending one whose button goes to the login page is worse than sending
+    nothing.
+
+    Returns False when SendGrid is not configured. The caller must NOT surface
+    that difference to the user: "we could not email you" and "no such account"
+    are the same response, or the endpoint becomes an account-enumeration
+    oracle.
+    """
+    try:
+        api_key = settings.SENDGRID_API_KEY
+        if not api_key or api_key.startswith("SG.xxx") or len(api_key) < 20:
+            logger.warning("Password reset email skipped — SendGrid not configured")
+            return False
+
+        import asyncio
+
+        from sendgrid import SendGridAPIClient
+        from sendgrid.helpers.mail import Mail
+
+        message = Mail(
+            from_email=(settings.SENDGRID_FROM_EMAIL, settings.SENDGRID_FROM_NAME),
+            to_emails=email,
+            subject="איפוס סיסמה / Password reset — Investment AI",
+            html_content=f"""
+            <html><body dir="auto" style="font-family:system-ui,Arial,sans-serif">
+            <p>שלום {name},</p>
+            <p>קיבלנו בקשה לאיפוס הסיסמה שלך. הקישור תקף ל־30 דקות וניתן לשימוש פעם אחת.</p>
+            <p>
+              <a href="{reset_url}" style="background:#2563eb;color:#fff;padding:12px 24px;
+                 text-decoration:none;border-radius:8px;display:inline-block;margin:16px 0">
+                 איפוס סיסמה / Reset password
+              </a>
+            </p>
+            <p style="color:#666;font-size:13px">
+              אם לא ביקשת לאפס את הסיסמה, אפשר להתעלם מהודעה זו — הסיסמה הנוכחית תישאר בתוקף.
+            </p>
+            <hr style="border:none;border-top:1px solid #eee;margin:24px 0">
+            <p>Hello {name},</p>
+            <p>We received a request to reset your password. This link is valid for 30
+               minutes and can be used once.</p>
+            <p style="color:#666;font-size:13px">
+              If you did not request this, you can ignore this email — your current
+              password remains active.
+            </p>
+            <p style="color:#888;font-size:12px">Investment AI | אל תגיב להודעה זו</p>
+            </body></html>
+            """,
+        )
+
+        def _send():
+            sg = SendGridAPIClient(settings.SENDGRID_API_KEY)
+            return sg.send(message)
+
+        response = await asyncio.get_event_loop().run_in_executor(None, _send)
+        return response.status_code in (200, 201, 202)
+    except Exception as e:
+        logger.warning("Password reset email failed", error=str(e))
+        return False
