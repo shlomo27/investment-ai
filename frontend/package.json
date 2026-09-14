@@ -8,9 +8,20 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "icons": "node assets/build-icons.mjs && npx capacitor-assets generate --iconBackgroundColor #030712 --iconBackgroundColorDark #030712 --splashBackgroundColor #030712 --splashBackgroundColorDark #030712",
+    "mobile:sync": "npm run build && npx cap sync",
+    "mobile:android": "npm run mobile:sync && npx cap open android",
+    "mobile:ios": "npm run mobile:sync && npx cap open ios"
   },
   "dependencies": {
+    "@capacitor-firebase/messaging": "^8",
+    "@capacitor/app": "^8",
+    "@capacitor/core": "^8",
+    "@capacitor/preferences": "^8",
+    "@capacitor/push-notifications": "^8",
+    "@capacitor/splash-screen": "^8",
+    "@capacitor/status-bar": "^8",
     "@reduxjs/toolkit": "^2.2.3",
     "axios": "^1.7.2",
     "firebase": "^12.15.0",
@@ -22,6 +33,10 @@
     "recharts": "^2.12.7"
   },
   "devDependencies": {
+    "@capacitor/android": "^8",
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8",
+    "@capacitor/ios": "^8",
     "@types/node": "^20.14.2",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",

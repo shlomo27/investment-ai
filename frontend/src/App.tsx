@@ -4,6 +4,7 @@ import {
   Routes,
   Route,
   Navigate,
+  useNavigate,
 } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "./store";
 import { fetchCurrentUser } from "./store/slices/authSlice";
@@ -30,6 +31,7 @@ import Sidebar from "./components/Layout/Sidebar";
 
 // Services
 import { initPushNotifications } from "./services/pushNotifications";
+import { pushNavigate, setPushNavigator } from "./services/pushNavigation";
 import { authApi } from "./api/client";
 import { useWebSocket } from "./hooks/useWebSocket";
 
@@ -82,6 +84,22 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 // ─── App Component ──────────────────────────────────────────────────────────────
 
+// ─── Push Deep Links ────────────────────────────────────────────────────────────
+
+/**
+ * Publishes the router's navigate() to the push layer. Lives inside <Router>
+ * because useNavigate only exists there; App itself renders the Router and so
+ * sits above it. Renders nothing.
+ */
+const PushNavigationBridge: React.FC = () => {
+  const navigate = useNavigate();
+  useEffect(() => {
+    setPushNavigator((path) => navigate(path));
+    return () => setPushNavigator(null);
+  }, [navigate]);
+  return null;
+};
+
 const App: React.FC = () => {
   const dispatch = useAppDispatch();
   const { isAuthenticated, user } = useAppSelector((state) => state.auth);
@@ -100,9 +118,11 @@ const App: React.FC = () => {
       }, 60000);
 
       // Initialize push notifications (silently skipped if Firebase not configured)
+      // pushNavigate is passed so tapping an alert opens that stock's
+      // research page rather than wherever the app was last left.
       initPushNotifications(async (token) => {
         await authApi.updateProfile({ push_token: token });
-      }).catch(() => {});
+      }, pushNavigate).catch(() => {});
 
       return () => clearInterval(interval);
     }
@@ -113,6 +133,7 @@ const App: React.FC = () => {
 
   return (
     <Router>
+      <PushNavigationBridge />
       <Routes>
         {/* Public routes */}
         <Route

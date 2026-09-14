@@ -19,6 +19,27 @@ EXTERNAL_MESSAGE_HE = "יש לך עדכון השקעות חדש. אנא היכנ
 EXTERNAL_MESSAGE_EN = "You have a new investment update. Please log in to view details."
 
 
+def _push_data(
+    recommendation_id: Optional[int], notification_id: Optional[int]
+) -> Dict[str, str]:
+    """Build the FCM data payload that tells the app where to land.
+
+    FCM rejects a message whose data values are not all strings, and it
+    rejects the whole send — so None is dropped rather than stringified.
+
+    This deliberately carries ids only, never the analysis itself: the
+    external message stays generic by design (see the module docstring), and
+    a notification payload is readable on a lock screen without logging in.
+    """
+    data: Dict[str, str] = {"type": "investment_update", "action": "open_app"}
+    if recommendation_id is not None:
+        data["recommendation_id"] = str(recommendation_id)
+        data["path"] = f"/research/{recommendation_id}"
+    if notification_id is not None:
+        data["notification_id"] = str(notification_id)
+    return data
+
+
 class NotificationService:
     """
     Sends multi-channel notifications to users.
@@ -90,6 +111,8 @@ class NotificationService:
                         push_token=user.push_token,
                         title=notification.title,
                         body=external_msg,
+                        recommendation_id=recommendation_id,
+                        notification_id=notification.id,
                     )
                     if success:
                         channels_sent.append("push")
@@ -238,8 +261,22 @@ class NotificationService:
             logger.error("mark_as_read failed", notification_id=notification_id, error=str(e))
             return False
 
-    async def _send_push(self, push_token: str, title: str, body: str) -> bool:
-        """Send Firebase Cloud Messaging push notification."""
+    async def _send_push(
+        self,
+        push_token: str,
+        title: str,
+        body: str,
+        recommendation_id: Optional[int] = None,
+        notification_id: Optional[int] = None,
+    ) -> bool:
+        """Send Firebase Cloud Messaging push notification.
+
+        The data payload carries the recommendation id so tapping the alert
+        on a phone opens that stock's research page. Without it the tap just
+        opens the app on whatever screen it was last on, leaving the user to
+        hunt for the stock the alert was about — which for a time-sensitive
+        entry signal defeats the point of sending it.
+        """
         try:
             import firebase_admin
             from firebase_admin import credentials, messaging
@@ -265,10 +302,7 @@ class NotificationService:
                     body=body,
                 ),
                 token=push_token,
-                data={
-                    "type": "investment_update",
-                    "action": "open_app",
-                },
+                data=_push_data(recommendation_id, notification_id),
             )
 
             import asyncio

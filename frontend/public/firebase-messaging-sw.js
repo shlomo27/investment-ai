@@ -17,8 +17,8 @@ self.addEventListener('message', (event) => {
         const body = payload.notification?.body || 'You have a new investment update.';
         self.registration.showNotification(title, {
           body,
-          icon: '/favicon.ico',
-          badge: '/favicon.ico',
+          icon: '/icons/icon-192.png',
+          badge: '/icons/icon-192.png',
           data: payload.data || {},
           requireInteraction: false,
         });

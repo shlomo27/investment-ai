@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Push Notifications capability. Xcode writes this file when you tick
+	  "Push Notifications" in Signing & Capabilities; Capacitor does not
+	  generate it, so without it the app builds and installs happily and
+	  simply never receives a single notification.
+
+	  "development" is correct for debug builds and TestFlight. Xcode
+	  rewrites it to "production" automatically for App Store archives, so
+	  this value does not need changing before release.
+	-->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>

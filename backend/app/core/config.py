@@ -12,7 +12,35 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "production"
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
+    # The two localhost entries are the Vite dev server. The capacitor://
+    # and https://localhost entries are the native iOS and Android builds:
+    # a Capacitor app serves its bundled assets from a local origin, so every
+    # call it makes to the backend is cross-origin and is blocked outright
+    # without these. They are fixed strings, identical for every install, and
+    # grant nothing to a browser — no web page can claim them as its origin.
+    ALLOWED_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "capacitor://localhost",  # iOS
+        "https://localhost",      # Android (androidScheme: "https")
+        "ionic://localhost",      # older iOS webview scheme, harmless to keep
+    ]
+
+    @property
+    def cors_origins(self) -> List[str]:
+        """ALLOWED_ORIGINS plus the native app origins, always.
+
+        Setting ALLOWED_ORIGINS as an env var *replaces* the list above
+        rather than extending it, so a deployment that pins it to the web
+        frontend's URL would silently lock the iOS and Android builds out of
+        the API — with no error anywhere on the server, just failed requests
+        on the phone. These three origins are constants baked into the app
+        binaries, so union them in unconditionally.
+        """
+        native = ["capacitor://localhost", "https://localhost", "ionic://localhost"]
+        merged = list(self.ALLOWED_ORIGINS)
+        merged.extend(o for o in native if o not in merged)
+        return merged
 
     # Security — must be set via env var in production; dev fallback is stable
     SECRET_KEY: str = "dev-stable-secret-key-change-in-production-via-SECRET_KEY-env-var"

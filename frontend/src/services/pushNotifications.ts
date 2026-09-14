@@ -12,6 +12,8 @@
  * If any key is missing, push notifications are silently disabled.
  */
 
+import { isNative } from "../platform";
+
 const FIREBASE_CONFIG = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -50,7 +52,7 @@ async function registerSW(): Promise<ServiceWorkerRegistration | null> {
  * Request push notification permission and return the FCM token.
  * Returns null if permission denied or Firebase is not configured.
  */
-export async function requestPushPermission(): Promise<string | null> {
+async function requestWebPushPermission(): Promise<string | null> {
   if (!isConfigured()) {
     console.warn('[push] Firebase config missing — VITE_FIREBASE_* vars were not baked into this build');
     return null;
@@ -86,7 +88,7 @@ export async function requestPushPermission(): Promise<string | null> {
  * Initialize push notifications: register SW, get token, save to backend.
  * Call after user is authenticated.
  */
-export async function initPushNotifications(
+async function initWebPushNotifications(
   savePushToken: (token: string) => Promise<void>
 ): Promise<void> {
   if (!isConfigured()) return;
@@ -94,10 +96,51 @@ export async function initPushNotifications(
 
   // Only auto-prompt if already granted — don't interrupt the user on login
   if (Notification.permission === 'granted') {
-    const token = await requestPushPermission();
+    const token = await requestWebPushPermission();
     if (token) await savePushToken(token);
   } else {
     // Register SW in background so it's ready when user grants permission later
     registerSW().catch(() => {});
+  }
+}
+
+// ─── Platform dispatch ───────────────────────────────────────────────────────
+//
+// Callers (App, Onboarding, Settings) import these two names and stay
+// unaware of the platform. The browser keeps the service-worker path above;
+// the iOS and Android builds go through the Firebase Messaging plugin,
+// which is the only way to get an FCM token — rather than a raw APNs
+// token — out of an iPhone. The backend stores whichever string it is
+// handed and sends through Firebase either way.
+//
+// The native module is imported dynamically so its plugin code never lands
+// in the browser bundle.
+
+/** Ask for permission and return an FCM token, on whichever platform. */
+export async function requestPushPermission(): Promise<string | null> {
+  if (isNative()) {
+    const { requestNativePushPermission } = await import("./pushNotificationsNative");
+    return requestNativePushPermission();
+  }
+  return requestWebPushPermission();
+}
+
+/** Register for push and persist the token. Call once, after login. */
+export async function initPushNotifications(
+  savePushToken: (token: string) => Promise<void>,
+  onOpen?: (path: string) => void
+): Promise<void> {
+  if (isNative()) {
+    const { initNativePush } = await import("./pushNotificationsNative");
+    return initNativePush(savePushToken, onOpen);
+  }
+  return initWebPushNotifications(savePushToken);
+}
+
+/** Release the device token on logout so alerts don't follow the next user in. */
+export async function teardownPushNotifications(): Promise<void> {
+  if (isNative()) {
+    const { unregisterNativePush } = await import("./pushNotificationsNative");
+    return unregisterNativePush();
   }
 }

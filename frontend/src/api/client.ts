@@ -20,8 +20,28 @@ import {
   UniversePool,
   ScreenerStatus,
 } from "../types";
+import { isNative } from "../platform";
 
+/**
+ * On the web build this stays empty and every call is relative — nginx
+ * proxies /api/ through to the backend (see nginx.conf.template).
+ *
+ * A native build has no nginx. The page is served from capacitor://localhost,
+ * so a relative /api/v1/... resolves inside the app bundle and every request
+ * 404s against a file that does not exist. VITE_API_URL must therefore be
+ * baked in at build time for iOS and Android — it is set in codemagic.yaml.
+ *
+ * Failing loudly here matters: without it the app builds and installs fine
+ * and then simply cannot log in, with nothing in the UI to say why.
+ */
 const BASE_URL = import.meta.env.VITE_API_URL || "";
+
+if (isNative() && !BASE_URL) {
+  console.error(
+    "[api] VITE_API_URL is empty in a native build — every request will fail. " +
+      "Set it to the absolute backend URL (https://…) before running `npx cap sync`."
+  );
+}
 
 // ─── Axios Instance ──────────────────────────────────────────────────────────
 
