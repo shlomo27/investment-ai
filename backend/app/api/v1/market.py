@@ -21,26 +21,11 @@ from app.services.market_data.tase_service import TASEService
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/market", tags=["Market Data"])
 
-# Strong references to detached background tasks. Without this asyncio holds
-# only a weak reference and the garbage collector can cancel a long-running
-# task partway through, silently.
-_BACKGROUND_TASKS: set = set()
-
-
-def _detach(coro):
-    """Start a background task and keep it alive until it finishes.
-
-    Every long-running job started from this module was fire-and-forget, which
-    means asyncio held no strong reference to it and the collector was free to
-    drop it mid-run — no error, no log, just a job that stops partway. Route
-    them all through here.
-    """
-    import asyncio as _a
-
-    task = _a.create_task(coro)
-    _BACKGROUND_TASKS.add(task)
-    task.add_done_callback(_BACKGROUND_TASKS.discard)
-    return task
+from app.core.background import detach as _detach  # noqa: F401
+# Background tasks are started through app.core.background.detach: asyncio
+# keeps only a weak reference to a bare create_task, so the collector can stop
+# a long job partway with no error and no log. The helper moved out of this
+# module because watchlist.py needed it too.
 
 
 class AssetPoolResponse(BaseModel):

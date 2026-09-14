@@ -22,6 +22,33 @@ class AlertFrequency(str, enum.Enum):
     DAILY = "DAILY"                  # one digest summary per day
 
 
+class SubscriptionTier(str, enum.Enum):
+    """What the account is entitled to.
+
+    FREE is a real, permanent tier rather than a trial — the marginal cost of
+    a free user is close to zero, because analyses are produced per stock and
+    shared by every account, not generated per user. What FREE limits is
+    breadth: how many stocks can be followed and how many recommendations are
+    visible.
+    """
+    FREE = "FREE"
+    PRO = "PRO"
+
+
+class SubscriptionSource(str, enum.Enum):
+    """Where an entitlement came from — it decides who can revoke it.
+
+    Store subscriptions are owned by Apple and Google: they renew, lapse and
+    refund outside this system, so their expiry is authoritative and must
+    never be edited here. MANUAL is for accounts granted access directly
+    (a reviewer, a pilot customer, staff) and is the only source this system
+    may set on its own.
+    """
+    APPLE = "APPLE"
+    GOOGLE = "GOOGLE"
+    MANUAL = "MANUAL"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -49,6 +76,42 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_onboarded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # ── Subscription ────────────────────────────────────────────────────────
+    subscription_tier: Mapped[SubscriptionTier] = mapped_column(
+        SAEnum(SubscriptionTier, name="subscriptiontier"),
+        default=SubscriptionTier.FREE,
+        server_default=SubscriptionTier.FREE.value,
+        nullable=False,
+    )
+    # NULL means "no expiry" and is only valid for MANUAL grants. A store
+    # subscription always carries the period end the store reported, so a
+    # lapsed renewal downgrades the account on its own instead of leaving a
+    # paid tier that nobody is paying for.
+    subscription_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    subscription_source: Mapped[SubscriptionSource | None] = mapped_column(
+        SAEnum(SubscriptionSource, name="subscriptionsource"), nullable=True
+    )
+    # RevenueCat's identifier for this user, so a purchase made on one device
+    # restores on the next one. Kept even after a subscription lapses.
+    billing_customer_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+
+    @property
+    def is_pro(self) -> bool:
+        """Whether PRO entitlements are live right now.
+
+        Expiry is checked on read rather than by a scheduled downgrade job:
+        a job that fails to run would silently keep lapsed accounts paid, and
+        this comparison costs nothing.
+        """
+        if self.subscription_tier != SubscriptionTier.PRO:
+            return False
+        if self.subscription_expires_at is None:
+            # Only MANUAL grants are allowed to be open-ended.
+            return self.subscription_source == SubscriptionSource.MANUAL
+        return self.subscription_expires_at > datetime.now(timezone.utc)
     preferred_language: Mapped[str] = mapped_column(String(10), default="he", nullable=False)
     push_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Personal Telegram chat (private bot conversation) — linked from Settings;

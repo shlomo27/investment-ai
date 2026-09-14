@@ -14,10 +14,12 @@ from sqlalchemy import select, desc, and_
 
 from app.core.database import get_db
 from app.core.security import get_current_active_user
+from app.core.entitlements import entitlements_for
 from app.db.models.user import User
 from app.db.models.recommendation import Recommendation, RecommendationStatus, RecommendationType
 from app.db.models.notification import Notification, NotificationType
 from app.db.models.asset import Asset, RiskLevel
+from app.db.models.watchlist import Watchlist
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
@@ -46,6 +48,11 @@ class RecommendationResponse(BaseModel):
     sector: Optional[str]
     risk_level: Optional[str] = None
     beta: Optional[float] = None
+    #: True when the written reasoning was withheld for this account's tier,
+    #: so the app can show an upgrade panel instead of an empty section — an
+    #: empty section reads as "the analysis failed", which is worse than a
+    #: paywall and generates support mail.
+    reasoning_locked: bool = False
     created_at: datetime
     approved_at: Optional[datetime]
     presented_at: Optional[datetime]
@@ -88,6 +95,39 @@ def _beta_of(rec: Recommendation, asset: Optional[Asset]) -> Optional[float]:
     except (TypeError, ValueError):
         return None
     return value if 0 < value < 10 else None
+
+
+async def _followed_symbols(db: AsyncSession, user: User) -> set:
+    """Symbols this user follows — the exemption from the reasoning paywall.
+
+    The free tier promises real alerts on a couple of stocks; an alert whose
+    explanation is locked is worse than no alert, so anything followed stays
+    fully readable.
+    """
+    rows = await db.execute(
+        select(Watchlist.symbol).where(Watchlist.user_id == user.id)
+    )
+    return {r[0] for r in rows.all()}
+
+
+def _lock_reasoning(rec: Recommendation, locked: bool) -> dict:
+    """The reasoning fields, blanked when the tier withholds them.
+
+    One helper so the list and the detail endpoint cannot drift apart —
+    a paywall that holds on one route and leaks on the other is not a paywall.
+    """
+    if not locked:
+        return dict(
+            fundamental_analysis=rec.fundamental_analysis,
+            fundamental_notes=rec.fundamental_notes,
+            sentiment_data=rec.sentiment_data,
+            senior_review_notes=rec.senior_review_notes,
+            senior_notes=rec.senior_notes,
+        )
+    return dict(
+        fundamental_analysis=None, fundamental_notes=None, sentiment_data=None,
+        senior_review_notes=None, senior_notes=None,
+    )
 
 
 @router.get("/", response_model=List[RecommendationResponse])
@@ -142,7 +182,20 @@ async def get_recommendations(
         ).scalar_subquery()
         query = query.where(Recommendation.symbol.notin_(volatile_symbols))
 
-    query = query.order_by(desc(Recommendation.created_at)).offset(offset).limit(limit)
+    # Tier cap. A free account sees the highest-conviction few rather than the
+    # most recent few: "newest" would hand someone their five slots at random
+    # depending on when they happened to open the app, and the point of the
+    # free tier is that it demonstrates the product working.
+    #
+    # Enforced here, in the query, not by trimming the response — and never by
+    # the client, which is software the user controls.
+    ent = entitlements_for(current_user)
+    if ent.recommendation_limit is not None:
+        query = query.order_by(
+            desc(Recommendation.confidence_score), desc(Recommendation.created_at)
+        ).limit(ent.recommendation_limit)
+    else:
+        query = query.order_by(desc(Recommendation.created_at)).offset(offset).limit(limit)
     result = await db.execute(query)
     recommendations = result.scalars().all()
 
@@ -151,9 +204,12 @@ async def get_recommendations(
     assets_result = await db.execute(select(Asset).where(Asset.symbol.in_(symbols)))
     assets = {a.symbol: a for a in assets_result.scalars().all()}
 
+    followed = set() if ent.full_research else await _followed_symbols(db, current_user)
+
     response = []
     for rec in recommendations:
         asset = assets.get(rec.symbol)
+        locked = not ent.full_research and rec.symbol not in followed
         response.append(RecommendationResponse(
             id=rec.id,
             symbol=rec.symbol,
@@ -163,11 +219,8 @@ async def get_recommendations(
             target_price=rec.target_price,
             stop_loss=rec.stop_loss,
             current_price_at_recommendation=rec.current_price_at_recommendation,
-            fundamental_analysis=rec.fundamental_analysis,
-            fundamental_notes=rec.fundamental_notes,
-            sentiment_data=rec.sentiment_data,
-            senior_review_notes=rec.senior_review_notes,
-            senior_notes=rec.senior_notes,
+            reasoning_locked=locked,
+            **_lock_reasoning(rec, locked),
             technical_analysis=rec.technical_analysis,
             risk_factors=rec.risk_factors,
             expected_return_pct=rec.expected_return_pct,
@@ -230,10 +283,35 @@ async def hidden_by_preferences(
             cond = and_(cond, Recommendation.recommendation_type.notin_(_short_types))
         hidden_volatile = await _count(cond)
 
+    # How many the subscription tier withholds, as opposed to the user's own
+    # display settings. Kept as a separate number: "you chose to hide these"
+    # and "these are behind the paywall" are different messages and must not
+    # be merged into one count.
+    ent = entitlements_for(current_user)
+    locked_by_tier = 0
+    if ent.recommendation_limit is not None:
+        visible_q = select(sqlfunc.count(Recommendation.id)).where(
+            Recommendation.status.in_(live)
+        )
+        if not current_user.allows_short:
+            visible_q = visible_q.where(
+                Recommendation.recommendation_type.notin_(_short_types)
+            )
+        if not current_user.allows_volatile:
+            volatile_symbols = (
+                select(Asset.symbol).where(Asset.risk_level.in_(_volatile_levels))
+            ).scalar_subquery()
+            visible_q = visible_q.where(Recommendation.symbol.notin_(volatile_symbols))
+        eligible = (await db.execute(visible_q)).scalar() or 0
+        locked_by_tier = max(0, eligible - ent.recommendation_limit)
+
     return {
         "hidden_total": hidden_short + hidden_volatile,
         "hidden_short": hidden_short,
         "hidden_volatile": hidden_volatile,
+        "locked_by_tier": locked_by_tier,
+        "tier": ent.tier,
+        "recommendation_limit": ent.recommendation_limit,
     }
 
 
@@ -474,6 +552,19 @@ async def get_recommendation(
     asset_result = await db.execute(select(Asset).where(Asset.symbol == rec.symbol))
     asset = asset_result.scalar_one_or_none()
 
+    # Free accounts get the call, the prices and the technical read — enough to
+    # act on and enough to judge the product by — but not the written reasoning
+    # behind it. That reasoning is what the subscription buys, so it is removed
+    # here on the server rather than hidden in the app.
+    #
+    # A stock the user actually follows is exempt: the free tier promises real
+    # alerts on two stocks, and an alert whose explanation is paywalled is a
+    # worse experience than not alerting at all.
+    ent = entitlements_for(current_user)
+    reasoning_locked = (
+        not ent.full_research and rec.symbol not in await _followed_symbols(db, current_user)
+    )
+
     return RecommendationResponse(
         id=rec.id,
         symbol=rec.symbol,
@@ -483,11 +574,11 @@ async def get_recommendation(
         target_price=rec.target_price,
         stop_loss=rec.stop_loss,
         current_price_at_recommendation=rec.current_price_at_recommendation,
-        fundamental_analysis=rec.fundamental_analysis,
-        fundamental_notes=rec.fundamental_notes,
-        sentiment_data=rec.sentiment_data,
-        senior_review_notes=rec.senior_review_notes,
-        senior_notes=rec.senior_notes,
+        reasoning_locked=reasoning_locked,
+        **_lock_reasoning(rec, reasoning_locked),
+        # Technical analysis stays visible: it is computed locally with no LLM
+        # cost, and it is the part a free user needs to judge timing on the
+        # stocks they do follow.
         technical_analysis=rec.technical_analysis,
         risk_factors=rec.risk_factors,
         expected_return_pct=rec.expected_return_pct,

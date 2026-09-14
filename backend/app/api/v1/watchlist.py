@@ -8,10 +8,12 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.core.database import get_db
 from app.core.security import get_current_active_user
+from app.core.entitlements import entitlements_for
+from app.core.background import detach
 from app.db.models.user import User
 from app.db.models.watchlist import Watchlist
 from app.db.models.asset import Asset, Exchange
@@ -111,6 +113,36 @@ async def add_to_watchlist(
             detail=f"{symbol} is already in your watchlist",
         )
 
+    # Tier limit. Checked after the duplicate check on purpose: re-adding a
+    # stock already followed should say "already there", not "upgrade".
+    ent = entitlements_for(current_user)
+    if ent.watchlist_limit is not None:
+        count = (await db.execute(
+            select(func.count()).select_from(Watchlist).where(
+                Watchlist.user_id == current_user.id
+            )
+        )).scalar_one()
+        if count >= ent.watchlist_limit:
+            # 402 rather than 403: this is not a permission error to argue
+            # with, it is a priced limit, and the app keys its upgrade prompt
+            # off this status.
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={
+                    "error": "watchlist_limit_reached",
+                    "limit": ent.watchlist_limit,
+                    "tier": ent.tier,
+                    "message_he": (
+                        f"בתוכנית החינמית אפשר לעקוב אחרי {ent.watchlist_limit} מניות. "
+                        "לשדרוג למעקב ללא הגבלה, עבור למנוי."
+                    ),
+                    "message_en": (
+                        f"The free plan follows up to {ent.watchlist_limit} stocks. "
+                        "Upgrade for unlimited tracking."
+                    ),
+                },
+            )
+
     # Try to find or create asset record
     asset_result = await db.execute(select(Asset).where(Asset.symbol == symbol))
     asset = asset_result.scalar_one_or_none()
@@ -160,9 +192,8 @@ async def add_to_watchlist(
     # Technical alerts fire on transitions only, so following after the signal
     # turned would otherwise mean silence until the next flip.
     if watchlist_item.alert_on_technical_signal:
-        import asyncio
         from app.workers.in_process_scheduler import notify_entry_state_on_follow
-        asyncio.create_task(notify_entry_state_on_follow(current_user.id, symbol))
+        detach(notify_entry_state_on_follow(current_user.id, symbol))
 
     return WatchlistItemResponse(
         id=watchlist_item.id,
@@ -286,9 +317,8 @@ async def update_watchlist_settings(
     # Switching alerts ON is the same moment as following: check the entry
     # state now rather than leaving the user waiting for the next transition.
     if alert_on_technical_signal and was_off:
-        import asyncio
         from app.workers.in_process_scheduler import notify_entry_state_on_follow
-        asyncio.create_task(notify_entry_state_on_follow(current_user.id, item.symbol))
+        detach(notify_entry_state_on_follow(current_user.id, item.symbol))
 
     return {"message": "Watchlist settings updated", "id": watchlist_id}
 

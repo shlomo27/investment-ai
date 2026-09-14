@@ -116,8 +116,44 @@ class UserResponse(BaseModel):
     totp_enabled: bool = False
     telegram_linked: bool = False
 
+    # ── Subscription ────────────────────────────────────────────────────────
+    # Sent on every /auth/me so the app renders the right state on launch
+    # without a second round trip. These describe the tier; they never grant
+    # it — every limit is enforced server-side regardless of what the client
+    # believes it is entitled to.
+    subscription_tier: str = "FREE"
+    is_pro: bool = False
+    subscription_expires_at: Optional[datetime] = None
+    watchlist_limit: Optional[int] = None
+    recommendation_limit: Optional[int] = None
+
     class Config:
         from_attributes = True
+
+    @classmethod
+    def from_user(cls, user: User) -> "UserResponse":
+        """Build the response including the resolved entitlements.
+
+        from_orm() cannot fill watchlist_limit/recommendation_limit — they are
+        not columns, they are the output of entitlements_for() — so every route
+        that returns a user goes through here instead. One constructor means a
+        route added later cannot accidentally ship a response that omits the
+        tier and leaves the app showing a paid user the free-tier prompts.
+        """
+        from app.core.entitlements import entitlements_for
+
+        ent = entitlements_for(user)
+        obj = cls.from_orm(user)
+        obj.subscription_tier = (
+            user.subscription_tier.value
+            if hasattr(user.subscription_tier, "value")
+            else str(user.subscription_tier)
+        )
+        obj.is_pro = ent.tier == "PRO"
+        obj.subscription_expires_at = user.subscription_expires_at
+        obj.watchlist_limit = ent.watchlist_limit
+        obj.recommendation_limit = ent.recommendation_limit
+        return obj
 
 
 class AuthResponse(BaseModel):
@@ -163,7 +199,7 @@ async def register(
     logger.info("New user registered", user_id=user.id, email=user.email)
 
     return AuthResponse(
-        user=UserResponse.from_orm(user),
+        user=UserResponse.from_user(user),
         tokens=tokens,
     )
 
@@ -257,7 +293,7 @@ async def login(
                 login_count=user.login_count)
 
     return AuthResponse(
-        user=UserResponse.from_orm(user),
+        user=UserResponse.from_user(user),
         tokens=tokens,
     )
 
@@ -308,7 +344,7 @@ async def logout(current_user: User = Depends(get_current_active_user)):
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_active_user)):
     """Get current user profile."""
-    return UserResponse.from_orm(current_user)
+    return UserResponse.from_user(current_user)
 
 
 @router.put("/profile", response_model=UserResponse)
@@ -352,7 +388,7 @@ async def update_profile(
     await db.flush()
     logger.info("Profile updated", user_id=current_user.id)
 
-    return UserResponse.from_orm(current_user)
+    return UserResponse.from_user(current_user)
 
 
 @router.post("/onboarding", response_model=UserResponse)
@@ -388,7 +424,7 @@ async def complete_onboarding(
         investment_type=request.investment_type,
     )
 
-    return UserResponse.from_orm(current_user)
+    return UserResponse.from_user(current_user)
 
 
 @router.post("/2fa/setup")
@@ -496,7 +532,7 @@ async def complete_2fa_login(
     tokens = create_token_pair(user.id, user.email)
     logger.info("2FA login successful", user_id=user.id)
 
-    return AuthResponse(user=UserResponse.from_orm(user), tokens=tokens)
+    return AuthResponse(user=UserResponse.from_user(user), tokens=tokens)
 
 # ─── Personal Telegram linking ─────────────────────────────────────────────────
 
