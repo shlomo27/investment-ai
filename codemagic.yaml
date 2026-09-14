@@ -1,0 +1,183 @@
+# Codemagic CI — builds the Capacitor apps for both stores.
+#
+# Why this exists at all: an iOS build requires macOS, and there is no Mac in
+# this project. Codemagic rents one per build (free tier: 500 min/month) and
+# also handles code signing and upload, which is the fiddliest part of both
+# stores.
+#
+# Before the first run, set these in the Codemagic UI:
+#
+#   Environment variable group "investment_ai" (mark all as secure):
+#     VITE_API_URL                 https://<your-backend>.up.railway.app
+#     VITE_FIREBASE_API_KEY        from Firebase console → Project settings
+#     VITE_FIREBASE_AUTH_DOMAIN
+#     VITE_FIREBASE_PROJECT_ID
+#     VITE_FIREBASE_MESSAGING_SENDER_ID
+#     VITE_FIREBASE_APP_ID
+#     VITE_FIREBASE_VAPID_KEY      Cloud Messaging → Web Push certificates
+#
+#   Group "firebase_config" (base64-encoded files, both secure):
+#     GOOGLE_SERVICES_JSON         base64 of google-services.json     (Android)
+#     GOOGLE_SERVICE_INFO_PLIST    base64 of GoogleService-Info.plist (iOS)
+#   Produce them with:  base64 -i google-services.json | pbcopy
+#   These are NOT committed: they are per-project Firebase credentials and
+#   belong in CI secrets, not in git.
+#
+#   Integrations:
+#     App Store Connect API key  → ios_signing + publishing
+#     Google Play service account JSON → GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+#
+# VITE_API_URL is the one that silently breaks everything if forgotten: the
+# app builds and installs cleanly and then cannot reach the backend at all.
+
+definitions:
+  env_versions: &env_versions
+    node: 22.22.2
+    npm: 10
+
+  cache_paths: &cache_paths
+    cache_paths:
+      - $HOME/.npm
+      - $CM_BUILD_DIR/frontend/node_modules
+
+  install_web: &install_web
+    name: Install dependencies and build the web assets
+    script: |
+      cd frontend
+      npm ci
+      # Fail loudly rather than shipping an app that cannot reach the API.
+      if [ -z "$VITE_API_URL" ]; then
+        echo "VITE_API_URL is not set — the app would build fine and then be"
+        echo "unable to log in. Set it in the Codemagic environment group."
+        exit 1
+      fi
+      npm run build
+      npx cap sync
+
+workflows:
+
+  # ─── Android ──────────────────────────────────────────────────────────────
+  android:
+    name: Android — Play Store (AAB)
+    max_build_duration: 45
+    instance_type: linux_x2
+    environment:
+      <<: *env_versions
+      java: 21
+      groups:
+        - investment_ai
+        - firebase_config
+      android_signing:
+        - investment_ai_keystore
+      vars:
+        PACKAGE_NAME: "com.investmentai.app"
+    <<: *cache_paths
+    scripts:
+      - name: Place google-services.json
+        script: |
+          cd frontend
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "GOOGLE_SERVICES_JSON is not set — Capacitor skips the"
+            echo "google-services Gradle plugin and push notifications are"
+            echo "silently dead in the shipped app."
+            exit 1
+          fi
+          echo "$GOOGLE_SERVICES_JSON" | base64 --decode > android/app/google-services.json
+      - *install_web
+      - name: Set version from the build number
+        script: |
+          cd frontend/android
+          # Play rejects an AAB whose versionCode is not higher than the last
+          # upload, so derive it from Codemagic's monotonic build number.
+          sed -i.bak "s/versionCode 1/versionCode $((BUILD_NUMBER + 1))/" app/build.gradle
+      - name: Build the release bundle
+        script: |
+          cd frontend/android
+          ./gradlew bundleRelease
+    artifacts:
+      - frontend/android/app/build/outputs/**/*.aab
+      # No mapping.txt: minifyEnabled is false in the release build type, so
+      # nothing is obfuscated and there is no mapping to upload.
+    publishing:
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        # Start on the internal track. Promote to production by hand in the
+        # Play Console once the build has been checked on a real device.
+        track: internal
+        submit_as_draft: true
+      email:
+        recipients:
+          - shlomo2708@gmail.com
+        notify:
+          success: true
+          failure: true
+
+  # ─── iOS ──────────────────────────────────────────────────────────────────
+  ios:
+    name: iOS — App Store (TestFlight)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      <<: *env_versions
+      xcode: latest
+      # No cocoapods entry on purpose: Capacitor 8 resolves its plugins through
+      # Swift Package Manager (ios/App/CapApp-SPM), so this project has no
+      # Podfile and no .xcworkspace — only App.xcodeproj.
+      groups:
+        - investment_ai
+        - firebase_config
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.investmentai.app
+      vars:
+        BUNDLE_ID: "com.investmentai.app"
+        XCODE_PROJECT: "frontend/ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+    <<: *cache_paths
+    scripts:
+      - name: Place GoogleService-Info.plist
+        script: |
+          cd frontend
+          if [ -z "$GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "GOOGLE_SERVICE_INFO_PLIST is not set — the app will register"
+            echo "for push and never receive anything."
+            exit 1
+          fi
+          echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > ios/App/App/GoogleService-Info.plist
+      - *install_web
+      - name: Fetch signing files
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE --create
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Set build number
+        script: |
+          cd frontend/ios/App
+          # App Store Connect rejects a re-used build number for the same
+          # version, which is the most common TestFlight upload failure.
+          agvtool new-version -all $(($BUILD_NUMBER + 1))
+      - name: Build the IPA
+        script: |
+          cd frontend/ios/App
+          xcode-project build-ipa \
+            --project "App.xcodeproj" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - frontend/ios/App/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        # Uploads to TestFlight only. Submission for App Store review stays a
+        # deliberate manual step — review is where a financial app gets
+        # scrutinised, and it should not be triggered by a git push.
+        submit_to_testflight: true
+        submit_to_app_store: false
+      email:
+        recipients:
+          - shlomo2708@gmail.com
+        notify:
+          success: true
+          failure: true

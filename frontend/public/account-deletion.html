@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מחיקת חשבון — Investment AI</title>
+<!--
+  Google Play requires a publicly reachable page — reachable WITHOUT installing
+  the app — that states how to request account deletion and exactly what is
+  removed. The URL for this page goes in the Play Console's Data Safety form.
+-->
+<style>
+  :root { --bg:#030712; --card:#0b1220; --line:#1e293b; --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font-family: system-ui,-apple-system,"Segoe UI",Arial,sans-serif; line-height:1.75; }
+  .wrap { max-width: 680px; margin:0 auto; padding:48px 20px 96px; }
+  h1 { font-size:1.6rem; margin:0 0 6px; }
+  h2 { font-size:1.05rem; margin:36px 0 10px; color:var(--accent); }
+  p, li { color:var(--muted); }
+  li { margin-bottom:6px; }
+  .meta { color:#64748b; font-size:.85rem; margin-bottom:28px; }
+  ol.steps { counter-reset:s; list-style:none; padding:0; }
+  ol.steps li { background:var(--card); border:1px solid var(--line); border-radius:12px;
+                padding:14px 18px; margin-bottom:10px; counter-increment:s; }
+  ol.steps li::before { content:counter(s); display:inline-block; width:24px; height:24px;
+                        line-height:24px; text-align:center; border-radius:50%;
+                        background:var(--accent); color:#030712; font-weight:700;
+                        font-size:.8rem; margin-inline-end:10px; }
+  a { color:var(--accent); }
+  strong { color:var(--text); font-weight:600; }
+  .en { direction:ltr; text-align:left; border-top:1px solid var(--line); margin-top:64px; padding-top:36px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>מחיקת חשבון ומידע</h1>
+  <p class="meta">Investment AI</p>
+
+  <h2>מתוך האפליקציה</h2>
+  <ol class="steps">
+    <li>היכנס לחשבון שלך.</li>
+    <li>פתח את מסך <strong>הגדרות</strong>.</li>
+    <li>גלול אל <strong>מחיקת חשבון</strong>.</li>
+    <li>הזן את הסיסמה שלך והקלד <strong>DELETE</strong> לאישור.</li>
+  </ol>
+  <p>המחיקה מתבצעת מיד ואינה ניתנת לביטול.</p>
+
+  <h2>ללא גישה לאפליקציה</h2>
+  <p>אם אינך מצליח להיכנס, שלח בקשה מכתובת האימייל הרשומה בחשבון אל
+     <a href="mailto:shlomo2708@gmail.com">shlomo2708@gmail.com</a> עם הנושא "מחיקת חשבון".
+     נטפל בבקשה בתוך 30 יום ונאשר בחזרה.</p>
+
+  <h2>מה נמחק</h2>
+  <ul>
+    <li>פרטי החשבון — שם, אימייל, טלפון והסיסמה המוצפנת</li>
+    <li>העדפות ההשקעה ופרופיל הסיכון</li>
+    <li>התיק והפוזיציות שסימנת</li>
+    <li>רשימת המעקב</li>
+    <li>היסטוריית ההתראות</li>
+    <li>אסימון ההתראות של המכשיר וקישור הטלגרם</li>
+  </ul>
+
+  <h2>מה נשאר</h2>
+  <p>ניתוחי המניות עצמם אינם שייכים לחשבון שלך — הם משותפים לכל המשתמשים ואינם מכילים מידע שמזהה אותך. הם נשארים במערכת.</p>
+  <p>לוגים טכניים שאינם מזהים אותך אישית עשויים להישמר לתקופה קצרה לצורכי אבטחה.</p>
+
+  <p style="margin-top:32px"><a href="/privacy.html">מדיניות הפרטיות המלאה</a></p>
+
+  <!-- ─────────────────────────── English ─────────────────────────── -->
+  <div class="en" lang="en">
+    <h1>Account &amp; Data Deletion</h1>
+    <p class="meta">Investment AI</p>
+
+    <h2>From inside the app</h2>
+    <ol class="steps">
+      <li>Sign in to your account.</li>
+      <li>Open <strong>Settings</strong>.</li>
+      <li>Scroll to <strong>Delete account</strong>.</li>
+      <li>Enter your password and type <strong>DELETE</strong> to confirm.</li>
+    </ol>
+    <p>Deletion happens immediately and cannot be undone.</p>
+
+    <h2>If you cannot sign in</h2>
+    <p>Email <a href="mailto:shlomo2708@gmail.com">shlomo2708@gmail.com</a> from the address registered on the account, with the subject "Account deletion". We respond within 30 days and confirm once done.</p>
+
+    <h2>What is deleted</h2>
+    <ul>
+      <li>Account details — name, email, phone, hashed password</li>
+      <li>Investment preferences and risk profile</li>
+      <li>Portfolio and marked positions</li>
+      <li>Watchlist</li>
+      <li>Alert history</li>
+      <li>Device push token and Telegram link</li>
+    </ul>
+
+    <h2>What remains</h2>
+    <p>The stock analyses themselves are not owned by your account — they are shared across all users and contain nothing that identifies you, so they stay in the system.</p>
+    <p>Non-identifying technical logs may persist briefly for security purposes.</p>
+
+    <p style="margin-top:32px"><a href="/privacy.html">Full privacy policy</a></p>
+  </div>
+
+</div>
+</body>
+</html>

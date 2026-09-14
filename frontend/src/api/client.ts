@@ -235,6 +235,18 @@ export const authApi = {
     return response.data;
   },
 
+  /**
+   * Permanently delete the signed-in account. Required by both stores for
+   * any app with sign-up; Apple checks for it by hand during review.
+   */
+  deleteAccount: async (password: string): Promise<{ deleted: boolean }> => {
+    const response = await api.post("/auth/account/delete", {
+      password,
+      confirm: "DELETE",
+    });
+    return response.data;
+  },
+
   telegramLinkCode: async (): Promise<{ link: string; expires_in: number }> => {
     const response = await api.post("/auth/telegram/link-code");
     return response.data;

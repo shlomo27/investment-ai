@@ -57,3 +57,23 @@ htmlcov/
 *.key
 firebase-credentials.json
 secrets/
+
+# ── Mobile (Capacitor) ───────────────────────────────────────────────────────
+# Firebase per-project credentials. google-services.json ships inside the app
+# binary and is not a secret in the cryptographic sense, but both files are
+# environment-specific and belong in CI secrets rather than in git — see
+# docs/MOBILE_RELEASE.md. They are placed at build time from base64 env vars.
+frontend/android/app/google-services.json
+frontend/ios/App/App/GoogleService-Info.plist
+
+# Signing material. A leaked upload keystore lets someone else publish updates
+# to the app; an APNs key lets them send push to every installed device.
+*.keystore
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+
+# The icon/splash sources in frontend/assets/ are deliberately committed, not
+# ignored: capacitor-assets needs them present to regenerate the per-platform
+# sizes on a fresh clone. Rebuild them with `npm run icons`.

@@ -713,3 +713,71 @@ async def revoke_demo_account(
     await db.flush()
     logger.info("Demo account revoked", email=user.email)
     return {"revoked": True, "email": user.email}
+
+
+# ─── Account Deletion ────────────────────────────────────────────────────────
+#
+# Apple requires any app that lets a user create an account to let them
+# delete it from inside the app — not by emailing support, not by a web form.
+# It is a routine rejection reason and it is checked by hand during review.
+# Google Play requires the same, plus a web-reachable deletion route.
+#
+# This is a real delete, not a deactivation: every table that references a
+# user does so with ondelete="CASCADE" (portfolio, orders, watchlist,
+# notifications, portfolio_history), so removing the row removes the personal
+# data with it. Recommendations are not user-owned — they belong to assets and
+# are shared by every account — so they are deliberately left in place.
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(..., description="Current password, to confirm intent")
+    confirm: str = Field(..., description='Must be the literal string "DELETE"')
+
+
+@router.post("/account/delete")
+async def delete_account(
+    request: DeleteAccountRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete the signed-in user's account and personal data."""
+    # Two independent confirmations. Account deletion is irreversible and the
+    # button necessarily sits in Settings next to things that are not.
+    if request.confirm != "DELETE":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Type DELETE to confirm account deletion',
+        )
+    if not verify_password(request.password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Password is incorrect",
+        )
+
+    # Refuse to remove the last administrator. Without this, one mistaken tap
+    # locks everyone out of the system permanently — there is no recovery path
+    # that does not involve editing the database by hand.
+    if current_user.is_admin:
+        remaining = (
+            await db.execute(
+                select(User).where(
+                    User.is_admin == True,  # noqa: E712 — SQL expression, not a bool
+                    User.id != current_user.id,
+                    User.is_active == True,  # noqa: E712
+                )
+            )
+        ).scalars().first()
+        if remaining is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This is the only administrator account. Grant admin to "
+                    "another user before deleting this one."
+                ),
+            )
+
+    email = current_user.email
+    await db.delete(current_user)
+    await db.commit()
+    logger.info("Account deleted", email=email)
+    return {"deleted": True}

@@ -29,6 +29,13 @@ const Settings: React.FC = () => {
   const [allowsShort, setAllowsShort] = useState<boolean>(user?.allows_short ?? false);
   const [allowsVolatile, setAllowsVolatile] = useState<boolean>(user?.allows_volatile ?? false);
 
+  // Account deletion — required in-app by both stores for any app with sign-up.
+  const [delOpen, setDelOpen] = useState(false);
+  const [delPassword, setDelPassword] = useState("");
+  const [delConfirm, setDelConfirm] = useState("");
+  const [delError, setDelError] = useState("");
+  const [delLoading, setDelLoading] = useState(false);
+
   const [saved, setSaved] = useState(false);
   const [pushStatus, setPushStatus] = useState<"idle" | "requesting" | "done" | "denied">("idle");
 
@@ -176,6 +183,24 @@ const Settings: React.FC = () => {
       setPushStatus("done");
     } else {
       setPushStatus("denied");
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setDelError("");
+    setDelLoading(true);
+    try {
+      await authApi.deleteAccount(delPassword);
+      // The account is gone; the stored tokens now authenticate nothing.
+      localStorage.clear();
+      window.location.href = "/login";
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      setDelError(
+        detail ||
+          (isHe ? "מחיקת החשבון נכשלה" : "Could not delete the account")
+      );
+      setDelLoading(false);
     }
   };
 
@@ -533,6 +558,77 @@ const Settings: React.FC = () => {
       >
         {isLoading ? (isHe ? "שומר..." : "Saving...") : (isHe ? "שמור שינויים" : "Save Changes")}
       </button>
+
+      {/* ── Delete Account ──────────────────────────────────────────────── */}
+      <div className="bg-gray-900 border border-red-900/40 rounded-2xl p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-red-400">
+          {isHe ? "מחיקת חשבון" : "Delete account"}
+        </h2>
+        <p className="text-xs text-gray-400 leading-relaxed">
+          {isHe
+            ? "מחיקת החשבון היא לצמיתות. הפרטים האישיים, התיק, רשימת המעקב וההתראות יימחקו ולא ניתן לשחזר אותם."
+            : "Deleting your account is permanent. Your details, portfolio, watchlist and alerts are removed and cannot be restored."}
+        </p>
+
+        {!delOpen ? (
+          <button
+            onClick={() => setDelOpen(true)}
+            className="text-red-400 hover:text-red-300 text-sm font-medium underline underline-offset-4"
+          >
+            {isHe ? "אני רוצה למחוק את החשבון" : "I want to delete my account"}
+          </button>
+        ) : (
+          <div className="space-y-3 pt-1">
+            <input
+              type="password"
+              value={delPassword}
+              onChange={(e) => setDelPassword(e.target.value)}
+              autoComplete="current-password"
+              placeholder={isHe ? "הסיסמה שלך" : "Your password"}
+              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-red-500"
+            />
+            <input
+              value={delConfirm}
+              onChange={(e) => setDelConfirm(e.target.value)}
+              placeholder="DELETE"
+              dir="ltr"
+              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white font-mono tracking-widest focus:outline-none focus:border-red-500"
+            />
+            <p className="text-[11px] text-gray-500">
+              {isHe
+                ? 'הקלד DELETE באותיות גדולות כדי לאשר.'
+                : 'Type DELETE in capitals to confirm.'}
+            </p>
+
+            {delError && <p className="text-xs text-red-400">{delError}</p>}
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleDeleteAccount}
+                disabled={delConfirm !== "DELETE" || !delPassword || delLoading}
+                className="flex-1 bg-red-700 hover:bg-red-800 disabled:opacity-40 text-white px-5 py-2.5 rounded-xl text-sm font-medium"
+              >
+                {delLoading
+                  ? "..."
+                  : isHe
+                  ? "מחק את החשבון לצמיתות"
+                  : "Permanently delete account"}
+              </button>
+              <button
+                onClick={() => {
+                  setDelOpen(false);
+                  setDelPassword("");
+                  setDelConfirm("");
+                  setDelError("");
+                }}
+                className="text-gray-500 hover:text-gray-300 text-sm px-4"
+              >
+                {isHe ? "ביטול" : "Cancel"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
