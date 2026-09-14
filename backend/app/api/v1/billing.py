@@ -232,3 +232,92 @@ async def revenuecat_webhook(
     # adds later: recorded, no entitlement change. Access ends at EXPIRATION.
     logger.info("RevenueCat event noted", user_id=user_id, type=event_type)
     return {"ok": True}
+
+
+class GrantProRequest(BaseModel):
+    user_id: int
+    #: Days of access. None means open-ended, which only MANUAL grants may be.
+    days: Optional[int] = 365
+    reason: str = ""
+
+
+@router.post("/admin/grant-pro")
+async def grant_pro(
+    request: GrantProRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Give an account PRO without a store purchase.
+
+    The store reviewer needs this — a reviewer stuck on the free tier cannot
+    see most of the app, and the usual outcome is a rejection for the features
+    they could not reach. It is also how pilot accounts and staff get access.
+
+    The grant is marked MANUAL so it is distinguishable from a paid one:
+    reporting, win-back and churn numbers must not count comped accounts as
+    revenue, and a store subscription's expiry must never be edited by hand.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+
+    user = (await db.execute(select(User).where(User.id == request.user_id))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Refuse to overwrite a paying subscription. Doing so would replace a
+    # store-owned expiry with a hand-typed one, and the store would keep
+    # charging against a record this system no longer tracks.
+    if user.subscription_source in (SubscriptionSource.APPLE, SubscriptionSource.GOOGLE) and user.is_pro:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This account has an active store subscription; it is managed by the store.",
+        )
+
+    from datetime import timedelta
+
+    user.subscription_tier = SubscriptionTier.PRO
+    user.subscription_source = SubscriptionSource.MANUAL
+    user.subscription_expires_at = (
+        datetime.now(timezone.utc) + timedelta(days=request.days) if request.days else None
+    )
+    await db.commit()
+    logger.info(
+        "Manual PRO granted",
+        user_id=user.id, email=user.email, days=request.days, reason=request.reason,
+    )
+    return {
+        "granted": True,
+        "email": user.email,
+        "expires_at": user.subscription_expires_at,
+    }
+
+
+@router.post("/admin/revoke-pro")
+async def revoke_pro(
+    user_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Withdraw a manual grant. Store subscriptions are not revocable here."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if user.subscription_source in (SubscriptionSource.APPLE, SubscriptionSource.GOOGLE):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This is a store subscription. Cancelling it is the user's own action "
+                "in their store account; revoking here would take away access they paid for."
+            ),
+        )
+
+    user.subscription_tier = SubscriptionTier.FREE
+    user.subscription_expires_at = None
+    user.subscription_source = None
+    await db.commit()
+    logger.info("Manual PRO revoked", user_id=user.id, email=user.email)
+    return {"revoked": True, "email": user.email}
