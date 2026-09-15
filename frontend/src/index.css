@@ -330,3 +330,22 @@ body {
   overflow-x: hidden;
   overscroll-behavior-y: none;
 }
+
+/* Horizontally scrollable tab strip.
+   A row of tabs with Hebrew labels runs past 430px easily — five tabs on the
+   admin dashboard measured ~550px — and the page itself does not scroll
+   sideways, so the last tab was simply cut off at the edge and unreachable.
+   Scrolling the strip within its own box is the standard phone pattern and
+   leaves the tab reachable by swiping it into view.
+
+   The scrollbar is hidden because on a touch device it is noise; the content
+   still scrolls, and on desktop these rows fit without needing it. */
+.tab-strip {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;      /* Firefox */
+  -ms-overflow-style: none;   /* legacy Edge */
+}
+.tab-strip::-webkit-scrollbar {
+  display: none;              /* Safari / Chrome */
+}

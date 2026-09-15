@@ -253,10 +253,10 @@ const Recommendations: React.FC = () => {
       </div>
 
       {/* Main Tabs */}
-      <div className="flex bg-gray-900 rounded-xl p-1 w-fit">
+      <div className="flex bg-gray-900 rounded-xl p-1 w-fit max-w-full tab-strip">
         <button
           onClick={() => setView("signals")}
-          className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "signals" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
+          className={`shrink-0 whitespace-nowrap px-3 md:px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "signals" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
         >
           {isHe ? "סיגנלים AI" : "AI Signals"}
           {topPicks.length > 0 && (
@@ -267,7 +267,7 @@ const Recommendations: React.FC = () => {
         </button>
         <button
           onClick={() => setView("inbox")}
-          className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "inbox" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
+          className={`shrink-0 whitespace-nowrap px-3 md:px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "inbox" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
         >
           {isHe ? "תיבת דואר" : "Inbox"}
           {unreadCount > 0 && (
@@ -276,7 +276,7 @@ const Recommendations: React.FC = () => {
         </button>
         <button
           onClick={() => setView("scanlog")}
-          className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "scanlog" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
+          className={`shrink-0 whitespace-nowrap px-3 md:px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "scanlog" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
         >
           {isHe ? "יומן סריקות" : "Scan Log"}
         </button>

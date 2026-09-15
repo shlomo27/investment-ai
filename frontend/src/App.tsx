@@ -5,6 +5,7 @@ import {
   Route,
   Navigate,
   useNavigate,
+  useLocation,
 } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "./store";
 import { fetchCurrentUser } from "./store/slices/authSlice";
@@ -30,6 +31,7 @@ import ResetPassword from "./pages/ResetPassword";
 import Navbar from "./components/Layout/Navbar";
 import Sidebar from "./components/Layout/Sidebar";
 import BottomNav from "./components/Layout/BottomNav";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 // Services
 import { initPushNotifications } from "./services/pushNotifications";
@@ -86,7 +88,13 @@ const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             indicator on phones only — the last card would otherwise sit
             permanently underneath it. */}
         <main className="flex-1 min-w-0 p-3 md:p-6 overflow-x-hidden pb-tabbar">
-          {children}
+          {/* Inside the layout, so a page that throws keeps the nav and the
+              user can move somewhere else. Wrapping the whole app would take
+              the tab bar down with it and leave nothing to tap.
+              Keyed on the route: without the key the boundary stays latched
+              in its error state after navigating away, and every subsequent
+              screen shows the error panel. */}
+          <ErrorBoundary key={useLocation().pathname}>{children}</ErrorBoundary>
         </main>
       </div>
       <BottomNav />

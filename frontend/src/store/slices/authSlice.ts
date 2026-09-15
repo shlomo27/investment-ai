@@ -14,7 +14,16 @@ interface AuthState {
 const initialState: AuthState = {
   user: null,
   isAuthenticated: !!localStorage.getItem("access_token"),
-  isLoading: false,
+  // A stored token means App is about to dispatch fetchCurrentUser, so the
+  // very first render is already a loading state — it must say so.
+  //
+  // With isLoading false, that first render has isAuthenticated=true and
+  // user=null at the same time, and any route that inspects the user decides
+  // on nothing: AdminRoute reads `!user?.is_admin` and redirects an admin
+  // away from /fund before the fetch resolves. The redirect commits, so
+  // opening an admin route directly — a cold start, a deep link, a shortcut
+  // from the home screen — always landed on the feed instead.
+  isLoading: !!localStorage.getItem("access_token"),
   error: null,
 };
 

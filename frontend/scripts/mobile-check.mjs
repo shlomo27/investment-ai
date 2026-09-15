@@ -149,20 +149,44 @@ await page.waitForTimeout(400);
 await page.screenshot({ path: 'mobile-shots/m-more.png' });
 await page.keyboard.press('Escape');
 
-for (const [route, name] of [['/watchlist','m-watchlist'], ['/settings','m-settings'], ['/login','m-login']]) {
+// Every authenticated route, not a sample. /fund was skipped the first time
+// and was exactly where the next cut-off row turned up.
+const ROUTES = [
+  ['/fund', 'm-fund'],
+  ['/watchlist', 'm-watchlist'],
+  ['/portfolio', 'm-portfolio'],
+  ['/orders', 'm-orders'],
+  ['/performance', 'm-performance'],
+  ['/dashboard', 'm-dashboard'],
+  ['/settings', 'm-settings'],
+];
+for (const [route, name] of ROUTES) {
   await page.goto(`${BASE}${route}`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(900);
   const off = await page.evaluate(() => {
-    const vw = document.documentElement.clientWidth; let n = 0;
+    const vw = document.documentElement.clientWidth;
+    const bad = [];
+    // An element inside a horizontally scrollable ancestor is reachable by
+    // swiping, so it is not a defect — only content with no way to scroll to
+    // it counts.
+    const scrollable = (el) => {
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        const ov = getComputedStyle(p).overflowX;
+        if ((ov === 'auto' || ov === 'scroll') && p.scrollWidth > p.clientWidth + 1) return true;
+      }
+      return false;
+    };
     for (const el of document.querySelectorAll('body *')) {
       const r = el.getBoundingClientRect();
       if (!r.width || !r.height) continue;
       if (getComputedStyle(el).position === 'fixed') continue;
-      if (r.right > vw + 1 || r.left < -1) n++;
+      if (r.right > vw + 1 || r.left < -1) {
+        if (!scrollable(el)) bad.push((el.textContent || '').trim().slice(0, 28));
+      }
     }
-    return n;
+    return bad;
   });
-  console.log(`${route}: ${off === 0 ? 'PASS' : `FAIL (${off} off-screen)`}`);
+  console.log(`${route}: ${off.length === 0 ? 'PASS' : `FAIL — unreachable: ${JSON.stringify(off.slice(0,4))}`}`);
   await page.screenshot({ path: `/tmp/claude-0/${name}.png` });
 }
 

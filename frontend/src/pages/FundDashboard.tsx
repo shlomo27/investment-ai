@@ -475,7 +475,10 @@ const FundDashboard: React.FC = () => {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex gap-2 border-b border-gray-800 pb-0">
+      {/* tab-strip (index.css): five Hebrew labels measure ~550px, which on a
+          430px phone pushed "השוואת מניות" off the edge with no way to reach
+          it. The strip scrolls inside its own box instead. */}
+      <div className="flex gap-2 border-b border-gray-800 pb-0 tab-strip">
         {[
           { key: "fund", he: "ניהול תיק", en: "Portfolio Ops" },
           { key: "performance", he: "ביצועים", en: "Performance" },
@@ -486,7 +489,7 @@ const FundDashboard: React.FC = () => {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key as any)}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
+            className={`shrink-0 whitespace-nowrap px-3 md:px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
               activeTab === tab.key
                 ? "border-blue-500 text-blue-400 bg-blue-900/10"
                 : "border-transparent text-gray-400 hover:text-gray-200"
