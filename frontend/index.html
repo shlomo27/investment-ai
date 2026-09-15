@@ -9,7 +9,11 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#2563eb" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover lets the page paint under the notch and home
+         indicator, and is what makes env(safe-area-inset-*) return real
+         values. Without it those insets are all 0 and the bottom tab bar
+         sits under the iPhone home bar. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="AI-powered investment advisory and trading platform - מערכת ייעוץ השקעות מבוסס בינה מלאכותית" />
     <title>Investment AI - מערכת ייעוץ השקעות</title>
   </head>

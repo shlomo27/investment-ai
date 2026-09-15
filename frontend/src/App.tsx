@@ -29,6 +29,7 @@ import ResetPassword from "./pages/ResetPassword";
 // Layout
 import Navbar from "./components/Layout/Navbar";
 import Sidebar from "./components/Layout/Sidebar";
+import BottomNav from "./components/Layout/BottomNav";
 
 // Services
 import { initPushNotifications } from "./services/pushNotifications";
@@ -74,12 +75,21 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex">
+    // min-w-0 on the content column: without it a wide child (a table, a
+    // chart) forces the flex row wider than the screen and the whole page
+    // scrolls sideways — which is what the phone screenshot showed.
+    <div className="min-h-screen bg-gray-950 text-gray-100 flex overflow-x-hidden">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className="flex-1 min-w-0 flex flex-col min-h-screen">
         <Navbar />
-        <main className="flex-1 p-6 overflow-auto">{children}</main>
+        {/* pb-tabbar (index.css) clears the fixed tab bar and the home
+            indicator on phones only — the last card would otherwise sit
+            permanently underneath it. */}
+        <main className="flex-1 min-w-0 p-3 md:p-6 overflow-x-hidden pb-tabbar">
+          {children}
+        </main>
       </div>
+      <BottomNav />
     </div>
   );
 };

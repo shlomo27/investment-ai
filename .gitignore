@@ -77,3 +77,6 @@ frontend/ios/App/App/GoogleService-Info.plist
 # The icon/splash sources in frontend/assets/ are deliberately committed, not
 # ignored: capacitor-assets needs them present to regenerate the per-platform
 # sizes on a fresh clone. Rebuild them with `npm run icons`.
+
+# Local mobile render output from frontend/scripts/mobile-check.mjs
+frontend/mobile-shots/

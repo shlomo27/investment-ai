@@ -307,3 +307,26 @@ tr:hover {
     padding-bottom: 6pt;
   }
 }
+
+/* ── Mobile shell ─────────────────────────────────────────────────────────
+   Clearance for the fixed bottom tab bar (BottomNav), which would otherwise
+   cover the last card on every list. Scoped to phones because the tab bar
+   itself is md:hidden — on desktop this would just be dead space.
+
+   env(safe-area-inset-bottom) needs viewport-fit=cover in the viewport meta
+   to return anything but 0; it accounts for the iPhone home indicator. */
+@media (max-width: 767px) {
+  .pb-tabbar {
+    padding-bottom: calc(3.5rem + env(safe-area-inset-bottom) + 0.75rem);
+  }
+}
+
+/* The page must never scroll sideways. A single wide child — a table, a
+   chart, a long unbroken symbol string — otherwise drags the whole layout
+   past the viewport and every screen reads as broken. Wide content scrolls
+   inside its own container instead. */
+html,
+body {
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
+}

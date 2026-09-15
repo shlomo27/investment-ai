@@ -735,13 +735,17 @@ const Recommendations: React.FC = () => {
             </div>
           )}
 
-          {/* Direction Filter */}
-          <div className="flex items-center gap-2">
+          {/* Direction Filter.
+              flex-wrap, and the spacer only exists at md: on a phone this row
+              is ~600px of content in a 430px viewport, so as a single line it
+              pushed the sort control off the edge entirely — reachable by
+              nothing, since the page itself does not scroll sideways. */}
+          <div className="flex flex-wrap items-center gap-2">
             {(["ALL", "LONG", "SHORT"] as DirectionFilter[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setDirFilter(f)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
+                className={`px-3 md:px-4 py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors border shrink-0 ${
                   dirFilter === f
                     ? f === "LONG" ? "bg-green-900/40 text-green-300 border-green-700/40"
                     : f === "SHORT" ? "bg-red-900/40 text-red-300 border-red-700/40"
@@ -752,23 +756,30 @@ const Recommendations: React.FC = () => {
                 {f === "LONG" ? `LONG (${longCount})` : f === "SHORT" ? `SHORT (${shortCount})` : `${isHe ? "הכל" : "All"} (${topPicks.length})`}
               </button>
             ))}
-            <div className="flex-1" />
+            <div className="hidden md:block flex-1" />
             <input
               value={symbolQuery}
               onChange={(e) => setSymbolQuery(e.target.value)}
               placeholder={isHe ? "חפש סימול…" : "Search symbol…"}
-              className="w-36 px-3 py-1.5 rounded-lg text-xs bg-gray-900 text-gray-200 border border-gray-800 placeholder-gray-600 focus:border-blue-600 focus:outline-none"
+              className="flex-1 min-w-0 md:flex-none md:w-36 px-3 py-1.5 rounded-lg text-xs bg-gray-900 text-gray-200 border border-gray-800 placeholder-gray-600 focus:border-blue-600 focus:outline-none"
             />
             <button
               onClick={() => setSortBy(sortBy === "rr" ? "confidence" : sortBy === "confidence" ? "newest" : "rr")}
-              className="px-3 py-1.5 rounded-lg text-xs border bg-gray-900 text-gray-300 border-gray-800 hover:border-gray-600"
+              className="shrink-0 px-3 py-1.5 rounded-lg text-xs border bg-gray-900 text-gray-300 border-gray-800 hover:border-gray-600"
               title={isHe ? "החלף מיון" : "Toggle sort"}
             >
-              {sortBy === "rr"
-                ? (isHe ? "↕ לפי סיכוי/סיכון" : "↕ By risk/reward")
-                : sortBy === "confidence"
-                  ? (isHe ? "↕ לפי ביטחון" : "↕ By confidence")
-                  : (isHe ? "↕ לפי הכי חדש" : "↕ By newest")}
+              {/* The label is the widest thing in the row; on a phone the
+                  arrow plus a short word says the same in a quarter of it. */}
+              <span className="md:hidden">
+                ↕ {sortBy === "rr" ? (isHe ? "סיכוי" : "R/R") : sortBy === "confidence" ? (isHe ? "ביטחון" : "Conf") : (isHe ? "חדש" : "New")}
+              </span>
+              <span className="hidden md:inline">
+                {sortBy === "rr"
+                  ? (isHe ? "↕ לפי סיכוי/סיכון" : "↕ By risk/reward")
+                  : sortBy === "confidence"
+                    ? (isHe ? "↕ לפי ביטחון" : "↕ By confidence")
+                    : (isHe ? "↕ לפי הכי חדש" : "↕ By newest")}
+              </span>
             </button>
           </div>
 

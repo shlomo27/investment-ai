@@ -52,7 +52,9 @@ const Sidebar: React.FC = () => {
   );
 
   return (
-    <aside className="w-16 md:w-56 bg-gray-900 border-r border-gray-800 flex flex-col min-h-screen">
+    // hidden below md: BottomNav owns phone navigation. The old w-16 strip
+    // spent a sixth of a 390px screen on unlabelled icons.
+    <aside className="hidden md:flex w-56 bg-gray-900 border-r border-gray-800 flex-col min-h-screen">
       {/* Logo */}
       <div className="px-4 py-5 border-b border-gray-800">
         <div className="flex items-center gap-3">

@@ -16,14 +16,24 @@ const Navbar: React.FC = () => {
   };
 
   return (
-    <header className="bg-gray-900 border-b border-gray-800 px-6 py-3 flex items-center justify-between">
-      <div className="flex items-center gap-4">
-        <h2 className="font-semibold text-sm text-gray-300">
-          {isHe ? "מערכת ייעוץ השקעות AI" : "Investment AI Platform"}
+    // sticky + safe-area top: on a phone the header scrolls away otherwise,
+    // and under viewport-fit=cover the first row would sit beneath the notch.
+    <header
+      className="bg-gray-900 border-b border-gray-800 px-3 md:px-6 py-2 md:py-3 flex items-center justify-between gap-2 sticky top-0 z-30"
+      style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}
+    >
+      <div className="flex items-center gap-4 min-w-0">
+        {/* The full title took the entire top row on a phone for no
+            information — the app name is already on the icon they tapped. */}
+        <h2 className="font-semibold text-sm text-gray-300 truncate">
+          <span className="md:hidden">Investment AI</span>
+          <span className="hidden md:inline">
+            {isHe ? "מערכת ייעוץ השקעות AI" : "Investment AI Platform"}
+          </span>
         </h2>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 md:gap-4 shrink-0">
         <Link
           to="/recommendations"
           className="relative p-2 text-gray-400 hover:text-white"
@@ -38,16 +48,19 @@ const Navbar: React.FC = () => {
           )}
         </Link>
 
-        <div className="flex items-center gap-2">
+        {/* Avatar and logout are desktop-only: on a phone both live in the
+            bottom bar's More sheet, and repeating them here costs width the
+            content needs. */}
+        <div className="hidden md:flex items-center gap-2">
           <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-sm font-bold">
             {user?.full_name?.[0]?.toUpperCase()}
           </div>
-          <span className="text-sm text-gray-300 hidden md:block">{user?.full_name}</span>
+          <span className="text-sm text-gray-300">{user?.full_name}</span>
         </div>
 
         <button
           onClick={handleLogout}
-          className="text-gray-400 hover:text-white text-sm border border-gray-700 rounded-lg px-3 py-1.5"
+          className="hidden md:block text-gray-400 hover:text-white text-sm border border-gray-700 rounded-lg px-3 py-1.5"
         >
           {isHe ? "יציאה" : "Logout"}
         </button>
