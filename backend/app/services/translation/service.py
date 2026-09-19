@@ -41,6 +41,48 @@ MAX_CHARS = 6000
 _CONCURRENCY = asyncio.Semaphore(6)
 
 
+#: Scripts that identify a language on sight. Latin is deliberately absent:
+#: English, German, Spanish, French, Italian and Portuguese all share it, so
+#: script tells us nothing about which of them a text is in.
+_SCRIPTS = {
+    "he": (0x0590, 0x05FF),
+    "ar": (0x0600, 0x06FF),
+    "ja": (0x3040, 0x30FF),   # kana; kanji alone is ambiguous with Chinese
+    "ko": (0xAC00, 0xD7AF),   # hangul syllables
+}
+
+
+def detect_source_language(text: str) -> Optional[str]:
+    """Which language a text is already in, when the script makes it obvious.
+
+    This exists because the stored analyses are not all English. The agents
+    wrote Hebrew until the international launch, so the database holds a mix:
+    older rows in Hebrew, newer ones in English. Assuming English for all of
+    them would mean a Hebrew reader paying to "translate" Hebrew into Hebrew,
+    and — worse — an English reader being handed Hebrew untouched, because
+    target == assumed source looks like a no-op.
+
+    Returns None for anything in Latin script, where the script cannot
+    distinguish English from German. That is the safe answer: unknown means
+    "translate it", and translating text that is already in the target
+    language is wasteful but harmless, while skipping text that is not is
+    a reader who cannot read their own screen.
+    """
+    if not text:
+        return None
+    sample = text[:400]
+    letters = [c for c in sample if c.isalpha()]
+    if not letters:
+        return None
+    for code, (lo, hi) in _SCRIPTS.items():
+        hits = sum(1 for c in letters if lo <= ord(c) <= hi)
+        # A third is enough: analyses mix in Latin tickers and numbers, so a
+        # Hebrew paragraph is never purely Hebrew characters.
+        if hits / len(letters) > 0.33:
+            return code
+    return None
+
+
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -111,15 +153,35 @@ async def translate_texts(
     Returns a dict with the same keys. Any field that cannot be translated
     comes back with its ORIGINAL text — see the module docstring.
     """
-    # Nothing to do when the reader already speaks the source language.
-    if not is_supported(target) or target == source_language:
+    # An unsupported target has nothing to translate into. The reader's
+    # language matching the nominal source is NOT a reason to skip: the
+    # stored text may be in neither, which is exactly the case for every
+    # analysis written before the international launch.
+    if not is_supported(target):
         return dict(texts)
 
     # Deduplicate: the same sentence in two fields is one translation.
+    #
+    # A text already written in the target language is skipped outright. The
+    # stored analyses are a mix of Hebrew (written before the international
+    # launch) and English, so this is checked per text rather than assumed
+    # once for the whole table.
     wanted: Dict[str, str] = {}
     for key, value in texts.items():
-        if value and value.strip():
-            wanted[key] = value.strip()[:MAX_CHARS]
+        if not value or not value.strip():
+            continue
+        body = value.strip()[:MAX_CHARS]
+        detected = detect_source_language(body)
+        if detected == target:
+            continue
+        # Latin script with English as the target: assume it is already
+        # English. Detection cannot tell English from German, but the source
+        # language IS English, so a Latin-script analysis being anything else
+        # is not a case that exists. Without this every English reader pays
+        # to translate English into English.
+        if detected is None and target == source_language:
+            continue
+        wanted[key] = body
     if not wanted:
         return dict(texts)
 
