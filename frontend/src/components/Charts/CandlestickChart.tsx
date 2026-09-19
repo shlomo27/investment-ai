@@ -25,6 +25,32 @@ const DARK = {
   grid: "#1f293750",
 };
 
+/**
+ * Who owns the mouse wheel.
+ *
+ * lightweight-charts binds the wheel to zooming by default. These charts
+ * stack up and fill most of the technical screen, so the cursor is almost
+ * always over one — and the wheel then zoomed the chart while the page
+ * refused to move at all. The page looked stuck.
+ *
+ * The wheel belongs to the document. Panning stays available by dragging,
+ * and pinch-zoom still works on touch, so nothing is lost but the hijack.
+ */
+const INTERACTION = {
+  handleScroll: {
+    mouseWheel: false,      // the page scrolls, not the chart
+    pressedMouseMove: true, // drag to pan
+    horzTouchDrag: true,
+    vertTouchDrag: false,   // a vertical swipe scrolls the page on a phone
+  },
+  handleScale: {
+    mouseWheel: false,
+    pinch: true,
+    axisPressedMouseMove: true,
+    axisDoubleClickReset: true,
+  },
+};
+
 function makeChart(el: HTMLDivElement, height: number) {
   return createChart(el, {
     width: el.clientWidth,
@@ -34,6 +60,7 @@ function makeChart(el: HTMLDivElement, height: number) {
     crosshair: { mode: 1 },
     rightPriceScale: { borderColor: DARK.border, scaleMargins: { top: 0.1, bottom: 0.05 } },
     timeScale: { borderColor: DARK.border, timeVisible: true, rightOffset: 4 },
+    ...INTERACTION,
   });
 }
 
@@ -137,6 +164,7 @@ const VolumePanel: React.FC<{ ta: TechnicalAnalysis }> = ({ ta }) => {
       grid: { vertLines: { color: DARK.grid }, horzLines: { color: DARK.grid } },
       rightPriceScale: { borderColor: DARK.border, scaleMargins: { top: 0.05, bottom: 0 } },
       timeScale: { borderColor: DARK.border, visible: false },
+      ...INTERACTION,
       crosshair: { mode: 0 },
     });
 
@@ -174,6 +202,7 @@ const RSIPanel: React.FC<{ ta: TechnicalAnalysis }> = ({ ta }) => {
       grid: { vertLines: { color: DARK.grid }, horzLines: { color: DARK.grid } },
       rightPriceScale: { borderColor: DARK.border, scaleMargins: { top: 0.1, bottom: 0.1 } },
       timeScale: { borderColor: DARK.border, visible: false },
+      ...INTERACTION,
       crosshair: { mode: 0 },
     });
 
@@ -211,6 +240,7 @@ const MACDPanel: React.FC<{ ta: TechnicalAnalysis }> = ({ ta }) => {
       grid: { vertLines: { color: DARK.grid }, horzLines: { color: DARK.grid } },
       rightPriceScale: { borderColor: DARK.border, scaleMargins: { top: 0.1, bottom: 0.1 } },
       timeScale: { borderColor: DARK.border, timeVisible: true, rightOffset: 4 },
+      ...INTERACTION,
       crosshair: { mode: 0 },
     });
 
