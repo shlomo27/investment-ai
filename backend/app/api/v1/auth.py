@@ -1063,3 +1063,31 @@ async def confirm_password_reset(
 
     logger.info("Password reset completed", user_id=user.id)
     return {"ok": True}
+
+# ─── Languages ───────────────────────────────────────────────────────────────
+
+
+@router.get("/languages")
+async def list_languages():
+    """The languages the app is offered in.
+
+    Served from the server so the client never carries a list that can drift
+    out of step with what the translator actually supports — a picker
+    offering a language the backend will not translate is worse than not
+    offering it.
+    """
+    from app.core.languages import DEFAULT_LANGUAGE, LANGUAGES, SOURCE_LANGUAGE
+
+    return {
+        "source": SOURCE_LANGUAGE,
+        "default": DEFAULT_LANGUAGE,
+        "languages": [
+            {
+                "code": lang.code,
+                "native_name": lang.native_name,
+                "english_name": lang.english_name,
+                "rtl": lang.rtl,
+            }
+            for lang in LANGUAGES
+        ],
+    }

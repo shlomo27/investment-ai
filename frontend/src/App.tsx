@@ -32,6 +32,7 @@ import Navbar from "./components/Layout/Navbar";
 import Sidebar from "./components/Layout/Sidebar";
 import BottomNav from "./components/Layout/BottomNav";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { applyDocumentLanguage, detectLanguage, rememberLanguage } from "./i18n/languages";
 
 // Services
 import { initPushNotifications } from "./services/pushNotifications";
@@ -132,6 +133,26 @@ const App: React.FC = () => {
       dispatch(fetchCurrentUser());
     }
   }, [dispatch]);
+
+  // Language, in two steps.
+  //
+  // First paint uses the device language, so a phone set to Hebrew opens in
+  // Hebrew before any request has returned — waiting for the profile would
+  // show a flash of English to every non-English reader.
+  //
+  // Then the account's stored preference wins, because it follows the user
+  // across devices. Both set the document's dir: Arabic and Hebrew text in a
+  // left-to-right layout is harder to read than English would have been.
+  useEffect(() => {
+    applyDocumentLanguage(detectLanguage());
+  }, []);
+
+  useEffect(() => {
+    if (user?.preferred_language) {
+      rememberLanguage(user.preferred_language);
+      applyDocumentLanguage(user.preferred_language);
+    }
+  }, [user?.preferred_language]);
 
   useEffect(() => {
     if (isAuthenticated) {

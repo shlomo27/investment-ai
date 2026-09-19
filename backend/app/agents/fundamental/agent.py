@@ -127,15 +127,25 @@ class FundamentalAnalystAgent:
 
     @staticmethod
     def _language_instruction(language: str) -> str:
-        if language == "he":
-            return (
-                "\n\nLANGUAGE: Write ALL free-text fields in Hebrew (עברית). "
-                "This includes: thesis, bull_case, bear_case, risk_factors, catalysts, "
-                "key_metrics_summary, valuation_assessment, financial_health, analyst_notes. "
-                "Keep stock symbols, numeric values, percentages, and enum values "
-                "(BUY, STRONG_BUY, HOLD, SELL, STRONG_SELL) in English."
-            )
-        return ""
+        """Analyses are written in English, whatever the reader speaks.
+
+        English is the source language for every analysis in the system: one
+        analysis is produced per stock and shared by every account, so it
+        cannot be written in each reader's language. It is translated on
+        read instead, cached by content (see services/translation).
+
+        English specifically, rather than the largest audience, because the
+        models reason about finance most reliably in it, the terminology is
+        native to it, and translating out of English is cleaner than into it.
+        """
+        return (
+            "\n\nLANGUAGE: Write ALL free-text fields in clear, plain English. "
+            "Keep stock symbols, numeric values, percentages and enum values "
+            "(BUY, STRONG_BUY, HOLD, SELL, STRONG_SELL) exactly as specified. "
+            "Write for an investor, not an academic: short sentences, no "
+            "jargon that is not defined, and no hedging that obscures the "
+            "conclusion."
+        )
 
     async def analyze(
         self,

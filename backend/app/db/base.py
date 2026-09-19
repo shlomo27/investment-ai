@@ -10,3 +10,4 @@ from app.db.models.order import Order  # noqa: F401
 from app.db.models.recommendation import Recommendation  # noqa: F401
 from app.db.models.notification import Notification  # noqa: F401
 from app.db.models.watchlist import Watchlist  # noqa: F401
+from app.db.models.translation import Translation  # noqa: F401

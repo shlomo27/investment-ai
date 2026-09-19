@@ -4,6 +4,7 @@ import { updateUserProfile, fetchCurrentUser } from "../store/slices/authSlice";
 import { authApi } from "../api/client";
 import { requestPushPermission } from "../services/pushNotifications";
 import { isNative } from "../platform";
+import { LANGUAGES, applyDocumentLanguage } from "../i18n/languages";
 import Paywall from "../components/Paywall";
 import { RiskProfile } from "../types";
 
@@ -21,7 +22,7 @@ const Settings: React.FC = () => {
 
   const [name, setName] = useState(user?.full_name ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
-  const [lang, setLang] = useState<"he" | "en">(user?.preferred_language ?? "he");
+  const [lang, setLang] = useState<string>(user?.preferred_language ?? "he");
   const [notifEmail, setNotifEmail] = useState(user?.notification_email ?? true);
   const [notifSms, setNotifSms] = useState(user?.notification_sms ?? false);
   const [notifPush, setNotifPush] = useState(user?.notification_push ?? false);
@@ -300,19 +301,42 @@ const Settings: React.FC = () => {
         <h2 className="font-semibold text-sm text-gray-400 uppercase tracking-wider">
           {isHe ? "שפה" : "Language"}
         </h2>
-        <div className="flex gap-2">
-          {(["he", "en"] as const).map((l) => (
+        <p className="text-xs text-gray-500 leading-relaxed">
+          {isHe
+            ? "משנה את הממשק ואת הניתוחים. ברירת המחדל נקבעת לפי שפת המכשיר."
+            : "Changes both the interface and the analyses. Defaults to your device language."}
+        </p>
+        {/* Every language in one list. A grid rather than a row of buttons:
+            ten options do not fit on a phone in a single line, and each one
+            is written in its own script so a speaker recognises it without
+            reading the rest. */}
+        <div className="grid grid-cols-2 gap-2">
+          {LANGUAGES.map((l) => (
             <button
-              key={l}
-              onClick={() => setLang(l)}
-              className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
-                lang === l ? "bg-blue-600/20 border-blue-500 text-blue-300" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
+              key={l.code}
+              onClick={() => {
+                setLang(l.code);
+                // Apply immediately: waiting for Save means picking Arabic
+                // leaves the layout left-to-right until the user saves, which
+                // reads as the choice not having worked.
+                applyDocumentLanguage(l.code);
+              }}
+              dir={l.rtl ? "rtl" : "ltr"}
+              className={`py-2.5 px-3 rounded-xl text-sm font-medium border transition-colors text-center ${
+                lang === l.code
+                  ? "bg-blue-600/20 border-blue-500 text-blue-300"
+                  : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
               }`}
             >
-              {l === "he" ? "עברית 🇮🇱" : "English 🇺🇸"}
+              {l.nativeName}
             </button>
           ))}
         </div>
+        <p className="text-[11px] text-gray-600 leading-relaxed">
+          {isHe
+            ? "הניתוחים נכתבים באנגלית ומתורגמים. תרגום עשוי לקחת רגע בפעם הראשונה עבור כל ניתוח."
+            : "Analyses are written in English and translated. The first read of an analysis in a new language can take a moment."}
+        </p>
       </div>
 
       {/* ── Notifications ───────────────────────────────────────────────── */}

@@ -15,6 +15,8 @@ from sqlalchemy import select, desc, and_
 from app.core.database import get_db
 from app.core.security import get_current_active_user
 from app.core.entitlements import entitlements_for
+from app.core.languages import SOURCE_LANGUAGE, normalize
+from app.services.translation.service import translate_texts
 from app.db.models.user import User
 from app.db.models.recommendation import Recommendation, RecommendationStatus, RecommendationType
 from app.db.models.notification import Notification, NotificationType
@@ -128,6 +130,57 @@ def _lock_reasoning(rec: Recommendation, locked: bool) -> dict:
         fundamental_analysis=None, fundamental_notes=None, sentiment_data=None,
         senior_review_notes=None, senior_notes=None,
     )
+
+
+async def _localize(rec: Recommendation, user: User, db: AsyncSession) -> dict:
+    """The recommendation's free text in the reader's language.
+
+    Analyses are written once in English and shared by every account, so the
+    reader's language is applied here rather than at generation. Everything
+    is cached by content, so this costs one translation per distinct text per
+    language no matter how many people read it.
+
+    Returns the ORIGINAL text for anything that could not be translated. A
+    reader seeing English on a Hebrew screen has an annoyance; a reader
+    seeing a blank analysis has been told nothing.
+    """
+    target = normalize(getattr(user, "preferred_language", None))
+    if target == SOURCE_LANGUAGE:
+        return {}
+
+    fa = rec.fundamental_analysis or {}
+    fields = {
+        "fundamental_notes": rec.fundamental_notes,
+        "senior_review_notes": rec.senior_review_notes,
+        "senior_notes": rec.senior_notes,
+        "thesis": fa.get("thesis") if isinstance(fa, dict) else None,
+        "analyst_notes": fa.get("analyst_notes") if isinstance(fa, dict) else None,
+    }
+    if not any(fields.values()):
+        return {}
+    return await translate_texts(fields, target, db)
+
+
+def _apply_localized(payload: dict, rec: Recommendation, localized: dict) -> dict:
+    """Overlay translated text onto a response payload.
+
+    Only the prose is replaced. Numbers, enums, prices and symbols are never
+    routed through translation at all — they are not language.
+    """
+    if not localized:
+        return payload
+    for key in ("fundamental_notes", "senior_review_notes", "senior_notes"):
+        if localized.get(key) and payload.get(key) is not None:
+            payload[key] = localized[key]
+
+    fa = payload.get("fundamental_analysis")
+    if isinstance(fa, dict):
+        fa = dict(fa)
+        for key in ("thesis", "analyst_notes"):
+            if localized.get(key) and fa.get(key):
+                fa[key] = localized[key]
+        payload["fundamental_analysis"] = fa
+    return payload
 
 
 @router.get("/", response_model=List[RecommendationResponse])
@@ -565,6 +618,11 @@ async def get_recommendation(
         not ent.full_research and rec.symbol not in await _followed_symbols(db, current_user)
     )
 
+    # Translated only when there is reasoning to translate: a locked payload
+    # has nothing but nulls in those fields, and paying to translate them
+    # would be paying for nothing.
+    localized = {} if reasoning_locked else await _localize(rec, current_user, db)
+
     return RecommendationResponse(
         id=rec.id,
         symbol=rec.symbol,
@@ -575,7 +633,7 @@ async def get_recommendation(
         stop_loss=rec.stop_loss,
         current_price_at_recommendation=rec.current_price_at_recommendation,
         reasoning_locked=reasoning_locked,
-        **_lock_reasoning(rec, reasoning_locked),
+        **_apply_localized(_lock_reasoning(rec, reasoning_locked), rec, localized),
         # Technical analysis stays visible: it is computed locally with no LLM
         # cost, and it is the part a free user needs to judge timing on the
         # stocks they do follow.
