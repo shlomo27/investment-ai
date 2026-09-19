@@ -321,15 +321,19 @@ tr:hover {
   }
 }
 
-/* The page must never scroll sideways. A single wide child — a table, a
-   chart, a long unbroken symbol string — otherwise drags the whole layout
-   past the viewport and every screen reads as broken. Wide content scrolls
-   inside its own container instead. */
-html,
-body {
-  overflow-x: hidden;
-  overscroll-behavior-y: none;
-}
+/* Deliberately NOT setting overflow-x: hidden on html/body.
+   It was here as a blunt guard against sideways drag, but any overflow value
+   other than visible on one axis forces the OTHER axis to compute as auto —
+   so the rule quietly turned html, body, the layout root and <main> into
+   scroll containers. It also hid real overflow instead of revealing it,
+   which is how a filter control ended up off-screen and unreachable rather
+   than visibly broken.
+
+   The actual overflow sources are fixed at the source now (the tab strips
+   scroll inside their own box, the filter row wraps), and
+   scripts/mobile-check.mjs fails the build-time check if anything new
+   escapes the viewport. That is a guard that reports the problem instead of
+   concealing it. */
 
 /* Horizontally scrollable tab strip.
    A row of tabs with Hebrew labels runs past 430px easily — five tabs on the

@@ -77,17 +77,20 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
-    // min-w-0 on the content column: without it a wide child (a table, a
-    // chart) forces the flex row wider than the screen and the whole page
-    // scrolls sideways — which is what the phone screenshot showed.
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex overflow-x-hidden">
+    // min-w-0 on the content column is what actually stops a wide child (a
+    // table, a chart) forcing the flex row wider than the screen.
+    //
+    // No overflow-x here: setting it makes overflow-y compute to auto, which
+    // turns this element into a scroll container and puts it between the
+    // wheel and the page.
+    <div className="min-h-screen bg-gray-950 text-gray-100 flex">
       <Sidebar />
       <div className="flex-1 min-w-0 flex flex-col min-h-screen">
         <Navbar />
         {/* pb-tabbar (index.css) clears the fixed tab bar and the home
             indicator on phones only — the last card would otherwise sit
             permanently underneath it. */}
-        <main className="flex-1 min-w-0 p-3 md:p-6 overflow-x-hidden pb-tabbar">
+        <main className="flex-1 min-w-0 p-3 md:p-6 pb-tabbar">
           {/* Inside the layout, so a page that throws keeps the nav and the
               user can move somewhere else. Wrapping the whole app would take
               the tab bar down with it and leave nothing to tap.
