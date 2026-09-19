@@ -87,9 +87,25 @@ def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _system_prompt(target_name: str) -> str:
+def _system_prompt(target_name: str, company: Optional[str] = None) -> str:
+    """Instructions for one translation.
+
+    `company` matters more than it looks. The older analyses are Hebrew, and
+    the agent transliterated company names into Hebrew script — "Fiserv"
+    became "פיזרב". Translating that to French, the model has no way to know
+    it is a real company and renders it phonetically: "Pizerb". The name on
+    a financial screen is then simply wrong. Naming the company explicitly
+    lets it be restored rather than re-spelled.
+    """
+    named = (
+        f"\n\nTHE COMPANY: this text is about {company}. Wherever the company "
+        f"is referred to — including transliterated into another script — "
+        f"write exactly \"{company}\". Never spell it phonetically."
+        if company
+        else ""
+    )
     return (
-        f"You translate financial analysis into {target_name}.\n\n"
+        f"You translate financial analysis into {target_name}.{named}\n\n"
         "Rules, in order of importance:\n"
         "1. NEVER alter numbers, currency amounts, percentages, dates, or "
         "ticker symbols. Reproduce them exactly as written, including the "
@@ -108,7 +124,9 @@ def _system_prompt(target_name: str) -> str:
     )
 
 
-async def _translate_one(text: str, target: str) -> Optional[str]:
+async def _translate_one(
+    text: str, target: str, company: Optional[str] = None
+) -> Optional[str]:
     """One call to the model. Returns None on any failure."""
     lang = BY_CODE.get(target)
     if lang is None:
@@ -129,7 +147,7 @@ async def _translate_one(text: str, target: str) -> Optional[str]:
                 # the right one and keeps the per-language cost near zero.
                 model=settings.OPENAI_MODEL or "gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": _system_prompt(lang.english_name)},
+                    {"role": "system", "content": _system_prompt(lang.english_name, company)},
                     {"role": "user", "content": text},
                 ],
                 temperature=0.1,
@@ -147,6 +165,7 @@ async def translate_texts(
     target: str,
     db: AsyncSession,
     source_language: str = SOURCE_LANGUAGE,
+    company: Optional[str] = None,
 ) -> Dict[str, Optional[str]]:
     """Translate a set of named fields, using and filling the cache.
 
@@ -185,7 +204,11 @@ async def translate_texts(
     if not wanted:
         return dict(texts)
 
-    unique = {_hash(v): v for v in wanted.values()}
+    # The company name is part of the key: a translation produced without it
+    # spells the name phonetically, and caching that under the same key as a
+    # correct one would serve the wrong name forever.
+    salt = f"|{company}" if company else ""
+    unique = {_hash(v + salt): v for v in wanted.values()}
 
     rows = (
         await db.execute(
@@ -200,7 +223,7 @@ async def translate_texts(
     missing = [(h, t) for h, t in unique.items() if h not in cached]
     if missing:
         results = await asyncio.gather(
-            *(_translate_one(t, target) for _, t in missing),
+            *(_translate_one(t, target, company) for _, t in missing),
             return_exceptions=True,
         )
         fresh: List[Translation] = []
@@ -233,5 +256,5 @@ async def translate_texts(
         if not source_text:
             out[key] = original
             continue
-        out[key] = cached.get(_hash(source_text), original)
+        out[key] = cached.get(_hash(source_text + salt), original)
     return out

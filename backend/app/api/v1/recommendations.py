@@ -132,40 +132,151 @@ def _lock_reasoning(rec: Recommendation, locked: bool) -> dict:
     )
 
 
+# Every free-text field inside fundamental_analysis, by path.
+#
+# An allowlist rather than "translate every string": the same object holds
+# enum values (UNDERVALUED, MEDIUM_TERM, HIGH) that must survive untouched,
+# and a generic walker would translate those into prose and break the badges
+# that render them.
+#
+# The first version listed only thesis and analyst_notes, which is why a
+# French reader saw the summary in French and everything below it still in
+# Hebrew.
+_FA_TEXT_PATHS = [
+    "thesis",
+    "bull_case",
+    "bear_case",
+    "analyst_notes",
+    "sector_comparison",
+    "sentiment_cross_check",
+    "moat_evidence",
+    "key_metrics_summary.pe_assessment",
+    "key_metrics_summary.growth_quality",
+    "key_metrics_summary.balance_sheet_strength",
+    "key_metrics_summary.cash_flow_quality",
+    "key_metrics_summary.sentiment_alignment",
+    "catalyst_validation.primary_catalyst",
+    "catalyst_validation.quantified_impact",
+    "scenario_analysis.bull.trigger",
+    "scenario_analysis.base.trigger",
+    "scenario_analysis.bear.trigger",
+]
+
+#: Lists of plain strings.
+_FA_LIST_PATHS = ["risk_factors", "catalysts", "short_catalysts"]
+
+#: Lists of objects, and which of their keys carry prose.
+_FA_OBJECT_LISTS = [("thesis_breakers", ("risk", "description"))]
+
+
+def _dig(obj, path: str):
+    for part in path.split("."):
+        if not isinstance(obj, dict):
+            return None
+        obj = obj.get(part)
+    return obj
+
+
+def _plant(obj: dict, path: str, value) -> None:
+    parts = path.split(".")
+    for part in parts[:-1]:
+        nxt = obj.get(part)
+        if not isinstance(nxt, dict):
+            return
+        obj = nxt
+    obj[parts[-1]] = value
+
+
+def _collect_fa_texts(fa: dict) -> dict:
+    """Flatten every translatable string in the analysis to a flat dict."""
+    out: dict = {}
+    if not isinstance(fa, dict):
+        return out
+    for path in _FA_TEXT_PATHS:
+        value = _dig(fa, path)
+        if isinstance(value, str) and value.strip():
+            out[f"fa:{path}"] = value
+    for path in _FA_LIST_PATHS:
+        items = fa.get(path)
+        if isinstance(items, list):
+            for i, item in enumerate(items):
+                if isinstance(item, str) and item.strip():
+                    out[f"fa[]:{path}:{i}"] = item
+    for path, keys in _FA_OBJECT_LISTS:
+        items = fa.get(path)
+        if isinstance(items, list):
+            for i, item in enumerate(items):
+                if not isinstance(item, dict):
+                    continue
+                for key in keys:
+                    value = item.get(key)
+                    if isinstance(value, str) and value.strip():
+                        out[f"fa{{}}:{path}:{i}:{key}"] = value
+    return out
+
+
+def _rebuild_fa(fa: dict, localized: dict) -> dict:
+    """A copy of the analysis with every translated string put back."""
+    import copy
+
+    if not isinstance(fa, dict):
+        return fa
+    out = copy.deepcopy(fa)
+    for key, value in localized.items():
+        if not value:
+            continue
+        if key.startswith("fa:"):
+            _plant(out, key[3:], value)
+        elif key.startswith("fa[]:"):
+            _, path, idx = key.split(":", 2)
+            items = out.get(path)
+            if isinstance(items, list) and int(idx) < len(items):
+                items[int(idx)] = value
+        elif key.startswith("fa{}:"):
+            _, path, idx, field = key.split(":", 3)
+            items = out.get(path)
+            if isinstance(items, list) and int(idx) < len(items):
+                if isinstance(items[int(idx)], dict):
+                    items[int(idx)][field] = value
+    return out
+
+
 async def _localize(rec: Recommendation, user: User, db: AsyncSession) -> dict:
     """The recommendation's free text in the reader's language.
 
-    Analyses are written once in English and shared by every account, so the
-    reader's language is applied here rather than at generation. Everything
-    is cached by content, so this costs one translation per distinct text per
-    language no matter how many people read it.
+    Analyses are written once and shared by every account, so the reader's
+    language is applied here rather than at generation. Everything is cached
+    by content, so this costs one translation per distinct text per language
+    no matter how many people read it.
 
     Returns the ORIGINAL text for anything that could not be translated. A
     reader seeing English on a Hebrew screen has an annoyance; a reader
     seeing a blank analysis has been told nothing.
     """
     target = normalize(getattr(user, "preferred_language", None))
-    if target == SOURCE_LANGUAGE:
-        return {}
 
-    fa = rec.fundamental_analysis or {}
+    fa = rec.fundamental_analysis if isinstance(rec.fundamental_analysis, dict) else {}
     fields = {
         "fundamental_notes": rec.fundamental_notes,
         "senior_review_notes": rec.senior_review_notes,
         "senior_notes": rec.senior_notes,
-        "thesis": fa.get("thesis") if isinstance(fa, dict) else None,
-        "analyst_notes": fa.get("analyst_notes") if isinstance(fa, dict) else None,
+        **_collect_fa_texts(fa),
     }
     if not any(fields.values()):
         return {}
-    return await translate_texts(fields, target, db)
+
+    # The company is named to the translator so a name transliterated into
+    # Hebrew is restored rather than re-spelled phonetically — "פיזרב" has to
+    # come back as Fiserv, not "Pizerb".
+    company = rec.asset_name if getattr(rec, "asset_name", None) else None
+    return await translate_texts(fields, target, db, company=company or rec.symbol)
 
 
 def _apply_localized(payload: dict, rec: Recommendation, localized: dict) -> dict:
     """Overlay translated text onto a response payload.
 
-    Only the prose is replaced. Numbers, enums, prices and symbols are never
-    routed through translation at all — they are not language.
+    Only prose is replaced. Numbers, enums, prices and symbols never reach
+    the translator at all — they are not language.
     """
     if not localized:
         return payload
@@ -175,11 +286,7 @@ def _apply_localized(payload: dict, rec: Recommendation, localized: dict) -> dic
 
     fa = payload.get("fundamental_analysis")
     if isinstance(fa, dict):
-        fa = dict(fa)
-        for key in ("thesis", "analyst_notes"):
-            if localized.get(key) and fa.get(key):
-                fa[key] = localized[key]
-        payload["fundamental_analysis"] = fa
+        payload["fundamental_analysis"] = _rebuild_fa(fa, localized)
     return payload
 
 
