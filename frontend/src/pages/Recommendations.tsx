@@ -14,6 +14,7 @@ import { recommendationsApi, ordersApi } from "../api/client";
 import { Recommendation, OrderType, RecommendationType, TechnicalAnalysis } from "../types";
 import ConfirmTradeModal from "../components/Trading/ConfirmTradeModal";
 import RecommendationCard from "../components/Recommendations/RecommendationCard";
+import SortMenu, { SortOption } from "../components/SortMenu";
 
 type DirectionFilter = "ALL" | "LONG" | "SHORT";
 
@@ -30,6 +31,89 @@ const isLong = (type: RecommendationType) =>
 
 const isShort = (type: RecommendationType) =>
   type === RecommendationType.SELL || type === RecommendationType.STRONG_SELL;
+
+
+// ─── Sorting ─────────────────────────────────────────────────────────────────
+
+type SortKey =
+  | "rr"
+  | "confidence"
+  | "upside"
+  | "risk_low"
+  | "risk_high"
+  | "newest"
+  | "symbol";
+
+/** Potential gain divided by potential loss. -1 when it cannot be computed. */
+const riskRewardOf = (r: Recommendation): number => {
+  const entry = r.current_price_at_recommendation;
+  if (!entry || !r.target_price || !r.stop_loss) return -1;
+  const risk = Math.abs(entry - r.stop_loss);
+  return risk > 0 ? Math.abs(r.target_price - entry) / risk : -1;
+};
+
+/** Distance to the target, as a percentage of the entry price. */
+const upsideOf = (r: Recommendation): number => {
+  const entry = r.current_price_at_recommendation;
+  if (!entry || !r.target_price) return -Infinity;
+  return ((r.target_price - entry) / entry) * 100;
+};
+
+/**
+ * Comparators, one per sort key.
+ *
+ * Beta is missing on some stocks, and a missing value must never be treated
+ * as zero: zero is the *calmest* possible reading, so an unmeasured stock
+ * would be ranked as the safest thing in the list. Unknown volatility sorts
+ * LAST in both directions instead — it is not a low risk, it is an unknown
+ * one, and the card already says so.
+ */
+const SORTERS: Record<SortKey, (a: Recommendation, b: Recommendation) => number> = {
+  // Confidence breaks ties: with a spread this narrow it is a tiebreaker,
+  // not a ranking.
+  rr: (a, b) => riskRewardOf(b) - riskRewardOf(a) || b.confidence_score - a.confidence_score,
+  confidence: (a, b) => b.confidence_score - a.confidence_score,
+  upside: (a, b) => upsideOf(b) - upsideOf(a),
+  risk_low: (a, b) => {
+    const x = a.beta ?? Infinity;
+    const y = b.beta ?? Infinity;
+    return x - y || b.confidence_score - a.confidence_score;
+  },
+  risk_high: (a, b) => {
+    const x = a.beta ?? -Infinity;
+    const y = b.beta ?? -Infinity;
+    return y - x || b.confidence_score - a.confidence_score;
+  },
+  newest: (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  symbol: (a, b) => a.symbol.localeCompare(b.symbol),
+};
+
+const sortOptions = (isHe: boolean): SortOption<SortKey>[] => [
+  { key: "rr", label: isHe ? "סיכוי מול סיכון" : "Risk / reward",
+    hint: isHe ? "הרווח הפוטנציאלי חלקי ההפסד הפוטנציאלי" : "Potential gain divided by potential loss" },
+  { key: "confidence", label: isHe ? "רמת ביטחון" : "Confidence",
+    hint: isHe ? "כמה המערכת בטוחה בניתוח" : "How sure the analysis is" },
+  { key: "upside", label: isHe ? "תשואה צפויה" : "Expected return",
+    hint: isHe ? "המרחק למחיר היעד, באחוזים" : "Distance to the target price, in percent" },
+  { key: "risk_low", label: isHe ? "סיכון — נמוך קודם" : "Risk — lowest first",
+    hint: isHe ? "לפי תנודתיות (בטא). ללא נתון — בסוף" : "By volatility (beta). Unmeasured last" },
+  { key: "risk_high", label: isHe ? "סיכון — גבוה קודם" : "Risk — highest first",
+    hint: isHe ? "המניות התנודתיות ביותר בראש" : "Most volatile at the top" },
+  { key: "newest", label: isHe ? "הכי חדש" : "Newest",
+    hint: isHe ? "לפי מועד ההמלצה" : "By when the recommendation was made" },
+  { key: "symbol", label: isHe ? "לפי סימול" : "By symbol",
+    hint: isHe ? "סדר אלפביתי" : "Alphabetical" },
+];
+
+const SORT_SHORT: Record<SortKey, { he: string; en: string }> = {
+  rr: { he: "סיכוי/סיכון", en: "R/R" },
+  confidence: { he: "ביטחון", en: "Conf" },
+  upside: { he: "תשואה", en: "Upside" },
+  risk_low: { he: "סיכון נמוך", en: "Low risk" },
+  risk_high: { he: "סיכון גבוה", en: "High risk" },
+  newest: { he: "חדש", en: "New" },
+  symbol: { he: "סימול", en: "Symbol" },
+};
 
 const Recommendations: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -91,7 +175,7 @@ const Recommendations: React.FC = () => {
   // signals the confidence score spans 11 points with a standard deviation of
   // 3 — it cannot rank anything, so sorting by it was close to arbitrary.
   // Risk/reward is arithmetic on the committee's own target and stop.
-  const [sortBy, setSortBy] = useState<"rr" | "confidence" | "newest">("rr");
+  const [sortBy, setSortBy] = useState<SortKey>("rr");
   const [tradeModal, setTradeModal] = useState<{ rec: Recommendation; type: OrderType } | null>(null);
   const [techMap, setTechMap] = useState<Record<number, TechnicalAnalysis>>({});
   const [loadingTech, setLoadingTech] = useState<Record<number, boolean>>({});
@@ -194,13 +278,6 @@ const Recommendations: React.FC = () => {
   // announced by an alert, appear in the scan log, and still be absent from
   // this list with nothing to explain it. Every live recommendation is shown;
   // the search box below is how you get to a specific one.
-  const riskReward = (r: Recommendation): number => {
-    const entry = r.current_price_at_recommendation;
-    if (!entry || !r.target_price || !r.stop_loss) return -1;
-    const risk = Math.abs(entry - r.stop_loss);
-    return risk > 0 ? Math.abs(r.target_price - entry) / risk : -1;
-  };
-
   const sorted = [...recommendations].sort((a, b) => b.confidence_score - a.confidence_score);
 
   const topBuys = sorted.filter((r) => isLong(r.recommendation_type));
@@ -219,16 +296,9 @@ const Recommendations: React.FC = () => {
           (r.asset_name || "").toUpperCase().includes(_q)
       )
     : _byDir;
-  const filteredRecs =
-    sortBy === "newest"
-      ? [..._filtered].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      : sortBy === "rr"
-        // Confidence breaks ties: with a spread this narrow it is a tiebreaker,
-        // not a ranking.
-        ? [..._filtered].sort(
-            (a, b) => (riskReward(b) - riskReward(a)) || (b.confidence_score - a.confidence_score)
-          )
-        : _filtered;
+  // One lookup rather than a chain of ternaries: adding a sort is adding a
+  // row to SORTERS, and no ordering can silently fall through to "unsorted".
+  const filteredRecs = [..._filtered].sort(SORTERS[sortBy]);
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
   const longCount = topBuys.length;
@@ -761,26 +831,19 @@ const Recommendations: React.FC = () => {
               value={symbolQuery}
               onChange={(e) => setSymbolQuery(e.target.value)}
               placeholder={isHe ? "חפש סימול…" : "Search symbol…"}
-              className="flex-1 min-w-0 md:flex-none md:w-36 px-3 py-1.5 rounded-lg text-xs bg-gray-900 text-gray-200 border border-gray-800 placeholder-gray-600 focus:border-blue-600 focus:outline-none"
+              // min-w keeps the field usable: with only min-w-0 it shrank to about
+              // 60px beside the longer sort label, showing "חפש" and nothing
+              // else. Below that width the row wraps it onto its own line
+              // instead, which is what flex-wrap is there for.
+              className="flex-1 min-w-[8rem] md:flex-none md:w-36 px-3 py-1.5 rounded-lg text-xs bg-gray-900 text-gray-200 border border-gray-800 placeholder-gray-600 focus:border-blue-600 focus:outline-none"
             />
-            <button
-              onClick={() => setSortBy(sortBy === "rr" ? "confidence" : sortBy === "confidence" ? "newest" : "rr")}
-              className="shrink-0 px-3 py-1.5 rounded-lg text-xs border bg-gray-900 text-gray-300 border-gray-800 hover:border-gray-600"
-              title={isHe ? "החלף מיון" : "Toggle sort"}
-            >
-              {/* The label is the widest thing in the row; on a phone the
-                  arrow plus a short word says the same in a quarter of it. */}
-              <span className="md:hidden">
-                ↕ {sortBy === "rr" ? (isHe ? "סיכוי" : "R/R") : sortBy === "confidence" ? (isHe ? "ביטחון" : "Conf") : (isHe ? "חדש" : "New")}
-              </span>
-              <span className="hidden md:inline">
-                {sortBy === "rr"
-                  ? (isHe ? "↕ לפי סיכוי/סיכון" : "↕ By risk/reward")
-                  : sortBy === "confidence"
-                    ? (isHe ? "↕ לפי ביטחון" : "↕ By confidence")
-                    : (isHe ? "↕ לפי הכי חדש" : "↕ By newest")}
-              </span>
-            </button>
+            <SortMenu
+              options={sortOptions(isHe)}
+              value={sortBy}
+              onChange={setSortBy}
+              isHe={isHe}
+              shortLabel={isHe ? SORT_SHORT[sortBy].he : SORT_SHORT[sortBy].en}
+            />
           </div>
 
           {filteredRecs.length === 0 ? (
