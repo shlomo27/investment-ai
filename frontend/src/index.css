@@ -349,3 +349,17 @@ body {
 .tab-strip::-webkit-scrollbar {
   display: none;              /* Safari / Chrome */
 }
+
+/* Numbers inside Hebrew text.
+   A signed number in an RTL paragraph is reordered by the bidi algorithm:
+   "-3.5%" renders as "3.5%-", which on a financial screen reads as a POSITIVE
+   3.5 with a stray dash after it. A loss displayed as a gain is the worst
+   possible rendering bug here.
+
+   Isolating the value as LTR keeps the sign where it belongs without
+   affecting the surrounding Hebrew. */
+.num {
+  direction: ltr;
+  unicode-bidi: isolate;
+  display: inline-block;
+}

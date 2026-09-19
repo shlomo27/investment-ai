@@ -7,6 +7,10 @@ import ConfirmTradeModal from "../components/Trading/ConfirmTradeModal";
 import Paywall from "../components/Paywall";
 import { isNative } from "../platform";
 import { fetchCurrentUser } from "../store/slices/authSlice";
+import Collapsible from "../components/Research/Section";
+import BottomLine from "../components/Research/BottomLine";
+import KeyNumbers, { extractRatios } from "../components/Research/KeyNumbers";
+import type { Row as NumberRow } from "../components/Research/KeyNumbers";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -719,6 +723,40 @@ const ResearchReport: React.FC = () => {
   if (!rec) return null;
 
   const fa = rec.fundamental_analysis;
+
+  // Two sources, kept apart on purpose (see KeyNumbers): these are values the
+  // system computed and stores as numbers, so they are always right.
+  const structuredNumbers: NumberRow[] = [];
+  {
+    const push = (label: string, value?: string | null) => {
+      if (value) structuredNumbers.push({ label, value });
+    };
+    const entry = rec.current_price_at_recommendation;
+    push(isHe ? "מחיר בעת ההמלצה" : "Price at recommendation", entry ? `$${entry.toFixed(2)}` : null);
+    push(isHe ? "מחיר יעד" : "Target price", rec.target_price ? `$${rec.target_price.toFixed(2)}` : null);
+    push(isHe ? "סטופ לוס" : "Stop loss", rec.stop_loss ? `$${rec.stop_loss.toFixed(2)}` : null);
+    push(
+      isHe ? "תשואה צפויה" : "Expected return",
+      rec.expected_return_pct != null ? `${rec.expected_return_pct.toFixed(1)}%` : null
+    );
+    // Beta may be genuinely absent. Saying so beats printing a number that
+    // was never measured — a blank here is information, not a gap.
+    push(
+      isHe ? "תנודתיות (בטא)" : "Volatility (beta)",
+      rec.beta != null ? rec.beta.toFixed(2) : (isHe ? "לא נמדד" : "not measured")
+    );
+    push(
+      isHe ? "שווי צפוי (EV)" : "Expected value",
+      fa?.expected_value != null ? `$${Number(fa.expected_value).toFixed(2)}` : null
+    );
+    push(isHe ? "אופק השקעה" : "Horizon", fa?.investment_horizon?.replace("_", " ") ?? null);
+  }
+
+  // Read out of the committee's prose by pattern — labelled as such in the UI.
+  const ratioRows: NumberRow[] = extractRatios(
+    [fa?.analyst_notes, rec.senior_notes, rec.senior_review_notes].filter(Boolean).join("\n")
+  );
+
   const isShort = rec.recommendation_type === RecommendationType.SELL || rec.recommendation_type === RecommendationType.STRONG_SELL;
   // Infer direction from recommendation type when direction_bias is absent or NEUTRAL
   const rawBias = fa?.direction_bias;
@@ -799,7 +837,7 @@ const ResearchReport: React.FC = () => {
             <p className="text-xs text-gray-500">{isShort ? (isHe ? "יעד שורט" : "Short Target") : (isHe ? "מחיר יעד" : "Target Price")}</p>
             <p className="text-sm font-bold">{rec.target_price ? `$${rec.target_price.toFixed(2)}` : "—"}</p>
             {currentPrice && rec.target_price && (
-              <p className={`text-xs ${isShort ? "text-red-400" : "text-green-400"}`}>
+              <p className={`num text-xs ${isShort ? "text-red-400" : "text-green-400"}`}>
                 {(((rec.target_price - currentPrice) / currentPrice) * 100).toFixed(1)}%
               </p>
             )}
@@ -807,15 +845,17 @@ const ResearchReport: React.FC = () => {
           <div>
             <p className="text-xs text-gray-500">{isHe ? "סטופ לוס" : "Stop Loss"}</p>
             <p className="text-sm font-bold">{rec.stop_loss ? `$${rec.stop_loss.toFixed(2)}` : "—"}</p>
+            {/* .num: this is almost always negative, and without LTR
+                isolation "-11.7%" renders as "11.7%-" in the RTL layout. */}
             {currentPrice && rec.stop_loss && (
-              <p className="text-xs text-gray-400">
+              <p className="num text-xs text-gray-400">
                 {(((rec.stop_loss - currentPrice) / currentPrice) * 100).toFixed(1)}%
               </p>
             )}
           </div>
           <div>
             <p className="text-xs text-gray-500">{isHe ? "תשואה צפויה" : "Expected Return"}</p>
-            <p className={`text-sm font-bold ${returnPositive ? "text-green-400" : "text-red-400"}`}>
+            <p className={`num text-sm font-bold ${returnPositive ? "text-green-400" : "text-red-400"}`}>
               {returnPct != null ? `${returnPct >= 0 ? "+" : ""}${returnPct.toFixed(1)}%` : "—"}
             </p>
           </div>
@@ -881,22 +921,35 @@ const ResearchReport: React.FC = () => {
         </div>
       )}
 
-      {/* Investment Thesis */}
-      {fa?.thesis && (
-        <div className={`rounded-2xl p-6 border ${isShort ? "bg-red-950/20 border-red-900/30" : "bg-green-950/20 border-green-900/30"}`}>
-          <h2 className="font-bold text-sm uppercase tracking-wide mb-3 text-gray-400">
-            {isHe ? "תזה להשקעה" : "Investment Thesis"}
-          </h2>
-          <p className="text-gray-200 leading-relaxed">{fa.thesis}</p>
-        </div>
+      {/* The answer first. Everything below is the evidence for it, and is
+          collapsed so the page reads as a list of headings rather than
+          several screens of undifferentiated prose. */}
+      {!rec.reasoning_locked && <BottomLine rec={rec} isHe={isHe} />}
+
+      {/* The numbers that decide the case, lifted out of the notes. */}
+      {!rec.reasoning_locked && (structuredNumbers.length > 0 || ratioRows.length > 0) && (
+        <Collapsible
+          title={isHe ? "מספרי מפתח" : "Key numbers"}
+          summary={
+            isHe
+              ? "הערכת שווי, מינוף ותשואה — במספרים"
+              : "Valuation, leverage and returns — as figures"
+          }
+          defaultOpen
+          isHe={isHe}
+        >
+          <KeyNumbers isHe={isHe} structured={structuredNumbers} extracted={ratioRows} />
+        </Collapsible>
       )}
 
       {/* Short Catalysts */}
       {isShort && fa?.short_catalysts && fa.short_catalysts.length > 0 && (
-        <div className="bg-red-950/20 rounded-2xl p-6 border border-red-900/30">
-          <h2 className="font-bold text-sm uppercase tracking-wide mb-3 text-red-400">
-            {isHe ? "קטליזטורים לירידה" : "Downside Catalysts"}
-          </h2>
+        <Collapsible
+          title={isHe ? "קטליזטורים לירידה" : "Downside Catalysts"}
+          summary={`${fa.short_catalysts.length} ${isHe ? "גורמים שעשויים להוריד את המניה" : "factors that could push the stock down"}`}
+          tone="warn"
+          isHe={isHe}
+        >
           <ul className="space-y-2">
             {fa.short_catalysts.map((c, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
@@ -905,13 +958,28 @@ const ResearchReport: React.FC = () => {
               </li>
             ))}
           </ul>
-        </div>
+        </Collapsible>
       )}
 
       {/* Fundamental Analysis */}
       {fa && (
-        <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800 space-y-5">
-          <h2 className="font-bold">{isHe ? "ניתוח פונדמנטלי" : "Fundamental Analysis"}</h2>
+        <Collapsible
+          title={isHe ? "ניתוח פונדמנטלי" : "Fundamental Analysis"}
+          summary={
+            isHe
+              ? "הערכת שווי, בריאות פיננסית, צמיחה ותזרים"
+              : "Valuation, financial health, growth and cash flow"
+          }
+          badge={
+            fa.valuation_assessment ? (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-800 text-gray-400">
+                {fa.valuation_assessment.replace("_", " ")}
+              </span>
+            ) : undefined
+          }
+          isHe={isHe}
+        >
+          <div className="space-y-5">
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Assessment Badges */}
@@ -997,12 +1065,19 @@ const ResearchReport: React.FC = () => {
             )}
           </div>
 
-          {/* Analyst Notes */}
+          {/* Analyst notes — the longest single block on the page. Its
+              figures are lifted into "Key numbers" above; the full text stays
+              here, closed, for anyone who wants the argument itself. */}
           {fa.analyst_notes && (
-            <div>
-              <p className="text-xs font-bold text-gray-400 mb-2">{isHe ? "הערות אנליסט" : "Analyst Notes"}</p>
-              <p className="text-sm text-gray-300 leading-relaxed">{fa.analyst_notes}</p>
-            </div>
+            <details className="group">
+              <summary className="cursor-pointer text-xs font-bold text-gray-400 mb-2 list-none flex items-center gap-2">
+                <span className="text-gray-600 group-open:rotate-90 transition-transform">▶</span>
+                {isHe ? "הערות אנליסט — הנוסח המלא" : "Analyst notes — full text"}
+              </summary>
+              <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">
+                {fa.analyst_notes}
+              </p>
+            </details>
           )}
 
           {fa.sector_comparison && (
@@ -1070,14 +1145,18 @@ const ResearchReport: React.FC = () => {
               </div>
             )}
           </div>
-        </div>
+          </div>
+        </Collapsible>
       )}
 
       {/* Scenario Analysis + EV */}
       {fa?.scenario_analysis && (
-        <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
+        <Collapsible
+          title={isHe ? "ניתוח תרחישים" : "Scenario Analysis"}
+          summary={isHe ? "מה קורה במקרה הטוב, הסביר והרע" : "The bull, base and bear cases"}
+          isHe={isHe}
+        >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold">{isHe ? "ניתוח תרחישים" : "Scenario Analysis"}</h2>
             {fa.expected_value != null && (
               <div className="text-right">
                 <p className="text-xs text-gray-500">{isHe ? "ערך מצופה (EV)" : "Expected Value"}</p>
@@ -1150,13 +1229,17 @@ const ResearchReport: React.FC = () => {
               </span>
             </div>
           )}
-        </div>
+        </Collapsible>
       )}
 
       {/* Thesis Breakers */}
       {fa?.thesis_breakers && fa.thesis_breakers.length > 0 && (
-        <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-          <h2 className="font-bold mb-4">{isHe ? "שוברי התזה — סיכונים קריטיים" : "Thesis Breakers — Critical Risks"}</h2>
+        <Collapsible
+          title={isHe ? "שוברי התזה — סיכונים קריטיים" : "Thesis Breakers — Critical Risks"}
+          summary={`${fa.thesis_breakers.length} ${isHe ? "אירועים שיבטלו את ההמלצה אם יקרו" : "events that would invalidate this call"}`}
+          tone="warn"
+          isHe={isHe}
+        >
           <div className="space-y-3">
             {fa.thesis_breakers.map((tb: any, i: number) => (
               <div key={i} className="flex items-start gap-3 bg-gray-800/40 rounded-xl p-4">
@@ -1174,7 +1257,7 @@ const ResearchReport: React.FC = () => {
               </div>
             ))}
           </div>
-        </div>
+        </Collapsible>
       )}
 
       {/* Quantitative Models */}
@@ -1207,8 +1290,11 @@ const ResearchReport: React.FC = () => {
 
       {/* Senior Committee Decision */}
       {(rec.senior_notes || rec.senior_review_notes) && (
-        <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-          <h2 className="font-bold mb-3">{isHe ? "ועדת הבכיר — החלטה סופית" : "Senior Committee — Final Decision"}</h2>
+        <Collapsible
+          title={isHe ? "ועדת הבכיר — החלטה סופית" : "Senior Committee — Final Decision"}
+          summary={isHe ? "הנימוק לאישור וההערות המלאות" : "The approval reasoning and full notes"}
+          isHe={isHe}
+        >
           {rec.senior_review_notes && (
             <div className="mb-3">
               <p className="text-xs text-gray-500 mb-1">{isHe ? "אישור" : "Approval Reasoning"}</p>
@@ -1218,10 +1304,10 @@ const ResearchReport: React.FC = () => {
           {rec.senior_notes && (
             <div>
               <p className="text-xs text-gray-500 mb-1">{isHe ? "הערות ועדה" : "Committee Notes"}</p>
-              <p className="text-sm text-gray-300">{rec.senior_notes}</p>
+              <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">{rec.senior_notes}</p>
             </div>
           )}
-        </div>
+        </Collapsible>
       )}
 
       {/* Technical Analysis — Preview Card */}
