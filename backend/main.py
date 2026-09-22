@@ -202,6 +202,18 @@ async def lifespan(app: FastAPI):
                     if not did_maintenance:
                         await restore_actioned_recommendations()
                         await dedupe_live_recommendations()
+                        # Fill SEC issuer ids now rather than waiting for
+                        # Sunday. Until this has run, share-class grouping has
+                        # nothing to key on: GOOGL and GOOG stay two unrelated
+                        # companies and the card says nothing about either.
+                        #
+                        # Detached so a slow or unreachable SEC never delays
+                        # the server accepting requests — the job logs its own
+                        # failure and the weekly run tries again.
+                        from app.core.background import detach
+                        from app.workers.in_process_scheduler import job_backfill_ciks
+
+                        detach(job_backfill_ciks())
                         did_maintenance = True
                     logged_waiting = False
 

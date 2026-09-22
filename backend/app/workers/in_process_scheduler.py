@@ -1085,6 +1085,39 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+async def job_backfill_ciks():
+    """Fill in the SEC issuer identifier for any asset missing it.
+
+    Nothing downstream works without this: share-class grouping is keyed on
+    CIK, so until it is populated GOOGL and GOOG remain two unrelated
+    companies and the card says nothing. That silence is the safe failure —
+    no CIK means no grouping, never a guessed one.
+
+    Only missing values are written, so this never overwrites a correction.
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.services.share_classes.service import backfill_ciks
+
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await backfill_ciks(db)
+        logger.info(f"[cik_backfill] {result}")
+    except Exception as e:
+        # Never fatal. A failed backfill leaves the previous state intact and
+        # the next run tries again; the only cost is that share-class notes
+        # stay hidden for another week.
+        logger.warning(f"[cik_backfill] failed: {e}")
+
+    # SEC issuer identifiers — Sunday 07:20 IL, between the universe refresh
+    # and the beta backfill. New index members arrive without a CIK, and
+    # without one they can never be recognised as a sibling listing.
+    scheduler.add_job(
+        job_backfill_ciks,
+        CronTrigger(day_of_week="sun", hour=7, minute=20, timezone="Asia/Jerusalem"),
+        id="scheduled_cik_backfill",
+        replace_existing=True,
+    )
+
     # Volatility backfill — Sunday 07:40 IL, right after the universe refresh
     # brings in new symbols. Measures beta for any stock that has never had it
     # measured, so the card's volatility band and the user's allows_volatile
@@ -1252,6 +1285,7 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
 # (a stale daily-09:00 full scan haunted us exactly this way).
 KNOWN_JOB_IDS = {
     "scheduled_load_universe",
+    "scheduled_cik_backfill",
     "scheduled_beta_backfill",
     "scheduled_stale_recommendations",
     "scheduled_prescreener",
