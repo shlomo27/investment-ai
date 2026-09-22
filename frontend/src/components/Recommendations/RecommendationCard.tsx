@@ -109,28 +109,83 @@ const RecommendationCard: React.FC<Props> = ({
                 wrong — and when it is wrong it shows one business under
                 another's name. A note costs nothing if it is wrong, and
                 tells the reader something true when it is right. */}
-            {rec.sibling_listings && rec.sibling_listings.length > 0 && (
-              <p className="mt-1.5 text-[11px] text-gray-400 leading-relaxed">
-                {t(
-                  `${rec.asset_name || rec.symbol} also trades as `,
-                  `${rec.asset_name || rec.symbol} נסחרת גם כ-`
-                )}
-                {rec.sibling_listings.map((s, i) => (
-                  <React.Fragment key={s.symbol}>
-                    {i > 0 && ", "}
-                    <span className="font-mono text-gray-300">{s.symbol}</span>
-                    {typeof s.last_price === "number" && (
-                      <span className="num text-gray-500"> (${s.last_price.toFixed(2)})</span>
-                    )}
-                  </React.Fragment>
-                ))}
-                {". "}
-                {t(
-                  "Same company, same economics — the difference is voting rights. Buy whichever is cheaper.",
-                  "אותה חברה, אותה כלכלה — ההבדל הוא זכות הצבעה. קנה את הזולה."
-                )}
-              </p>
-            )}
+            {rec.sibling_listings && rec.sibling_listings.length > 0 && (() => {
+              // "Buy whichever is cheaper" is only honest advice if the card
+              // shows prices that can be compared. The sibling prices are
+              // live; current_price_at_recommendation is not, and a reader
+              // comparing those two read a stock that was $2 more expensive
+              // as $9 cheaper. So the comparison is made here, against this
+              // listing's own live price, or not offered at all.
+              const base = typeof rec.sibling_base_price === "number" ? rec.sibling_base_price : null;
+              const priced = rec.sibling_listings.filter(
+                (s) => typeof s.last_price === "number"
+              ) as Array<{ symbol: string; last_price: number }>;
+              const cheapest = base !== null && priced.length
+                ? priced.reduce((a, b) => (b.last_price < a.last_price ? b : a))
+                : null;
+              const siblingWins = cheapest !== null && cheapest.last_price < base!;
+              // Under a percent these listings trade back and forth, so
+              // naming a winner would send the reader chasing noise.
+              const gapPct = cheapest !== null
+                ? Math.abs(cheapest.last_price - base!) / base! * 100
+                : 0;
+
+              return (
+                <p className="mt-1.5 text-[11px] text-gray-400 leading-relaxed">
+                  {t(
+                    `${rec.asset_name || rec.symbol} also trades as `,
+                    `${rec.asset_name || rec.symbol} נסחרת גם כ-`
+                  )}
+                  {rec.sibling_listings.map((s, i) => (
+                    <React.Fragment key={s.symbol}>
+                      {i > 0 && ", "}
+                      <span className="font-mono text-gray-300">{s.symbol}</span>
+                      {typeof s.last_price === "number" && (
+                        <span className="num text-gray-500"> (${s.last_price.toFixed(2)})</span>
+                      )}
+                    </React.Fragment>
+                  ))}
+                  {base !== null && (
+                    <span className="num text-gray-500">
+                      {t(
+                        `, against ${rec.symbol} at $${base.toFixed(2)} now`,
+                        `, מול ${rec.symbol} ב-$${base.toFixed(2)} כרגע`
+                      )}
+                    </span>
+                  )}
+                  {". "}
+                  {t(
+                    "Same company, same economics — the difference is voting rights.",
+                    "אותה חברה, אותה כלכלה — ההבדל הוא זכות הצבעה."
+                  )}
+                  {cheapest !== null && gapPct >= 1 && (
+                    <>
+                      {" "}
+                      <span className="text-gray-300">
+                        {siblingWins
+                          ? t(
+                              `${cheapest.symbol} is cheaper right now.`,
+                              `${cheapest.symbol} זולה יותר כרגע.`
+                            )
+                          : t(
+                              `${rec.symbol} is the cheaper of the two right now.`,
+                              `${rec.symbol} היא הזולה מבין השתיים כרגע.`
+                            )}
+                      </span>
+                    </>
+                  )}
+                  {cheapest !== null && gapPct < 1 && (
+                    <>
+                      {" "}
+                      {t(
+                        "They are within a percent of each other — either one is fine.",
+                        "הפער ביניהן פחות מאחוז — כל אחת מהן בסדר."
+                      )}
+                    </>
+                  )}
+                </p>
+              );
+            })()}
 
             {(() => {
               // Risk transparency: short positions and high-volatility stocks

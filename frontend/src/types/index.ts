@@ -494,6 +494,12 @@ export interface Recommendation {
     last_price?: number | null;
     is_primary?: boolean;
   }>;
+  /**
+   * This listing's CURRENT price. Sibling prices are live, but
+   * current_price_at_recommendation can be weeks old, so only this field may
+   * be compared against them.
+   */
+  sibling_base_price?: number | null;
   asset_name?: string;
   sector?: string;
   risk_level?: string;
