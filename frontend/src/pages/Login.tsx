@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useT, useDir } from "../i18n/t";
+import { LANGUAGES, detectLanguage, rememberLanguage, applyDocumentLanguage } from "../i18n/languages";
 import { useNavigate, Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { loginUser, registerUser, setUser } from "../store/slices/authSlice";
@@ -17,7 +18,10 @@ const Login: React.FC = () => {
   const { isLoading, error } = useAppSelector((state) => state.auth);
 
   const [mode, setMode] = useState<"login" | "register">("login");
-  const [lang, setLang] = useState<"he" | "en">("he");
+  // The device's language, not a hardcoded Hebrew. This is the first screen
+  // anyone sees and there is no account yet to carry a preference, so the
+  // device is the only thing that knows who is reading.
+  const [lang, setLang] = useState<string>(() => detectLanguage());
 
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [twoFARequired, setTwoFARequired] = useState(false);
@@ -30,7 +34,7 @@ const Login: React.FC = () => {
     password: "",
     full_name: "",
     phone: "",
-    preferred_language: "he",
+    preferred_language: detectLanguage(),
     // The server rejects registration unless this is true. Unticked by
     // default and never pre-ticked: consent that was pre-ticked is not
     // consent, and this is the record that the risk disclosure was accepted.
@@ -38,7 +42,6 @@ const Login: React.FC = () => {
     accepted_terms_version: TERMS_VERSION,
   });
 
-  const isHe = lang === "he";
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,13 +85,29 @@ const Login: React.FC = () => {
       className="min-h-screen bg-gray-950 flex items-center justify-center px-4"
       dir={dir}
     >
-      {/* Language toggle */}
-      <button
-        onClick={() => setLang(lang === "he" ? "en" : "he")}
-        className="fixed top-4 right-4 text-gray-400 hover:text-white text-sm border border-gray-700 rounded px-3 py-1"
+      {/* Language picker.
+          A two-way he/en toggle labelled "עב" was wrong twice over for the
+          eight other languages: it offered a reader in French a switch to
+          Hebrew, and labelled it in an alphabet they may not read. Each
+          language names itself, which is the one label every reader of it
+          can recognise. */}
+      <select
+        value={lang}
+        onChange={(e) => {
+          const code = e.target.value;
+          setLang(code);
+          rememberLanguage(code);
+          applyDocumentLanguage(code);
+          setRegisterForm((f) => ({ ...f, preferred_language: code }));
+        }}
+        aria-label={t("Language", "שפה")}
+        className="fixed top-4 right-4 bg-gray-900 text-gray-300 text-sm border border-gray-700 rounded px-3 py-1"
+        dir="ltr"
       >
-        {t("עב", "EN")}
-      </button>
+        {LANGUAGES.map((l) => (
+          <option key={l.code} value={l.code}>{l.nativeName}</option>
+        ))}
+      </select>
 
       <div className="w-full max-w-md">
         {/* Logo */}

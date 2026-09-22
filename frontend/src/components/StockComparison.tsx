@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useT } from "../i18n/t";
 import { marketExtApi } from "../api/client";
 
 interface Props {
@@ -26,12 +27,15 @@ export default function StockComparison({ isHebrew = true }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const t = (he: string, en: string) => (isHebrew ? he : en);
+  // The i18n t(), not a local Hebrew/English switch. This screen shadowed it
+  // with `t(he, en)`, so a French reader got Hebrew: the local helper had no
+  // third case, and the Hebrew string sat where the dictionary key belongs.
+  const t = useT();
 
   const compare = async () => {
     const symbols = input.toUpperCase().split(/[\s,]+/).filter(Boolean);
     if (symbols.length < 2) {
-      setError(t("הזן לפחות 2 סימולים", "Enter at least 2 symbols"));
+      setError(t("Enter at least 2 symbols", "הזן לפחות 2 סימולים"));
       return;
     }
     setLoading(true);
@@ -40,7 +44,7 @@ export default function StockComparison({ isHebrew = true }: Props) {
       const result = await marketExtApi.compareStocks(symbols);
       setData(result);
     } catch (e: any) {
-      setError(t("שגיאה בטעינה", "Failed to load comparison"));
+      setError(t("Failed to load comparison", "שגיאה בטעינה"));
     } finally {
       setLoading(false);
     }
@@ -79,7 +83,7 @@ export default function StockComparison({ isHebrew = true }: Props) {
           disabled={loading}
           style={{ padding: "10px 20px", borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", cursor: "pointer", fontWeight: 600 }}
         >
-          {loading ? t("משווה...", "Loading...") : t("השווה", "Compare")}
+          {loading ? t("Loading...", "משווה...") : t("Compare", "השווה")}
         </button>
       </div>
 
@@ -90,7 +94,7 @@ export default function StockComparison({ isHebrew = true }: Props) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ borderBottom: "2px solid #334155" }}>
-                <th style={{ padding: "10px 12px", color: "#64748b", textAlign: "left", minWidth: 140 }}>{t("מדד", "Metric")}</th>
+                <th style={{ padding: "10px 12px", color: "#64748b", textAlign: "left", minWidth: 140 }}>{t("Metric", "מדד")}</th>
                 {data.symbols.map((sym: string) => (
                   <th key={sym} style={{ padding: "10px 12px", color: "#3b82f6", textAlign: "center", minWidth: 120 }}>{sym}</th>
                 ))}
@@ -98,7 +102,7 @@ export default function StockComparison({ isHebrew = true }: Props) {
             </thead>
             <tbody>
               <tr style={{ borderBottom: "1px solid #1e293b" }}>
-                <td style={{ padding: "8px 12px", color: "#64748b", fontSize: 12 }}>{t("שם", "Name")}</td>
+                <td style={{ padding: "8px 12px", color: "#64748b", fontSize: 12 }}>{t("Name", "שם")}</td>
                 {data.symbols.map((sym: string) => (
                   <td key={sym} style={{ padding: "8px 12px", color: "#94a3b8", textAlign: "center" }}>
                     {data.comparison[sym]?.name || sym}
@@ -129,7 +133,7 @@ export default function StockComparison({ isHebrew = true }: Props) {
             </tbody>
           </table>
           <div style={{ color: "#475569", fontSize: 11, marginTop: 8 }}>
-            ✓ = {t("ערך עדיף לפי המדד", "better value for this metric")}
+            ✓ = {t("better value for this metric", "ערך עדיף לפי המדד")}
           </div>
         </div>
       )}

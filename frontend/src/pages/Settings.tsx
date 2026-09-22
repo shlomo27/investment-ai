@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useT, useDir } from "../i18n/t";
+import { useT, useDir , useLocale} from "../i18n/t";
 import { useAppDispatch, useAppSelector } from "../store";
 import { updateUserProfile, fetchCurrentUser } from "../store/slices/authSlice";
 import { authApi } from "../api/client";
@@ -18,6 +18,7 @@ const PROFILE_META: Record<RiskProfile, { he: string; en: string; color: string 
 
 const Settings: React.FC = () => {
   const t = useT();
+  const locale = useLocale();
   const dir = useDir();
   const dispatch = useAppDispatch();
   const { user, isLoading } = useAppSelector((s) => s.auth);
@@ -610,7 +611,7 @@ const Settings: React.FC = () => {
               <p className="text-xs text-gray-500">
                 {t("Renews on ", "מתחדש ב-")}
                 {new Date(user.subscription_expires_at).toLocaleDateString(
-                  t("en-US", "he-IL")
+                  locale
                 )}
               </p>
             )}

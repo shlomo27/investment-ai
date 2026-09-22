@@ -133,8 +133,9 @@ const RecommendationCard: React.FC<Props> = ({
               return (
                 <p className="mt-1.5 text-[11px] text-gray-400 leading-relaxed">
                   {t(
-                    `${rec.asset_name || rec.symbol} also trades as `,
-                    `${rec.asset_name || rec.symbol} נסחרת גם כ-`
+                    "{company} also trades as ",
+                    "{company} נסחרת גם כ-",
+                    { company: rec.asset_name || rec.symbol }
                   )}
                   {rec.sibling_listings.map((s, i) => (
                     <React.Fragment key={s.symbol}>
@@ -148,8 +149,9 @@ const RecommendationCard: React.FC<Props> = ({
                   {base !== null && (
                     <span className="num text-gray-500">
                       {t(
-                        `, against ${rec.symbol} at $${base.toFixed(2)} now`,
-                        `, מול ${rec.symbol} ב-$${base.toFixed(2)} כרגע`
+                        ", against {symbol} at ${price} now",
+                        ", מול {symbol} ב-${price} כרגע",
+                        { symbol: rec.symbol, price: base.toFixed(2) }
                       )}
                     </span>
                   )}
@@ -162,15 +164,11 @@ const RecommendationCard: React.FC<Props> = ({
                     <>
                       {" "}
                       <span className="text-gray-300">
-                        {siblingWins
-                          ? t(
-                              `${cheapest.symbol} is cheaper right now.`,
-                              `${cheapest.symbol} זולה יותר כרגע.`
-                            )
-                          : t(
-                              `${rec.symbol} is the cheaper of the two right now.`,
-                              `${rec.symbol} היא הזולה מבין השתיים כרגע.`
-                            )}
+                        {t(
+                          "{symbol} is the cheaper of the two right now.",
+                          "{symbol} היא הזולה מבין השתיים כרגע.",
+                          { symbol: siblingWins ? cheapest.symbol : rec.symbol }
+                        )}
                       </span>
                     </>
                   )}
@@ -318,10 +316,7 @@ const RecommendationCard: React.FC<Props> = ({
                   <p className="font-bold">{fmt(live)}</p>
                   {entry != null && (
                     <p className="text-[10px] text-gray-500 num" dir="ltr">
-                      {t(
-                        `entry ${fmt(entry)}`,
-                        `בהמלצה ${fmt(entry)}`
-                      )}
+                      {t("entry {price}", "בהמלצה {price}", { price: fmt(entry) })}
                       {drift !== null && ` (${drift >= 0 ? "+" : ""}${drift.toFixed(1)}%)`}
                     </p>
                   )}

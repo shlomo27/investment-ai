@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useT, useDir } from "../i18n/t";
+import { useT, useDir , useLocale} from "../i18n/t";
 import type { TFunction } from "../i18n/t";
 import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
@@ -119,6 +119,7 @@ const SORT_SHORT: Record<SortKey, { he: string; en: string }> = {
 
 const Recommendations: React.FC = () => {
   const t = useT();
+  const locale = useLocale();
   const dir = useDir();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((s) => s.auth);
@@ -462,7 +463,7 @@ const Recommendations: React.FC = () => {
                           </span>
                           <div className="flex-1" />
                           <span className="text-xs text-gray-600">
-                            {item.created_at ? new Date(item.created_at).toLocaleDateString(t("en-US", "he-IL")) : ""}
+                            {item.created_at ? new Date(item.created_at).toLocaleDateString(locale) : ""}
                           </span>
                           {item.reason && (
                             <button
@@ -712,7 +713,7 @@ const Recommendations: React.FC = () => {
                     <div className="flex flex-col items-end gap-2 flex-shrink-0">
                       <div className="flex items-center gap-2">
                         <p className="text-xs text-gray-500">
-                          {new Date(notif.sent_at).toLocaleString(t("en-US", "he-IL"))}
+                          {new Date(notif.sent_at).toLocaleString(locale)}
                         </p>
                         <button
                           onClick={(e) => {

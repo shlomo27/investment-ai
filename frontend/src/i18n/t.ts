@@ -87,3 +87,18 @@ export function useT(): TFunction {
   const lang = useLanguage();
   return (en: string, he?: string, vars?: Vars) => translateUI(en, he, lang, vars);
 }
+
+/**
+ * The BCP-47 tag for date and number formatting.
+ *
+ * Not `t("en-US", "he-IL")`. That routed a locale tag through the string
+ * dictionary, where it is indistinguishable from a label: a translator —
+ * human or machine — reads "en-US" as text to translate, and every date on
+ * the screen turns into "Invalid Date". It also had only two answers, so a
+ * French reader got American dates.
+ *
+ * The language codes are already valid tags, so the language IS the locale.
+ */
+export function useLocale(): string {
+  return useLanguage();
+}

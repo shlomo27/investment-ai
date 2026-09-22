@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useT } from "../i18n/t";
 import { marketExtApi } from "../api/client";
 
 interface EarningsEvent {
@@ -21,7 +22,10 @@ export default function EarningsCalendar({ symbols, isHebrew = true, daysAhead =
   const [events, setEvents] = useState<EarningsEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const t = (he: string, en: string) => (isHebrew ? he : en);
+  // The i18n t(), not a local Hebrew/English switch. This screen shadowed it
+  // with `t(he, en)`, so a French reader got Hebrew: the local helper had no
+  // third case, and the Hebrew string sat where the dictionary key belongs.
+  const t = useT();
 
   useEffect(() => {
     (async () => {
@@ -39,10 +43,10 @@ export default function EarningsCalendar({ symbols, isHebrew = true, daysAhead =
     })();
   }, [symbols?.join(","), daysAhead]);
 
-  if (loading) return <div style={{ color: "#64748b", padding: 16 }}>{t("טוען...", "Loading...")}</div>;
+  if (loading) return <div style={{ color: "#64748b", padding: 16 }}>{t("Loading...", "טוען...")}</div>;
   if (!events.length) return (
     <div style={{ color: "#64748b", padding: 16, textAlign: "center" }}>
-      {t("אין דיווחי רווחים קרובים", "No upcoming earnings in this period")}
+      {t("No upcoming earnings in this period", "אין דיווחי רווחים קרובים")}
     </div>
   );
 
@@ -65,7 +69,7 @@ export default function EarningsCalendar({ symbols, isHebrew = true, daysAhead =
               <div style={{ color: "#94a3b8", fontSize: 13, marginTop: 2 }}>
                 📅 {ev.earnings_date}
                 {ev.eps_estimate != null && (
-                  <span style={{ marginLeft: 12 }}>EPS {t("תחזית", "est.")}: ${ev.eps_estimate.toFixed(2)}</span>
+                  <span style={{ marginLeft: 12 }}>EPS {t("est.", "תחזית")}: ${ev.eps_estimate.toFixed(2)}</span>
                 )}
               </div>
             </div>
@@ -78,12 +82,12 @@ export default function EarningsCalendar({ symbols, isHebrew = true, daysAhead =
                 fontSize: 13,
                 fontWeight: 600,
               }}>
-                {ev.days_until === 0 ? t("היום!", "Today!") :
-                 ev.days_until === 1 ? t("מחר", "Tomorrow") :
-                 `${ev.days_until} ${t("ימים", "days")}`}
+                {ev.days_until === 0 ? t("Today!", "היום!") :
+                 ev.days_until === 1 ? t("Tomorrow", "מחר") :
+                 `${ev.days_until} ${t("days", "ימים")}`}
               </div>
               {ev.is_imminent && (
-                <div style={{ color: "#f59e0b", fontSize: 11, marginTop: 4 }}>⚠️ {t("ממשמש ובא", "IMMINENT")}</div>
+                <div style={{ color: "#f59e0b", fontSize: 11, marginTop: 4 }}>⚠️ {t("IMMINENT", "ממשמש ובא")}</div>
               )}
             </div>
           </div>

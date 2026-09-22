@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useT } from "../i18n/t";
 import { marketExtApi } from "../api/client";
 
 interface SectorData {
@@ -17,7 +18,10 @@ export default function SectorDashboard({ isHebrew = true }: Props) {
   const [sectors, setSectors] = useState<SectorData[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const t = (he: string, en: string) => (isHebrew ? he : en);
+  // The i18n t(), not a local Hebrew/English switch. This screen shadowed it
+  // with `t(he, en)`, so a French reader got Hebrew: the local helper had no
+  // third case, and the Hebrew string sat where the dictionary key belongs.
+  const t = useT();
 
   useEffect(() => {
     (async () => {
@@ -32,10 +36,10 @@ export default function SectorDashboard({ isHebrew = true }: Props) {
     })();
   }, []);
 
-  if (loading) return <div style={{ color: "#64748b", padding: 16 }}>{t("טוען...", "Loading...")}</div>;
+  if (loading) return <div style={{ color: "#64748b", padding: 16 }}>{t("Loading...", "טוען...")}</div>;
   if (!sectors.length) return (
     <div style={{ color: "#64748b", padding: 16, textAlign: "center" }}>
-      {t("אין נתוני סקטורים", "No sector data available yet")}
+      {t("No sector data available yet", "אין נתוני סקטורים")}
     </div>
   );
 
@@ -52,8 +56,8 @@ export default function SectorDashboard({ isHebrew = true }: Props) {
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                 <span style={{ color: "#fff", fontWeight: 600 }}>{s.sector}</span>
                 <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                  <span style={{ color: "#64748b", fontSize: 12 }}>{s.recommendation_count} {t("המלצות", "recs")}</span>
-                  <span style={{ color: "#64748b", fontSize: 12 }}>{t("ביטחון", "conf")}: {s.avg_confidence}%</span>
+                  <span style={{ color: "#64748b", fontSize: 12 }}>{s.recommendation_count} {t("recs", "המלצות")}</span>
+                  <span style={{ color: "#64748b", fontSize: 12 }}>{t("conf", "ביטחון")}: {s.avg_confidence}%</span>
                   <span style={{ color: isBull ? "#22c55e" : "#ef4444", fontWeight: 700 }}>
                     {isBull ? "▲" : "▼"} {Math.abs(s.avg_expected_return_pct).toFixed(1)}%
                   </span>
