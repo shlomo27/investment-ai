@@ -204,7 +204,7 @@ const RecommendationCard: React.FC<Props> = ({
                 return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-orange-900/40 text-orange-300 border border-orange-700/40"
                              title={isHe
                                ? `יעד המחיר והסטופ נקבעו לפני ${ageDays} ימים, לפני שינויי מחיר ואולי לפני דוח רבעוני. המניה בתור לניתוח מחדש; אם לא תיבדק עד גיל 45 יום ההמלצה תוסר מהפיד. עד אז אל תפעל לפי המספרים האלה בלי לבדוק את המחיר הנוכחי.`
-                               : `The target and stop were set ${ageDays} days ago, before subsequent price moves and possibly before an earnings report. It is queued for re-analysis and will be retired at 45 days if not re-checked. Until then do not act on these numbers without checking the current price.`}>🟠 {isHe ? `ניתוח בן ${ageDays} ימים — אמת מחיר לפני פעולה` : `${ageDays}-day-old analysis — verify price first`}</span>;
+                               : `The target and stop were set ${ageDays} days ago, before subsequent price moves and possibly before an earnings report. It is queued for re-analysis and will be retired at 45 days if not re-checked. Until then do not act on these numbers without checking the current price.`}>🟠 {t("{days}-day-old analysis — verify price first", "ניתוח בן {days} ימים — אמת מחיר לפני פעולה", { days: ageDays })}</span>;
               }
             })()}
           </div>
@@ -446,7 +446,7 @@ const RecommendationCard: React.FC<Props> = ({
               className="text-xs bg-blue-900/20 border border-blue-700/50 text-blue-300 rounded-lg px-3 py-1.5 hover:bg-blue-900/40 disabled:opacity-60"
               title={t("We'll alert you when the technical confirms an entry point", "נודיע לך כשהניתוח הטכני יאשר נקודת כניסה")}
             >
-              {following ? "..." : (t("👁 Follow for entry", "👁 עקוב לנקודת כניסה"))}
+              {following ? "..." : `👁 ${t("Follow for entry", "עקוב לנקודת כניסה")}`}
             </button>
           );
         })()}

@@ -106,7 +106,12 @@ export const UI_STRINGS: StringTable = {
     "Subscription": "Abonnement",
     "Upgrade": "Passer à l'abonnement",
     "Delete account": "Supprimer le compte",
-    "Restore Purchases": "Restaurer les achats"
+    "Restore Purchases": "Restaurer les achats",
+    "{days}-day-old analysis — verify price first": "Analyse vieille de {days} jours — vérifiez le prix",
+    "Allocation": "Allocation",
+    "Low allocation": "Allocation faible",
+    "Medium allocation": "Allocation moyenne",
+    "High allocation": "Allocation élevée"
   },
   "es": {
     "Signals": "Señales",
@@ -187,7 +192,12 @@ export const UI_STRINGS: StringTable = {
     "Subscription": "Suscripción",
     "Upgrade": "Mejorar plan",
     "Delete account": "Eliminar cuenta",
-    "Restore Purchases": "Restaurar compras"
+    "Restore Purchases": "Restaurar compras",
+    "{days}-day-old analysis — verify price first": "Análisis de hace {days} días — verifica el precio",
+    "Allocation": "Asignación",
+    "Low allocation": "Asignación baja",
+    "Medium allocation": "Asignación media",
+    "High allocation": "Asignación alta"
   },
   "de": {
     "Signals": "Signale",
@@ -268,7 +278,12 @@ export const UI_STRINGS: StringTable = {
     "Subscription": "Abonnement",
     "Upgrade": "Upgrade",
     "Delete account": "Konto löschen",
-    "Restore Purchases": "Käufe wiederherstellen"
+    "Restore Purchases": "Käufe wiederherstellen",
+    "{days}-day-old analysis — verify price first": "{days} Tage alte Analyse — Kurs prüfen",
+    "Allocation": "Gewichtung",
+    "Low allocation": "Geringe Gewichtung",
+    "Medium allocation": "Mittlere Gewichtung",
+    "High allocation": "Hohe Gewichtung"
   },
   "it": {}
 };

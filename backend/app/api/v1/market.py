@@ -1971,3 +1971,82 @@ async def get_sec_filings(
     """Fetch recent 10-K and 10-Q filing metadata from SEC EDGAR."""
     from app.services.market_data.sec_service import get_sec_service
     return await get_sec_service().get_filings_summary(symbol.upper())
+
+
+@router.get("/share-classes/diagnose")
+async def diagnose_share_classes(
+    symbol: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Why a symbol does or does not show a sibling listing.
+
+    Grouping fails silently by design — an uncertain match shows nothing
+    rather than a wrong one — which makes "I see no note" indistinguishable
+    from "the backfill never ran". This says which it is, in order, so the
+    answer is a fact rather than a guess.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    from sqlalchemy import func as sqlfunc
+
+    from app.db.models.asset import Asset as _A
+    from app.services.share_classes.rules import (
+        Listing, equivalent, is_common_stock,
+    )
+    from app.services.share_classes.service import siblings_for
+
+    sym = symbol.upper().strip()
+    asset = (await db.execute(select(_A).where(_A.symbol == sym))).scalar_one_or_none()
+
+    total = (await db.execute(select(sqlfunc.count(_A.id)))).scalar() or 0
+    with_cik = (
+        await db.execute(select(sqlfunc.count(_A.id)).where(_A.cik.isnot(None)))
+    ).scalar() or 0
+
+    out: dict = {
+        "symbol": sym,
+        "universe": {"assets": total, "with_cik": with_cik,
+                     "backfill_has_run": with_cik > 0},
+    }
+    if asset is None:
+        out["blocked_by"] = "symbol not in the assets table"
+        return out
+
+    out["asset"] = {"name": asset.name, "cik": asset.cik,
+                    "last_price": asset.last_price}
+    if not asset.cik:
+        out["blocked_by"] = (
+            "this asset has no CIK — the SEC backfill has not reached it, "
+            "or the SEC does not list this ticker"
+        )
+        return out
+
+    same_cik = (
+        await db.execute(select(_A).where(_A.cik == asset.cik, _A.symbol != sym))
+    ).scalars().all()
+    if not same_cik:
+        out["blocked_by"] = "no other asset shares this CIK"
+        return out
+
+    base = Listing(asset.symbol, asset.name or asset.symbol, asset.cik,
+                   asset.last_price, getattr(asset, "avg_volume", None))
+    checked = []
+    for other in same_cik:
+        cand = Listing(other.symbol, other.name or other.symbol, other.cik,
+                       other.last_price, getattr(other, "avg_volume", None))
+        ok = equivalent(base, cand)
+        checked.append({
+            "symbol": other.symbol,
+            "name": other.name,
+            "equivalent": ok,
+            # The individual tests, so a rejection names its reason.
+            "is_common_stock": is_common_stock(cand),
+            "base_is_common": is_common_stock(base),
+        })
+    out["same_cik"] = checked
+    out["siblings_shown"] = await siblings_for(db, sym)
+    if not out["siblings_shown"]:
+        out["blocked_by"] = "shares a CIK, but the equivalence test rejected it"
+    return out

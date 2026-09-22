@@ -27,15 +27,36 @@ import { useAppSelector } from "../store";
 import { detectLanguage, isRTL } from "./languages";
 import { UI_STRINGS } from "./strings";
 
-export type TFunction = (en: string, he?: string) => string;
+export type Vars = Record<string, string | number>;
+export type TFunction = (en: string, he?: string, vars?: Vars) => string;
+
+/**
+ * Substitute {name} placeholders after the lookup, never before.
+ *
+ * A label carrying a value has to keep a STATIC key or it can never be
+ * translated: "33-day-old analysis" and "45-day-old analysis" are different
+ * strings, so a dictionary keyed on the finished sentence would need an
+ * entry per number. Keyed on "{days}-day-old analysis" it needs one.
+ */
+function fill(text: string, vars?: Vars): string {
+  if (!vars) return text;
+  return text.replace(/\{(\w+)\}/g, (whole, key) =>
+    key in vars ? String(vars[key]) : whole
+  );
+}
 
 /** Resolve one string for a language. Exported for tests and non-React code. */
-export function translateUI(en: string, he: string | undefined, lang: string): string {
-  if (lang === "en") return en;
-  if (lang === "he") return he ?? en;
+export function translateUI(
+  en: string,
+  he: string | undefined,
+  lang: string,
+  vars?: Vars
+): string {
+  if (lang === "en") return fill(en, vars);
+  if (lang === "he") return fill(he ?? en, vars);
   // Generated dictionaries are keyed by the English string. A miss is not an
   // error: English is a correct answer, just not the preferred one.
-  return UI_STRINGS[lang]?.[en] ?? en;
+  return fill(UI_STRINGS[lang]?.[en] ?? en, vars);
 }
 
 /**
@@ -64,5 +85,5 @@ export function useDir(): "rtl" | "ltr" {
 /** The translator for the current language. */
 export function useT(): TFunction {
   const lang = useLanguage();
-  return (en: string, he?: string) => translateUI(en, he, lang);
+  return (en: string, he?: string, vars?: Vars) => translateUI(en, he, lang, vars);
 }
