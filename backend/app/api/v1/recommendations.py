@@ -16,7 +16,12 @@ from app.core.database import get_db
 from app.core.security import get_current_active_user
 from app.core.entitlements import entitlements_for
 from app.core.languages import SOURCE_LANGUAGE, normalize
-from app.services.translation.service import translate_texts
+from app.core.background import detach
+from app.services.translation.service import (
+    cached_translations,
+    translate_texts,
+    warm_translations,
+)
 from app.db.models.user import User
 from app.db.models.recommendation import Recommendation, RecommendationStatus, RecommendationType
 from app.db.models.notification import Notification, NotificationType
@@ -276,9 +281,35 @@ async def _localize(rec: Recommendation, user: User, db: AsyncSession) -> dict:
     company = (await db.execute(
         select(Asset.name).where(Asset.symbol == rec.symbol)
     )).scalar_one_or_none()
-    return await translate_texts(
+
+    # Anything already cached comes back instantly; this only ever waits on a
+    # first read of this analysis in this language.
+    cached = await cached_translations(
         fields, target, db, company=company, symbol=rec.symbol
     )
+    missing = {k: v for k, v in fields.items() if v and cached.get(k) == v}
+    if not missing:
+        return cached
+
+    # A time budget, not an unbounded wait. A long analysis is a dozen model
+    # calls, and the client gives up after 30 seconds — returning the source
+    # text late is useless, returning it on time is merely untranslated. On
+    # timeout the rest is filled behind the request and the next view has it.
+    try:
+        fresh = await asyncio.wait_for(
+            translate_texts(missing, target, db, company=company, symbol=rec.symbol),
+            timeout=20,
+        )
+        cached.update({k: v for k, v in fresh.items() if v})
+    except asyncio.TimeoutError:
+        logger.info(
+            "Translation exceeded its budget — serving source text",
+            symbol=rec.symbol, language=target,
+        )
+        detach(warm_translations(
+            [{"texts": missing, "company": company, "symbol": rec.symbol}], target
+        ))
+    return cached
 
 
 def _apply_localized(payload: dict, rec: Recommendation, localized: dict) -> dict:
@@ -375,14 +406,17 @@ async def get_recommendations(
 
     followed = set() if ent.full_research else await _followed_symbols(db, current_user)
 
-    # The card shows senior_notes as its one-line summary. Translating only the
-    # detail page left the feed — the screen a reader spends most of their time
-    # on — in whatever language the analysis happened to be written in.
+    # The card shows senior_notes as its one-line summary. Translating only
+    # the detail page left the feed — the screen a reader spends most of
+    # their time on — in whatever language the analysis was written in.
     #
-    # Only the summary is translated here, not the whole analysis: the rest is
-    # not rendered on a card, and translating it would make the first load of a
-    # page in a new language far slower for no visible gain. Opening the report
-    # translates the remainder.
+    # Served from cache ONLY. The first version awaited a translation per row
+    # inside the loop: up to a hundred sequential model calls on a request
+    # the client gives up on after 30 seconds, so the feed came back empty.
+    # Even in parallel it would be wrong — a user request must not wait on N
+    # model calls. Misses are filled behind the request instead, so the first
+    # view of the feed in a new language shows source text and every view
+    # after it is translated and instant.
     target_lang = normalize(getattr(current_user, "preferred_language", None))
     card_localized: Dict[int, str] = {}
     if recommendations:
@@ -396,18 +430,30 @@ async def get_recommendations(
                 )
             ).all()
         }
+        warm_jobs = []
         for rec in recommendations:
             if not rec.senior_notes:
                 continue
-            out = await translate_texts(
+            out = await cached_translations(
                 {"summary": rec.senior_notes},
                 target_lang,
                 db,
                 company=names.get(rec.symbol),
                 symbol=rec.symbol,
             )
-            if out.get("summary"):
-                card_localized[rec.id] = out["summary"]
+            summary = out.get("summary")
+            if summary and summary != rec.senior_notes:
+                card_localized[rec.id] = summary
+            elif target_lang != SOURCE_LANGUAGE:
+                warm_jobs.append({
+                    "texts": {"summary": rec.senior_notes},
+                    "company": names.get(rec.symbol),
+                    "symbol": rec.symbol,
+                })
+        if warm_jobs:
+            # detach(), not create_task: asyncio keeps only a weak reference
+            # to a bare task and the collector can drop it mid-run.
+            detach(warm_translations(warm_jobs, target_lang))
 
     response = []
     for rec in recommendations:

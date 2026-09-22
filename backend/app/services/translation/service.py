@@ -292,3 +292,83 @@ async def translate_texts(
             continue
         out[key] = cached.get(_hash(source_text + salt), original)
     return out
+
+async def cached_translations(
+    texts: Dict[str, Optional[str]],
+    target: str,
+    db: AsyncSession,
+    company: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> Dict[str, Optional[str]]:
+    """Translations already in the cache. Never calls the model.
+
+    This exists because a user request must not wait on N model calls. The
+    feed can hold a hundred rows, and translating them inline — even in
+    parallel — turns opening the app into a request that outlives the
+    client's timeout and returns nothing at all.
+
+    So: serve what is cached, return the source text for the rest, and let
+    warm_translations() fill the gaps behind the request. The first view of a
+    page in a new language shows source text; every view after it is
+    translated and instant.
+    """
+    if not is_supported(target):
+        return dict(texts)
+
+    salt = f"|{company or ''}|{symbol or ''}"
+    wanted: Dict[str, str] = {}
+    for key, value in texts.items():
+        if not value or not value.strip():
+            continue
+        body = value.strip()[:MAX_CHARS]
+        detected = detect_source_language(body)
+        if detected == target or (detected is None and target == SOURCE_LANGUAGE):
+            continue
+        wanted[key] = body
+    if not wanted:
+        return dict(texts)
+
+    hashes = {_hash(v + salt) for v in wanted.values()}
+    rows = (
+        await db.execute(
+            select(Translation).where(
+                Translation.source_hash.in_(list(hashes)),
+                Translation.language == target,
+            )
+        )
+    ).scalars().all()
+    cached = {r.source_hash: r.translated_text for r in rows}
+
+    out: Dict[str, Optional[str]] = {}
+    for key, original in texts.items():
+        body = wanted.get(key)
+        out[key] = cached.get(_hash(body + salt), original) if body else original
+    return out
+
+
+async def warm_translations(jobs: List[dict], target: str) -> None:
+    """Fill the cache for texts a request served untranslated.
+
+    Runs detached from the request that scheduled it, on its own session —
+    the request's session is closed by the time this runs. Failures are
+    logged and dropped: a warm that does not complete costs a reader one more
+    view in the source language, nothing more.
+    """
+    if not jobs or not is_supported(target):
+        return
+    from app.core.database import AsyncSessionLocal
+
+    for job in jobs:
+        try:
+            async with AsyncSessionLocal() as db:
+                await translate_texts(
+                    job["texts"],
+                    target,
+                    db,
+                    company=job.get("company"),
+                    symbol=job.get("symbol"),
+                )
+        except Exception as e:
+            logger.warning(
+                "Translation warm failed", symbol=job.get("symbol"), error=str(e)
+            )
