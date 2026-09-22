@@ -87,23 +87,50 @@ def _hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _system_prompt(target_name: str, company: Optional[str] = None) -> str:
+def _system_prompt(
+    target_name: str,
+    company: Optional[str] = None,
+    symbol: Optional[str] = None,
+) -> str:
     """Instructions for one translation.
 
-    `company` matters more than it looks. The older analyses are Hebrew, and
-    the agent transliterated company names into Hebrew script — "Fiserv"
-    became "פיזרב". Translating that to French, the model has no way to know
-    it is a real company and renders it phonetically: "Pizerb". The name on
-    a financial screen is then simply wrong. Naming the company explicitly
-    lets it be restored rather than re-spelled.
+    Naming the company matters more than it looks. The older analyses are
+    Hebrew, and the agent transliterated company names into Hebrew script —
+    "Fiserv" became "פיזרב". Translating that to French, the model has no way
+    to know it is a real company and renders it phonetically: "Pizerb". The
+    name on a financial screen is then simply wrong.
+
+    The name and the ticker have to be given SEPARATELY and distinguished.
+    An earlier version passed the ticker as the company name, so the prompt
+    said "this text is about AA — write exactly AA", and the model dutifully
+    replaced every mention of Alcoa with its ticker. Prose that opens "AA is
+    trading at..." reads like a machine, and the reader loses the one piece
+    of context that tells them which company this is.
     """
-    named = (
-        f"\n\nTHE COMPANY: this text is about {company}. Wherever the company "
-        f"is referred to — including transliterated into another script — "
-        f"write exactly \"{company}\". Never spell it phonetically."
-        if company
-        else ""
+    # No company name, or a "name" that is really just the ticker: say
+    # nothing. Instructing the model to "write exactly AA" wherever the
+    # company appears is precisely how Alcoa became AA throughout the prose.
+    named = ""
+    same_as_ticker = bool(
+        company and symbol and company.strip().upper() == symbol.strip().upper()
     )
+    if not company or same_as_ticker:
+        named = ""
+    elif symbol:
+        named = (
+            f"\n\nTHE COMPANY: this text is about {company}, whose ticker "
+            f"symbol is {symbol}. Where the source names the COMPANY — "
+            f"including transliterated into another script — write exactly "
+            f"\"{company}\"; never spell it phonetically and never replace it "
+            f"with the ticker. Where the source uses the TICKER, keep "
+            f"\"{symbol}\". They are not interchangeable."
+        )
+    else:
+        named = (
+            f"\n\nTHE COMPANY: this text is about {company}. Wherever the "
+            f"company is referred to — including transliterated into another "
+            f"script — write exactly \"{company}\". Never spell it phonetically."
+        )
     return (
         f"You translate financial analysis into {target_name}.{named}\n\n"
         "Rules, in order of importance:\n"
@@ -125,7 +152,10 @@ def _system_prompt(target_name: str, company: Optional[str] = None) -> str:
 
 
 async def _translate_one(
-    text: str, target: str, company: Optional[str] = None
+    text: str,
+    target: str,
+    company: Optional[str] = None,
+    symbol: Optional[str] = None,
 ) -> Optional[str]:
     """One call to the model. Returns None on any failure."""
     lang = BY_CODE.get(target)
@@ -147,7 +177,7 @@ async def _translate_one(
                 # the right one and keeps the per-language cost near zero.
                 model=settings.OPENAI_MODEL or "gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": _system_prompt(lang.english_name, company)},
+                    {"role": "system", "content": _system_prompt(lang.english_name, company, symbol)},
                     {"role": "user", "content": text},
                 ],
                 temperature=0.1,
@@ -166,6 +196,7 @@ async def translate_texts(
     db: AsyncSession,
     source_language: str = SOURCE_LANGUAGE,
     company: Optional[str] = None,
+    symbol: Optional[str] = None,
 ) -> Dict[str, Optional[str]]:
     """Translate a set of named fields, using and filling the cache.
 
@@ -204,10 +235,13 @@ async def translate_texts(
     if not wanted:
         return dict(texts)
 
-    # The company name is part of the key: a translation produced without it
-    # spells the name phonetically, and caching that under the same key as a
-    # correct one would serve the wrong name forever.
-    salt = f"|{company}" if company else ""
+    # Company and ticker are part of the key because the prompt depends on
+    # them. A translation produced without the name spells it phonetically,
+    # and one produced with the ticker as the name replaces the company with
+    # it — caching either under the same key as a correct translation would
+    # serve the wrong name forever. Changing the context changes the key, so
+    # the bad entries already stored are simply never read again.
+    salt = f"|{company or ''}|{symbol or ''}"
     unique = {_hash(v + salt): v for v in wanted.values()}
 
     rows = (
@@ -223,7 +257,7 @@ async def translate_texts(
     missing = [(h, t) for h, t in unique.items() if h not in cached]
     if missing:
         results = await asyncio.gather(
-            *(_translate_one(t, target, company) for _, t in missing),
+            *(_translate_one(t, target, company, symbol) for _, t in missing),
             return_exceptions=True,
         )
         fresh: List[Translation] = []

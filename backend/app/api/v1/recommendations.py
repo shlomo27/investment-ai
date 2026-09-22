@@ -268,8 +268,17 @@ async def _localize(rec: Recommendation, user: User, db: AsyncSession) -> dict:
     # The company is named to the translator so a name transliterated into
     # Hebrew is restored rather than re-spelled phonetically — "פיזרב" has to
     # come back as Fiserv, not "Pizerb".
-    company = rec.asset_name if getattr(rec, "asset_name", None) else None
-    return await translate_texts(fields, target, db, company=company or rec.symbol)
+    #
+    # It must be the NAME, looked up from the asset. Recommendation carries no
+    # asset_name column, so the first version fell through to rec.symbol and
+    # instructed the translator to "write exactly AA" — which it did,
+    # replacing Alcoa with its ticker throughout the text.
+    company = (await db.execute(
+        select(Asset.name).where(Asset.symbol == rec.symbol)
+    )).scalar_one_or_none()
+    return await translate_texts(
+        fields, target, db, company=company, symbol=rec.symbol
+    )
 
 
 def _apply_localized(payload: dict, rec: Recommendation, localized: dict) -> dict:
@@ -366,6 +375,40 @@ async def get_recommendations(
 
     followed = set() if ent.full_research else await _followed_symbols(db, current_user)
 
+    # The card shows senior_notes as its one-line summary. Translating only the
+    # detail page left the feed — the screen a reader spends most of their time
+    # on — in whatever language the analysis happened to be written in.
+    #
+    # Only the summary is translated here, not the whole analysis: the rest is
+    # not rendered on a card, and translating it would make the first load of a
+    # page in a new language far slower for no visible gain. Opening the report
+    # translates the remainder.
+    target_lang = normalize(getattr(current_user, "preferred_language", None))
+    card_localized: Dict[int, str] = {}
+    if recommendations:
+        names = {
+            sym: nm
+            for sym, nm in (
+                await db.execute(
+                    select(Asset.symbol, Asset.name).where(
+                        Asset.symbol.in_([r.symbol for r in recommendations])
+                    )
+                )
+            ).all()
+        }
+        for rec in recommendations:
+            if not rec.senior_notes:
+                continue
+            out = await translate_texts(
+                {"summary": rec.senior_notes},
+                target_lang,
+                db,
+                company=names.get(rec.symbol),
+                symbol=rec.symbol,
+            )
+            if out.get("summary"):
+                card_localized[rec.id] = out["summary"]
+
     response = []
     for rec in recommendations:
         asset = assets.get(rec.symbol)
@@ -380,7 +423,11 @@ async def get_recommendations(
             stop_loss=rec.stop_loss,
             current_price_at_recommendation=rec.current_price_at_recommendation,
             reasoning_locked=locked,
-            **_lock_reasoning(rec, locked),
+            **_apply_localized(
+                _lock_reasoning(rec, locked),
+                rec,
+                {} if locked else {"senior_notes": card_localized.get(rec.id)},
+            ),
             technical_analysis=rec.technical_analysis,
             risk_factors=rec.risk_factors,
             expected_return_pct=rec.expected_return_pct,
