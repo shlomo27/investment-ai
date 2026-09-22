@@ -482,6 +482,18 @@ export interface Recommendation {
   // account's tier. The fields above come back null in that case — show the
   // upgrade panel, not an empty section, which reads as a failed analysis.
   reasoning_locked?: boolean;
+  /**
+   * Other listings of the same company that are the same investment —
+   * Alphabet's GOOG beside GOOGL. Empty whenever the backend is not certain,
+   * which includes tracking stocks and preferred shares: those share an
+   * issuer but not a business.
+   */
+  sibling_listings?: Array<{
+    symbol: string;
+    name: string;
+    last_price?: number | null;
+    is_primary?: boolean;
+  }>;
   asset_name?: string;
   sector?: string;
   risk_level?: string;

@@ -53,6 +53,19 @@ class Asset(Base):
     symbol: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     name_hebrew: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    #: SEC Central Index Key — one per ISSUER, not per ticker.
+    #:
+    #: This is what makes "GOOGL and GOOG are the same company" a fact rather
+    #: than a guess from the name. Matching on names is fragile ("Alphabet
+    #: Inc." vs "Alphabet Inc. Class C") and matching on ticker prefixes is
+    #: worse.
+    #:
+    #: A shared CIK is necessary but NOT sufficient for two listings to be
+    #: the same investment — Liberty Media ran one CIK across tickers
+    #: tracking Formula One and a baseball team. See
+    #: services/share_classes/rules.py for what else has to hold.
+    cik: Mapped[str | None] = mapped_column(String(12), nullable=True, index=True)
     exchange: Mapped[Exchange] = mapped_column(SAEnum(Exchange), nullable=False, default=Exchange.NASDAQ)
     asset_type: Mapped[AssetType] = mapped_column(SAEnum(AssetType), nullable=False, default=AssetType.STOCK)
     is_active_in_pool: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)

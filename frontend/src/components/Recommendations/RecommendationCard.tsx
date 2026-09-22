@@ -103,6 +103,35 @@ const RecommendationCard: React.FC<Props> = ({
               }
               return null;
             })()}
+            {/* Another listing of the same company.
+                Stated rather than hidden. Choosing one and suppressing the
+                other would mean acting on an identification that can be
+                wrong — and when it is wrong it shows one business under
+                another's name. A note costs nothing if it is wrong, and
+                tells the reader something true when it is right. */}
+            {rec.sibling_listings && rec.sibling_listings.length > 0 && (
+              <p className="mt-1.5 text-[11px] text-gray-400 leading-relaxed">
+                {t(
+                  `${rec.asset_name || rec.symbol} also trades as `,
+                  `${rec.asset_name || rec.symbol} נסחרת גם כ-`
+                )}
+                {rec.sibling_listings.map((s, i) => (
+                  <React.Fragment key={s.symbol}>
+                    {i > 0 && ", "}
+                    <span className="font-mono text-gray-300">{s.symbol}</span>
+                    {typeof s.last_price === "number" && (
+                      <span className="num text-gray-500"> (${s.last_price.toFixed(2)})</span>
+                    )}
+                  </React.Fragment>
+                ))}
+                {". "}
+                {t(
+                  "Same company, same economics — the difference is voting rights. Buy whichever is cheaper.",
+                  "אותה חברה, אותה כלכלה — ההבדל הוא זכות הצבעה. קנה את הזולה."
+                )}
+              </p>
+            )}
+
             {(() => {
               // Risk transparency: short positions and high-volatility stocks
               // carry materially different risk — always label them, whatever

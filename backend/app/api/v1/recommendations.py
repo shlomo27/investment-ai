@@ -17,6 +17,7 @@ from app.core.security import get_current_active_user
 from app.core.entitlements import entitlements_for
 from app.core.languages import SOURCE_LANGUAGE, normalize
 from app.core.background import detach
+from app.services.share_classes.service import siblings_for
 from app.services.translation.service import (
     cached_translations,
     translate_texts,
@@ -60,6 +61,11 @@ class RecommendationResponse(BaseModel):
     #: empty section reads as "the analysis failed", which is worse than a
     #: paywall and generates support mail.
     reasoning_locked: bool = False
+    #: Other listings of the same company that are the same investment —
+    #: Alphabet's GOOG beside GOOGL. Empty whenever anything is uncertain,
+    #: because saying nothing is always safe and a wrong entry would tell a
+    #: reader that two different businesses are interchangeable.
+    sibling_listings: List[Dict[str, Any]] = []
     created_at: datetime
     approved_at: Optional[datetime]
     presented_at: Optional[datetime]
@@ -455,6 +461,10 @@ async def get_recommendations(
             # to a bare task and the collector can drop it mid-run.
             detach(warm_translations(warm_jobs, target_lang))
 
+    siblings_by_symbol = {
+        rec.symbol: await siblings_for(db, rec.symbol) for rec in recommendations
+    }
+
     response = []
     for rec in recommendations:
         asset = assets.get(rec.symbol)
@@ -469,6 +479,7 @@ async def get_recommendations(
             stop_loss=rec.stop_loss,
             current_price_at_recommendation=rec.current_price_at_recommendation,
             reasoning_locked=locked,
+            sibling_listings=siblings_by_symbol.get(rec.symbol, []),
             **_apply_localized(
                 _lock_reasoning(rec, locked),
                 rec,
@@ -833,6 +844,7 @@ async def get_recommendation(
         stop_loss=rec.stop_loss,
         current_price_at_recommendation=rec.current_price_at_recommendation,
         reasoning_locked=reasoning_locked,
+        sibling_listings=await siblings_for(db, rec.symbol),
         **_apply_localized(_lock_reasoning(rec, reasoning_locked), rec, localized),
         # Technical analysis stays visible: it is computed locally with no LLM
         # cost, and it is the part a free user needs to judge timing on the
