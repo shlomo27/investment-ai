@@ -188,6 +188,17 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         price = ta.get("current_price")
         price_str = f" | מחיר נוכחי: ${price:.2f}" if price else ""
 
+        # The company name, alongside the ticker. GOOG and GOOGL are different
+        # stocks with separate analyses and separate signals, and a message
+        # carrying only a ticker leaves the reader to spot a one-letter
+        # difference before acting on a sell.
+        from app.db.models.asset import Asset as _Asset
+        async with AsyncSessionLocal() as db:
+            company = (await db.execute(
+                select(_Asset.name).where(_Asset.symbol == symbol)
+            )).scalar_one_or_none()
+        name_str = f" ({company})" if company else ""
+
         # Entry-point moment: the stock has a LIVE BUY recommendation
         # (fundamental YES) and its technical just turned positive. That's the
         # "both agree" window a watcher waited for — frame it as such.
@@ -241,23 +252,23 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
             # reading on their own.
             # "היה X, עכשיו Y" — an inline arrow between Hebrew words is
             # direction-ambiguous in RTL and users misread the transition.
-            title = (f"⏸️ {symbol}: הסיגנל הטכני נחלש — היה: {prev_label}, עכשיו: המתנה"
+            title = (f"⏸️ {symbol}{name_str}: הסיגנל הטכני נחלש — היה: {prev_label}, עכשיו: המתנה"
                      f"{price_str} (ניתוח טכני, ציון {score:.0f}/100). "
                      f"זה אינו סיגנל מכירה: מי שמחזיק — אין פעולה נדרשת. "
                      f"מי שממתין לכניסה — כדאי להמתין. סיגנל מכירה יגיע בנפרד ויאמר זאת במפורש.")
         elif entry_point and news_negative:
-            title = (f"⚡ {symbol}: הסיגנל הטכני חיובי וההמלצה עדיין קנייה, "
+            title = (f"⚡ {symbol}{name_str}: הסיגנל הטכני חיובי וההמלצה עדיין קנייה, "
                      f"אבל החדשות האחרונות שליליות — אין כאן הסכמה מלאה"
                      f"{price_str} (ציון טכני {score:.0f}/100)."
                      + (f" {news_note}" if news_note else "")
                      + " 👈 בדוק את הניתוח המלא לפני פעולה.")
         elif entry_point:
-            title = (f"🟢 {symbol}: נקודת הכניסה הגיעה — ההמלצה (קנייה) נפגשה עם סיגנל טכני חיובי. "
+            title = (f"🟢 {symbol}{name_str}: נקודת הכניסה הגיעה — ההמלצה (קנייה) נפגשה עם סיגנל טכני חיובי. "
                      f"שני הצדדים מסכימים{price_str} (ציון טכני {score:.0f}/100). 👈 בדוק במערכת.")
         else:
             label = SIGNAL_LABELS.get(signal, signal)
             prev_str = f" (קודם: {SIGNAL_LABELS.get(prev_signal, 'המתנה')})" if prev_signal else ""
-            title = f"{label} — {symbol}{price_str}{prev_str} (ניתוח טכני, ציון {score:.0f}/100)"
+            title = f"{label} — {symbol}{name_str}{price_str}{prev_str} (ניתוח טכני, ציון {score:.0f}/100)"
 
         svc = NotificationService()
         async with AsyncSessionLocal() as db:

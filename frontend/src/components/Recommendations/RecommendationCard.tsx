@@ -85,7 +85,18 @@ const RecommendationCard: React.FC<Props> = ({
               if (sig === "BUY_NOW" || sig === "STRONG_BUY") {
                 return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-green-900/50 text-green-300 border border-green-600/50">🟢 {isHe ? "נקודת כניסה טובה" : "Good entry"}</span>;
               }
-              if (sig === "SELL_NOW" || sig === "STRONG_SELL" || sig === "WAIT") {
+              // WAIT and SELL are NOT the same state and must not share a
+              // badge. WAIT means the technical has not confirmed entry yet.
+              // SELL means it has actively turned against the position — and
+              // that is what the alert says out loud, so a card that answers
+              // "wait" contradicts the message that brought the reader here.
+              // Being told to sell and then shown "wait for stabilization" is
+              // the worst kind of disagreement: two opposite actions, both
+              // from the same system, about the same stock, minutes apart.
+              if (sig === "SELL_NOW" || sig === "STRONG_SELL") {
+                return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-300 border border-red-600/50">🔴 {isHe ? "הסיגנל הטכני התהפך לשלילי" : "Technical turned negative"}</span>;
+              }
+              if (sig === "WAIT") {
                 return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300 border border-yellow-700/40">🟡 {isHe ? "הזדמנות — המתן לייצוב" : "Wait for stabilization"}</span>;
               }
               return null;
