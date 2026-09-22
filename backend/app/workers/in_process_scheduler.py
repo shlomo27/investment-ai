@@ -243,19 +243,47 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
 
         if downgraded:
             prev_label = SIGNAL_LABELS.get(prev_signal, prev_signal)
-            # WAIT means wait. The old wording — a down arrow and "the signal
-            # weakened" — reads to a holder as a reason to get out, and someone
-            # who had bought a day earlier could sell on it within minutes. The
-            # three states have to map to three plain instructions: buy means
-            # buy, sell means sell, and wait means do nothing. Say the last one
-            # out loud, because the reader will otherwise supply the scarier
-            # reading on their own.
-            # "היה X, עכשיו Y" — an inline arrow between Hebrew words is
-            # direction-ambiguous in RTL and users misread the transition.
-            title = (f"⏸️ {symbol}{name_str}: הסיגנל הטכני נחלש — היה: {prev_label}, עכשיו: המתנה"
-                     f"{price_str} (ניתוח טכני, ציון {score:.0f}/100). "
-                     f"זה אינו סיגנל מכירה: מי שמחזיק — אין פעולה נדרשת. "
-                     f"מי שממתין לכניסה — כדאי להמתין. סיגנל מכירה יגיע בנפרד ויאמר זאת במפורש.")
+            # Two opposite transitions both land on WAIT, and they must not
+            # share a message.
+            #
+            #   BUY  → WAIT   the entry window closed. A weakening.
+            #   SELL → WAIT   the selling pressure eased. An IMPROVEMENT.
+            #
+            # One wording covered both, so a reader who had been told to sell
+            # an hour earlier was then told the signal had "weakened" and that
+            # "this is not a sell signal — holders need do nothing". Both
+            # halves contradicted the message that preceded them: nothing
+            # weakened, it recovered, and a sell signal had in fact just been
+            # sent. The system appeared to disagree with itself about the same
+            # stock within the hour.
+            #
+            # "היה X, עכשיו Y" rather than an inline arrow: an arrow between
+            # Hebrew words is direction-ambiguous in RTL and gets misread.
+            was_bearish = prev_signal in ("SELL_NOW", "STRONG_SELL")
+            if was_bearish:
+                title = (
+                    f"🔄 {symbol}{name_str}: הלחץ השלילי נחלש — היה: {prev_label}, עכשיו: המתנה"
+                    f"{price_str} (ניתוח טכני, ציון {score:.0f}/100). "
+                    f"זהו שיפור לעומת המצב הקודם, אך עדיין לא סיגנל קנייה. "
+                    f"מי שמחזיק — הלחץ למכור הוקל. מי שממתין לכניסה — ייתכן "
+                    f"שהמגמה מתהפכת, אך כדאי להמתין לאישור. אם תיפתח נקודת "
+                    f"כניסה, תישלח על כך הודעה נפרדת."
+                )
+            else:
+                # WAIT means wait. The earlier wording here — a down arrow and
+                # "the signal weakened" — read to a holder as a reason to get
+                # out, and someone who had bought a day earlier could sell on
+                # it within minutes. The three states have to map to three
+                # plain instructions: buy means buy, sell means sell, and wait
+                # means do nothing. Say the last one out loud, because the
+                # reader will otherwise supply the scarier reading themselves.
+                title = (
+                    f"⏸️ {symbol}{name_str}: הסיגנל הטכני נחלש — היה: {prev_label}, עכשיו: המתנה"
+                    f"{price_str} (ניתוח טכני, ציון {score:.0f}/100). "
+                    f"זה אינו סיגנל מכירה: מי שמחזיק — אין פעולה נדרשת. "
+                    f"מי שממתין לכניסה — כדאי להמתין. סיגנל מכירה יגיע בנפרד "
+                    f"ויאמר זאת במפורש."
+                )
         elif entry_point and news_negative:
             title = (f"⚡ {symbol}{name_str}: הסיגנל הטכני חיובי וההמלצה עדיין קנייה, "
                      f"אבל החדשות האחרונות שליליות — אין כאן הסכמה מלאה"
