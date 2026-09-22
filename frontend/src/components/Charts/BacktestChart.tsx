@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useT } from "../../i18n/t";
 import {
   AreaChart,
   Area,
@@ -16,6 +17,7 @@ interface Props {
 }
 
 const BacktestChart: React.FC<Props> = ({ isHe }) => {
+  const t = useT();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -40,7 +42,7 @@ const BacktestChart: React.FC<Props> = ({ isHe }) => {
         <p className="text-white font-bold">{fmt(val)}</p>
         {ret !== undefined && (
           <p className={ret >= 0 ? "text-green-400" : "text-red-400"}>
-            {ret > 0 ? "+" : ""}{ret.toFixed(2)}% {isHe ? "החודש" : "this month"}
+            {ret > 0 ? "+" : ""}{ret.toFixed(2)}% {t("this month", "החודש")}
           </p>
         )}
       </div>
@@ -61,13 +63,11 @@ const BacktestChart: React.FC<Props> = ({ isHe }) => {
       <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8 text-center">
         <p className="text-3xl mb-3">📊</p>
         <p className="text-gray-400 font-medium">
-          {isHe ? "נתוני בקטסט אינם זמינים" : "Backtest data not available yet"}
+          {t("Backtest data not available yet", "נתוני בקטסט אינם זמינים")}
         </p>
         <p className="text-gray-600 text-sm mt-1">
           {data?.message ||
-            (isHe
-              ? "יהיו זמינים לאחר 2+ המלצות עם תוצאות"
-              : "Available after 2+ recommendations with outcomes")}
+            (t("Available after 2+ recommendations with outcomes", "יהיו זמינים לאחר 2+ המלצות עם תוצאות"))}
         </p>
       </div>
     );
@@ -80,22 +80,22 @@ const BacktestChart: React.FC<Props> = ({ isHe }) => {
 
   const kpis = [
     {
-      label: isHe ? "תשואה כוללת" : "Total Return",
+      label: t("Total Return", "תשואה כוללת"),
       value: `${total_return_pct > 0 ? "+" : ""}${total_return_pct?.toFixed(2)}%`,
       color: isPositive ? "text-green-400" : "text-red-400",
     },
     {
-      label: isHe ? "ירידה מקסימלית" : "Max Drawdown",
+      label: t("Max Drawdown", "ירידה מקסימלית"),
       value: `-${max_drawdown_pct?.toFixed(2)}%`,
       color: "text-red-400",
     },
     {
-      label: isHe ? "יחס שארפ" : "Sharpe Ratio",
+      label: t("Sharpe Ratio", "יחס שארפ"),
       value: sharpe_ratio?.toFixed(2),
       color: sharpe_ratio >= 1 ? "text-green-400" : sharpe_ratio >= 0 ? "text-yellow-400" : "text-red-400",
     },
     {
-      label: isHe ? "אחוז הצלחה" : "Win Rate",
+      label: t("Win Rate", "אחוז הצלחה"),
       value: `${win_rate_pct?.toFixed(1)}%`,
       color: win_rate_pct >= 55 ? "text-green-400" : win_rate_pct >= 45 ? "text-yellow-400" : "text-red-400",
     },
@@ -107,16 +107,16 @@ const BacktestChart: React.FC<Props> = ({ isHe }) => {
       <div className="flex items-start justify-between mb-5">
         <div>
           <h3 className="font-bold text-lg">
-            {isHe ? "בדיקה רטרוספקטיבית (בקטסט)" : "Backtest Simulation"}
+            {t("Backtest Simulation", "בדיקה רטרוספקטיבית (בקטסט)")}
           </h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            {isHe
-              ? `₪${initial_capital?.toLocaleString("en")} מושקע שווה בכל ${total_trades} המלצות`
-              : `₪${initial_capital?.toLocaleString("en")} equal-weight across ${total_trades} recommendations`}
+            {t("{capital} equal-weight across {trades} recommendations",
+                "{capital} מושקע שווה בכל {trades} המלצות",
+                { capital: `₪${initial_capital?.toLocaleString("en")}`, trades: total_trades })}
           </p>
         </div>
         <div className="text-right">
-          <p className="text-xs text-gray-500">{isHe ? "ערך סופי" : "Final Value"}</p>
+          <p className="text-xs text-gray-500">{t("Final Value", "ערך סופי")}</p>
           <p className={`text-xl font-bold ${isPositive ? "text-green-400" : "text-red-400"}`}>
             {fmt(final_value)}
           </p>
@@ -173,9 +173,7 @@ const BacktestChart: React.FC<Props> = ({ isHe }) => {
       </div>
 
       <p className="text-xs text-gray-600 mt-3 text-center">
-        {isHe
-          ? "* הבקטסט מחולק שווה בין כל ההמלצות. ביצועי העבר אינם מבטיחים תוצאות עתידיות."
-          : "* Equal-weight simulation across all recommendations. Past performance does not guarantee future results."}
+        {t("* Equal-weight simulation across all recommendations. Past performance does not guarantee future results.", "* הבקטסט מחולק שווה בין כל ההמלצות. ביצועי העבר אינם מבטיחים תוצאות עתידיות.")}
       </p>
     </div>
   );

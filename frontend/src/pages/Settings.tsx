@@ -442,9 +442,7 @@ const Settings: React.FC = () => {
           </div>
           {tgWaiting && (
             <p className="text-xs text-gray-600 mt-2">
-              {isHe
-                ? 'נפתח חלון טלגרם — לחץ שם על "Start" והחיבור יושלם אוטומטית תוך חצי דקה.'
-                : 'A Telegram window opened — tap "Start" there and linking completes automatically within ~30s.'}
+              {t('A Telegram window opened — tap "Start" there and linking completes automatically within ~30s.', 'נפתח חלון טלגרם — לחץ שם על "Start" והחיבור יושלם אוטומטית תוך חצי דקה.')}
             </p>
           )}
         </div>
@@ -626,9 +624,9 @@ const Settings: React.FC = () => {
                 {t("FREE", "חינם")}
               </span>
               <span className="text-xs text-gray-400">
-                {isHe
-                  ? `מעקב אחרי ${user?.watchlist_limit ?? 2} מניות · ${user?.recommendation_limit ?? 5} המלצות`
-                  : `${user?.watchlist_limit ?? 2} stocks · ${user?.recommendation_limit ?? 5} recommendations`}
+                {t("{stocks} stocks · {recs} recommendations",
+                    "מעקב אחרי {stocks} מניות · {recs} המלצות",
+                    { stocks: user?.watchlist_limit ?? 2, recs: user?.recommendation_limit ?? 5 })}
               </span>
             </div>
             {/* No purchase route on the web build: Apple forbids the app
@@ -683,9 +681,7 @@ const Settings: React.FC = () => {
               className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white font-mono tracking-widest focus:outline-none focus:border-red-500"
             />
             <p className="text-[11px] text-gray-500">
-              {isHe
-                ? 'הקלד DELETE באותיות גדולות כדי לאשר.'
-                : 'Type DELETE in capitals to confirm.'}
+              {t("Type DELETE in capitals to confirm.", "הקלד DELETE באותיות גדולות כדי לאשר.")}
             </p>
 
             {delError && <p className="text-xs text-red-400">{delError}</p>}

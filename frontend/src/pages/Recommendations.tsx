@@ -213,9 +213,8 @@ const Recommendations: React.FC = () => {
     const readCount = notifications.filter((n) => n.is_read).length;
     if (readCount === 0) return;
     if (!window.confirm(
-      isHe
-        ? `למחוק ${readCount} הודעות שכבר נקראו? הודעות שלא נפתחו יישארו.`
-        : `Delete ${readCount} already-read messages? Unopened ones will stay.`
+      t("Delete {n} already-read messages? Unopened ones will stay.",
+        "למחוק {n} הודעות שכבר נקראו? הודעות שלא נפתחו יישארו.", { n: readCount })
     )) return;
     try {
       await recommendationsApi.clearReadNotifications();
@@ -399,9 +398,9 @@ const Recommendations: React.FC = () => {
 
               {scanLog.shown < scanLog.total && (
                 <p className="text-xs text-gray-500">
-                  {isHe
-                    ? `מוצגות ${scanLog.shown} מתוך ${scanLog.total} הרשומות בתקופה. הסיכומים למעלה מכסים את כולן.`
-                    : `Showing ${scanLog.shown} of ${scanLog.total} entries in the period. The totals above cover all of them.`}
+                  {t("Showing {shown} of {total} entries in the period. The totals above cover all of them.",
+                      "מוצגות {shown} מתוך {total} הרשומות בתקופה. הסיכומים למעלה מכסים את כולן.",
+                      { shown: scanLog.shown, total: scanLog.total })}
                 </p>
               )}
 
@@ -429,9 +428,9 @@ const Recommendations: React.FC = () => {
                   </div>
                   {scanLog.confidence_stats.spread < 20 && (
                     <p className="text-yellow-500/80 mt-2">
-                      {isHe
-                        ? `כל ההמלצות נופלות בטווח של ${scanLog.confidence_stats.spread} נקודות — הציון כמעט לא מבדיל ביניהן, והמיון לפי ביטחון כמעט שרירותי.`
-                        : `Every recommendation falls within ${scanLog.confidence_stats.spread} points — the score barely separates them, so sorting by confidence is close to arbitrary.`}
+                      {t("Every recommendation falls within {spread} points — the score barely separates them, so sorting by confidence is close to arbitrary.",
+                          "כל ההמלצות נופלות בטווח של {spread} נקודות — הציון כמעט לא מבדיל ביניהן, והמיון לפי ביטחון כמעט שרירותי.",
+                          { spread: scanLog.confidence_stats.spread })}
                     </p>
                   )}
                 </div>
@@ -642,9 +641,9 @@ const Recommendations: React.FC = () => {
                             <div>
                               <p>
                                 <span className="text-gray-500 font-medium">{t("Insider activity: ", "מסחר פנימי: ")}</span>
-                                {isHe
-                                  ? `${notif.internal_detail.insider.filings} דיווחים ב-${notif.internal_detail.insider.months} חודשים · `
-                                  : `${notif.internal_detail.insider.filings} filings over ${notif.internal_detail.insider.months} months · `}
+                                {t("{filings} filings over {months} months · ",
+                                    "{filings} דיווחים ב-{months} חודשים · ",
+                                    { filings: notif.internal_detail.insider.filings, months: notif.internal_detail.insider.months })}
                                 <span className={notif.internal_detail.insider.net_shares >= 0 ? "text-green-400" : "text-red-400"}>
                                   {t("net ", "נטו ")}
                                   {notif.internal_detail.insider.net_shares >= 0 ? "+" : ""}
@@ -652,13 +651,19 @@ const Recommendations: React.FC = () => {
                                   {t(" shares", " מניות")}
                                 </span>
                               </p>
-                              {(notif.internal_detail.insider.largest || []).map((t: any, i: number) => (
+                              {/* The parameter was named `t`, which shadowed the
+                                  translator: t("sold", "מכר") then called a
+                                  trade object as a function and threw, taking
+                                  the whole inbox down with it. */}
+                              {(notif.internal_detail.insider.largest || []).map((trade: any, i: number) => (
                                 <p key={i} className="text-gray-500 pr-3">
-                                  {t.name} · {t.change < 0 ? (t("sold", "מכר")) : (t("bought", "קנה"))}{" "}
-                                  {Math.abs(t.change).toLocaleString("en")}{t(" shares", " מניות")}
-                                  {t.pct_of_holding != null ? (isHe ? ` (${t.pct_of_holding}% מהחזקתו)` : ` (${t.pct_of_holding}% of holding)`) : ""}
-                                  {t.price ? ` · $${Number(t.price).toFixed(2)}` : ""}
-                                  {t.date ? ` · ${t.date}` : ""}
+                                  {trade.name} · {trade.change < 0 ? t("sold", "מכר") : t("bought", "קנה")}{" "}
+                                  {Math.abs(trade.change).toLocaleString("en")}{t(" shares", " מניות")}
+                                  {trade.pct_of_holding != null
+                                    ? t(" ({pct}% of holding)", " ({pct}% מהחזקתו)", { pct: trade.pct_of_holding })
+                                    : ""}
+                                  {trade.price ? ` · $${Number(trade.price).toFixed(2)}` : ""}
+                                  {trade.date ? ` · ${trade.date}` : ""}
                                 </p>
                               ))}
                             </div>
@@ -777,21 +782,16 @@ const Recommendations: React.FC = () => {
           {hiddenCount && hiddenCount.hidden_total > 0 && (
             <div className="rounded-2xl border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-sm">
               <p className="text-amber-200">
-                {isHe
-                  ? `${hiddenCount.hidden_total} המלצות פעילות מוסתרות לפי הגדרות התצוגה שלך`
-                  : `${hiddenCount.hidden_total} live recommendations are hidden by your display settings`}
+                {t("{n} live recommendations are hidden by your display settings",
+                    "{n} המלצות פעילות מוסתרות לפי הגדרות התצוגה שלך", { n: hiddenCount.hidden_total })}
               </p>
               <p className="text-amber-200/70 text-xs mt-1">
                 {[
                   hiddenCount.hidden_short > 0
-                    ? (isHe
-                        ? `${hiddenCount.hidden_short} מכירה בחסר (SHORT)`
-                        : `${hiddenCount.hidden_short} short`)
+                    ? t("{n} short", "{n} מכירה בחסר (SHORT)", { n: hiddenCount.hidden_short })
                     : null,
                   hiddenCount.hidden_volatile > 0
-                    ? (isHe
-                        ? `${hiddenCount.hidden_volatile} מניות בסיכון גבוה`
-                        : `${hiddenCount.hidden_volatile} high-risk`)
+                    ? t("{n} high-risk", "{n} מניות בסיכון גבוה", { n: hiddenCount.hidden_volatile })
                     : null,
                 ]
                   .filter(Boolean)
@@ -852,7 +852,7 @@ const Recommendations: React.FC = () => {
               <p className="text-4xl mb-3">🤖</p>
               {_q ? (
                 <>
-                  <p>{isHe ? `אין המלצה פעילה עבור "${symbolQuery}"` : `No live recommendation for "${symbolQuery}"`}</p>
+                  <p>{t('No live recommendation for "{symbol}"', 'אין המלצה פעילה עבור "{symbol}"', { symbol: symbolQuery })}</p>
                   <p className="text-sm mt-1">
                     {t("Check the scan log — the analysis may have been rejected or superseded", "בדוק ביומן סריקה — ייתכן שהניתוח נדחה או הוחלף")}
                   </p>

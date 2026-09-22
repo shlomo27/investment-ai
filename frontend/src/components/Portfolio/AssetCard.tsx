@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useT } from "../../i18n/t";
 import { PortfolioPosition } from "../../types";
 
 interface Props {
@@ -8,6 +9,7 @@ interface Props {
 }
 
 const AssetCard: React.FC<Props> = ({ position: pos, isHe = false, onRemove }) => {
+  const t = useT();
   // TASE prices are in ₪, US-listed stocks in $
   const cur = pos.symbol.endsWith(".TA") ? "₪" : "$";
   const fmt = (v: number) =>
@@ -41,8 +43,8 @@ const AssetCard: React.FC<Props> = ({ position: pos, isHe = false, onRemove }) =
             {pos.asset_name && <span className="text-xs text-gray-400">{pos.asset_name}</span>}
           </div>
           <div className="flex gap-3 text-xs text-gray-400 mt-0.5">
-            <span>{pos.quantity.toFixed(4)} {isHe ? "יח'" : "units"}</span>
-            <span>{isHe ? "מחיר ממוצע:" : "Avg:"} {fmt(pos.avg_buy_price)}</span>
+            <span>{pos.quantity.toFixed(4)} {t("units", "יח'")}</span>
+            <span>{t("Avg:", "מחיר ממוצע:")} {fmt(pos.avg_buy_price)}</span>
           </div>
         </div>
       </div>
@@ -55,7 +57,7 @@ const AssetCard: React.FC<Props> = ({ position: pos, isHe = false, onRemove }) =
           </span>
         </div>
         <p className="text-xs text-gray-500 mt-0.5">
-          {isHe ? "חשיפה:" : "Exposure:"} {pos.exposure_percentage.toFixed(1)}%
+          {t("Exposure:", "חשיפה:")} {pos.exposure_percentage.toFixed(1)}%
         </p>
         {onRemove && (
           confirming ? (
@@ -65,22 +67,22 @@ const AssetCard: React.FC<Props> = ({ position: pos, isHe = false, onRemove }) =
                 disabled={removing}
                 className="text-xs bg-red-700 hover:bg-red-600 disabled:opacity-60 text-white px-2 py-1 rounded"
               >
-                {removing ? "..." : (isHe ? "אשר הסרה" : "Confirm")}
+                {removing ? "..." : (t("Confirm", "אשר הסרה"))}
               </button>
               <button
                 onClick={() => setConfirming(false)}
                 className="text-xs text-gray-400 hover:text-white px-2 py-1"
               >
-                {isHe ? "ביטול" : "Cancel"}
+                {t("Cancel", "ביטול")}
               </button>
             </div>
           ) : (
             <button
               onClick={() => setConfirming(true)}
               className="mt-2 text-xs border border-gray-700 text-gray-300 hover:text-red-300 hover:border-red-800/60 hover:bg-red-900/20 px-2.5 py-1 rounded-lg transition-colors"
-              title={isHe ? "מכרת או סימנת בטעות? הסר מהתיק והתרעות ייפסקו" : "Sold or added by mistake? Remove and alerts stop"}
+              title={t("Sold or added by mistake? Remove and alerts stop", "מכרת או סימנת בטעות? הסר מהתיק והתרעות ייפסקו")}
             >
-              🗑 {isHe ? "הסר מהתיק" : "Remove"}
+              🗑 {t("Remove", "הסר מהתיק")}
             </button>
           )
         )}

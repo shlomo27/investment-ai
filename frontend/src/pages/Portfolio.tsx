@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useT } from "../i18n/t";
 import { useAppDispatch, useAppSelector } from "../store";
 import { fetchPortfolioSummary, fetchPortfolioRisk, fetchRebalancingSuggestions } from "../store/slices/portfolioSlice";
 import { portfolioApi } from "../api/client";
@@ -7,6 +8,7 @@ import AssetCard from "../components/Portfolio/AssetCard";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 
 const Portfolio: React.FC = () => {
+  const t = useT();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
   const { summary, risk, rebalancingSuggestions, isLoading } = useAppSelector((state) => state.portfolio);
@@ -36,14 +38,14 @@ const Portfolio: React.FC = () => {
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold print-header">{isHe ? "תיק ההשקעות שלי" : "My Portfolio"}</h1>
+        <h1 className="text-2xl font-bold print-header">{t("My Portfolio", "תיק ההשקעות שלי")}</h1>
         <div className="flex items-center gap-2">
           {rebalancingSuggestions.length > 0 && (
             <button
               onClick={() => setShowRebalancing(!showRebalancing)}
               className="no-print text-sm bg-yellow-600/20 border border-yellow-600/50 text-yellow-400 px-4 py-2 rounded-xl hover:bg-yellow-600/30"
             >
-              {isHe ? `${rebalancingSuggestions.length} הצעות איזון` : `${rebalancingSuggestions.length} Rebalancing Tips`}
+              {t("{n} rebalancing tips", "{n} הצעות איזון", { n: rebalancingSuggestions.length })}
             </button>
           )}
           <button
@@ -51,7 +53,7 @@ const Portfolio: React.FC = () => {
             className="no-print text-sm bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white rounded-xl px-4 py-2 transition-colors flex items-center gap-2"
           >
             <span>📄</span>
-            {isHe ? "ייצוא PDF" : "Export PDF"}
+            {t("Export PDF", "ייצוא PDF")}
           </button>
         </div>
       </div>
@@ -76,19 +78,19 @@ const Portfolio: React.FC = () => {
         {/* Risk Meter */}
         {risk && (
           <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-            <h2 className="font-bold mb-4">{isHe ? "מד סיכון" : "Risk Meter"}</h2>
+            <h2 className="font-bold mb-4">{t("Risk Meter", "מד סיכון")}</h2>
             <RiskMeter score={risk.risk_score} level={risk.risk_level} />
             <div className="mt-4 space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-400">{isHe ? "חשיפת סיכון גבוה" : "High Risk Exposure"}</span>
+                <span className="text-gray-400">{t("High Risk Exposure", "חשיפת סיכון גבוה")}</span>
                 <span className="text-red-400">{risk.high_risk_exposure_pct.toFixed(1)}%</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-400">{isHe ? "ציון גיוון" : "Diversification"}</span>
+                <span className="text-gray-400">{t("Diversification", "ציון גיוון")}</span>
                 <span className="text-blue-400">{risk.diversification_score}/100</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-gray-400">{isHe ? "מזומן" : "Cash"}</span>
+                <span className="text-gray-400">{t("Cash", "מזומן")}</span>
                 <span className="text-green-400">{risk.cash_pct.toFixed(1)}%</span>
               </div>
             </div>
@@ -97,7 +99,7 @@ const Portfolio: React.FC = () => {
 
         {/* Holdings */}
         <div className="lg:col-span-2 space-y-4">
-          <h2 className="font-bold">{isHe ? "אחזקות" : "Holdings"}</h2>
+          <h2 className="font-bold">{t("Holdings", "אחזקות")}</h2>
           {isLoading ? (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
@@ -113,8 +115,8 @@ const Portfolio: React.FC = () => {
           ) : (
             <div className="bg-gray-900 rounded-2xl p-8 border border-gray-800 text-center text-gray-500">
               <p className="text-4xl mb-3">📊</p>
-              <p>{isHe ? "אין אחזקות עדיין" : "No holdings yet"}</p>
-              <p className="text-sm mt-1">{isHe ? "בדוק את המלצות ה-AI לרכישה" : "Check AI recommendations to start"}</p>
+              <p>{t("No holdings yet", "אין אחזקות עדיין")}</p>
+              <p className="text-sm mt-1">{t("Check AI recommendations to start", "בדוק את המלצות ה-AI לרכישה")}</p>
             </div>
           )}
         </div>
@@ -129,7 +131,7 @@ const Portfolio: React.FC = () => {
         if (hasSector) {
           const sectorMap: Record<string, number> = {};
           summary.positions.forEach(p => {
-            const key = p.sector || (isHe ? "אחר" : "Other");
+            const key = p.sector || (t("Other", "אחר"));
             sectorMap[key] = (sectorMap[key] || 0) + p.current_value;
           });
           chartData = Object.entries(sectorMap).map(([name, value]) => ({ name, value }));
@@ -140,7 +142,7 @@ const Portfolio: React.FC = () => {
           chartData = top5.map(p => ({ name: p.symbol, value: p.current_value }));
           if (rest.length > 0) {
             const otherValue = rest.reduce((acc, p) => acc + p.current_value, 0);
-            chartData.push({ name: isHe ? "אחר" : "Other", value: otherValue });
+            chartData.push({ name: t("Other", "אחר"), value: otherValue });
           }
         }
 
@@ -148,7 +150,7 @@ const Portfolio: React.FC = () => {
 
         return (
           <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
-            <h2 className="font-bold mb-4">{isHe ? "הקצאה לפי סקטור" : "Allocation by Sector"}</h2>
+            <h2 className="font-bold mb-4">{t("Allocation by Sector", "הקצאה לפי סקטור")}</h2>
             <div className="flex items-center gap-6">
               <div className="w-48 h-48 flex-shrink-0">
                 <ResponsiveContainer width="100%" height="100%">
@@ -185,7 +187,7 @@ const Portfolio: React.FC = () => {
       {showRebalancing && rebalancingSuggestions.length > 0 && (
         <div className="bg-gray-900 rounded-2xl p-6 border border-yellow-700/30">
           <h2 className="font-bold mb-4 text-yellow-400">
-            {isHe ? "הצעות לאיזון תיק" : "Rebalancing Suggestions"}
+            {t("Rebalancing Suggestions", "הצעות לאיזון תיק")}
           </h2>
           <div className="space-y-3">
             {rebalancingSuggestions.map((s, i) => (

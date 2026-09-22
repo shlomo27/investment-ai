@@ -35,6 +35,16 @@ function stripComments(src) {
     .replace(/(^|[^:])\/\/[^\n]*/g, (m, p) => p + " ".repeat(m.length - p.length));
 }
 
+// Keys that reach t() through a data table rather than a literal:
+//
+//     const TABS = [{ he: "מעקב", en: "Watchlist" }, ...]
+//     <span>{t(tab.en, tab.he)}</span>
+//
+// The call site has no string in it, so a scan that only reads t() arguments
+// reports these screens as having nothing to translate while the navigation
+// on every page depends on them. The English side of such a pair is a key.
+const PAIRED = /\b(?:label_)?he\s*:\s*"(?:[^"\\]|\\.)*"\s*,\s*(?:label_)?en\s*:\s*("(?:[^"\\]|\\.)*")/g;
+
 const CALL = /\bt\(\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g;
 const live = new Set();
 for (const file of walk(SRC)) {

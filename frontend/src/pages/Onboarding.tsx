@@ -1,20 +1,23 @@
 import React, { useState } from "react";
+import { useT } from "../i18n/t";
 import { useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { completeOnboarding, updateUserProfile } from "../store/slices/authSlice";
 import { RiskProfile } from "../types";
 import { requestPushPermission } from "../services/pushNotifications";
 import { authApi } from "../api/client";
+import { LANGUAGES, detectLanguage, rememberLanguage, applyDocumentLanguage } from "../i18n/languages";
 
 const STEPS = ["welcome", "language", "notifications"] as const;
 
 const Onboarding: React.FC = () => {
+  const t = useT();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { user, isLoading } = useAppSelector((s) => s.auth);
 
   const [step, setStep] = useState(0);
-  const [lang, setLang] = useState<"he" | "en">(user?.preferred_language ?? "he");
+  const [lang, setLang] = useState<string>(() => user?.preferred_language ?? detectLanguage());
   const [notifs, setNotifs] = useState({ email: true, sms: false, push: false });
   const [tgLinked, setTgLinked] = useState(false);
   const [tgWaiting, setTgWaiting] = useState(false);
@@ -104,12 +107,10 @@ const Onboarding: React.FC = () => {
                 </svg>
               </div>
               <h1 className="text-2xl font-bold mb-2">
-                {isHe ? `ברוך הבא, ${user?.full_name?.split(" ")[0]}!` : `Welcome, ${user?.full_name?.split(" ")[0]}!`}
+                {t("Welcome, {name}!", "ברוך הבא, {name}!", { name: user?.full_name?.split(" ")[0] ?? "" })}
               </h1>
               <p className="text-gray-400 text-sm leading-relaxed">
-                {isHe
-                  ? "מערכת ייעוץ השקעות מבוססת AI — מנתחת מאות מניות מדי יום ומספקת המלצות, ניתוחים טכניים והתרעות בזמן אמת."
-                  : "AI-powered investment advisory — analyzes hundreds of stocks daily and delivers recommendations, technical analysis, and real-time alerts."}
+                {t("AI-powered investment advisory — analyzes hundreds of stocks daily and delivers recommendations, technical analysis, and real-time alerts.", "מערכת ייעוץ השקעות מבוססת AI — מנתחת מאות מניות מדי יום ומספקת המלצות, ניתוחים טכניים והתרעות בזמן אמת.")}
               </p>
             </div>
 
@@ -128,7 +129,7 @@ const Onboarding: React.FC = () => {
             </div>
 
             <button onClick={next} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition-colors">
-              {isHe ? "המשך ←" : "Continue →"}
+              {t("Continue →", "המשך ←")}
             </button>
           </div>
         )}
@@ -137,45 +138,33 @@ const Onboarding: React.FC = () => {
         {step === 1 && (
           <div className="space-y-6">
             <div>
-              <h2 className="text-xl font-bold mb-1">{isHe ? "בחר שפה" : "Choose Language"}</h2>
+              <h2 className="text-xl font-bold mb-1">{t("Choose Language", "בחר שפה")}</h2>
               <p className="text-sm text-gray-400">
-                {isHe
-                  ? "השפה שתבחר תשפיע על הממשק וגם על ניתוחי ה-AI שתקבל."
-                  : "The language you choose affects both the interface and the AI analysis you receive."}
+                {t("The language you choose affects both the interface and the AI analysis you receive.", "השפה שתבחר תשפיע על הממשק וגם על ניתוחי ה-AI שתקבל.")}
               </p>
             </div>
 
-            <div className="space-y-3">
-              {[
-                {
-                  value: "he" as const,
-                  flag: "🇮🇱",
-                  title: "עברית",
-                  desc: "הממשק וניתוחי ה-AI יוצגו בעברית",
-                },
-                {
-                  value: "en" as const,
-                  flag: "🇺🇸",
-                  title: "English",
-                  desc: "Interface and AI analysis displayed in English",
-                },
-              ].map((opt) => (
+            {/* All ten languages, not a he/en pair. This step sets the
+                language of the account and of every analysis it will ever
+                show, so offering two was the difference between the app
+                working for a reader and not. */}
+            <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+              {LANGUAGES.map((opt) => (
                 <button
-                  key={opt.value}
-                  onClick={() => setLang(opt.value)}
+                  key={opt.code}
+                  onClick={() => { setLang(opt.code); rememberLanguage(opt.code); applyDocumentLanguage(opt.code); }}
                   className={`w-full flex items-center gap-4 px-5 py-4 rounded-xl border text-start transition-all ${
-                    lang === opt.value
+                    lang === opt.code
                       ? "bg-blue-600/20 border-blue-500"
                       : "bg-gray-900 border-gray-800 hover:border-gray-600"
                   }`}
                 >
-                  <span className="text-3xl">{opt.flag}</span>
-                  <div>
-                    <p className={`font-semibold ${lang === opt.value ? "text-blue-300" : "text-white"}`}>{opt.title}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{opt.desc}</p>
+                  <div className="min-w-0">
+                    <p className={`font-semibold ${lang === opt.code ? "text-blue-300" : "text-white"}`}>{opt.nativeName}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{opt.englishName}</p>
                   </div>
-                  {lang === opt.value && (
-                    <span className="mr-auto text-blue-400 text-lg">✓</span>
+                  {lang === opt.code && (
+                    <span className="ms-auto text-blue-400 text-lg">✓</span>
                   )}
                 </button>
               ))}
@@ -183,10 +172,10 @@ const Onboarding: React.FC = () => {
 
             <div className="flex gap-3">
               <button onClick={prev} className="px-4 py-3 rounded-xl border border-gray-700 text-sm text-gray-400 hover:text-white">
-                {isHe ? "חזרה" : "Back"}
+                {t("Back", "חזרה")}
               </button>
               <button onClick={next} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition-colors">
-                {isHe ? "המשך ←" : "Continue →"}
+                {t("Continue →", "המשך ←")}
               </button>
             </div>
           </div>
@@ -196,8 +185,8 @@ const Onboarding: React.FC = () => {
         {step === 2 && (
           <div className="space-y-5">
             <div>
-              <h2 className="text-xl font-bold mb-1">{isHe ? "העדפות התרעות" : "Notification Preferences"}</h2>
-              <p className="text-sm text-gray-400">{isHe ? "איך תרצה לקבל עדכונים?" : "How would you like to receive updates?"}</p>
+              <h2 className="text-xl font-bold mb-1">{t("Notification Preferences", "העדפות התרעות")}</h2>
+              <p className="text-sm text-gray-400">{t("How would you like to receive updates?", "איך תרצה לקבל עדכונים?")}</p>
             </div>
 
             <div className="space-y-2">
@@ -225,11 +214,11 @@ const Onboarding: React.FC = () => {
                 <div className="flex items-center gap-3">
                   <span>✈️</span>
                   <div>
-                    <span className="text-sm text-gray-300 block">{isHe ? "טלגרם אישי" : "Personal Telegram"}</span>
+                    <span className="text-sm text-gray-300 block">{t("Personal Telegram", "טלגרם אישי")}</span>
                     <span className="text-xs text-gray-500">
                       {tgLinked
-                        ? (isHe ? "מחובר ✓" : "Linked ✓")
-                        : (isHe ? "התרעות אישיות על התיק שלך, ישירות לטלגרם" : "Personal portfolio alerts, straight to Telegram")}
+                        ? (t("Linked ✓", "מחובר ✓"))
+                        : (t("Personal portfolio alerts, straight to Telegram", "התרעות אישיות על התיק שלך, ישירות לטלגרם"))}
                     </span>
                   </div>
                 </div>
@@ -241,29 +230,28 @@ const Onboarding: React.FC = () => {
                     disabled={tgWaiting}
                     className="text-xs border border-blue-700/60 text-blue-400 hover:bg-blue-900/20 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
                   >
-                    {tgWaiting ? (isHe ? "ממתין לטלגרם..." : "Waiting...") : (isHe ? "חבר" : "Connect")}
+                    {tgWaiting ? (t("Waiting...", "ממתין לטלגרם...")) : (t("Connect", "חבר"))}
                   </button>
                 )}
               </div>
               {tgWaiting && (
                 <p className="text-xs text-gray-600">
-                  {isHe
-                    ? 'נפתח חלון טלגרם — לחץ שם על "Start" והחיבור יושלם אוטומטית תוך חצי דקה. אפשר גם להמשיך ולחבר אחר כך מההגדרות.'
-                    : 'A Telegram window opened — tap "Start" there; linking completes automatically within ~30s. You can also continue and link later from Settings.'}
+                  {t('A Telegram window opened — tap "Start" there; linking completes automatically within ~30s. You can also continue and link later from Settings.',
+                      'נפתח חלון טלגרם — לחץ שם על "Start" והחיבור יושלם אוטומטית תוך חצי דקה. אפשר גם להמשיך ולחבר אחר כך מההגדרות.')}
                 </p>
               )}
             </div>
 
             <div className="flex gap-3">
               <button onClick={prev} className="px-4 py-3 rounded-xl border border-gray-700 text-sm text-gray-400 hover:text-white">
-                {isHe ? "חזרה" : "Back"}
+                {t("Back", "חזרה")}
               </button>
               <button
                 onClick={handleComplete}
                 disabled={isLoading}
                 className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-colors"
               >
-                {isLoading ? (isHe ? "שומר..." : "Saving...") : (isHe ? "✓ כניסה למערכת" : "✓ Enter Platform")}
+                {isLoading ? (t("Saving...", "שומר...")) : (t("✓ Enter Platform", "✓ כניסה למערכת"))}
               </button>
             </div>
           </div>

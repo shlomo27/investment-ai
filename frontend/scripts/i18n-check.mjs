@@ -46,6 +46,16 @@ function stripComments(src) {
     .replace(/(^|[^:])\/\/[^\n]*/g, (m, p) => p + " ".repeat(m.length - p.length));
 }
 
+// Keys that reach t() through a data table rather than a literal:
+//
+//     const TABS = [{ he: "מעקב", en: "Watchlist" }, ...]
+//     <span>{t(tab.en, tab.he)}</span>
+//
+// The call site has no string in it, so a scan that only reads t() arguments
+// reports these screens as having nothing to translate while the navigation
+// on every page depends on them. The English side of such a pair is a key.
+const PAIRED = /\b(?:label_)?he\s*:\s*"(?:[^"\\]|\\.)*"\s*,\s*(?:label_)?en\s*:\s*("(?:[^"\\]|\\.)*")/g;
+
 const CALL = /\bt\(\s*(`[^`]*`|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g;
 
 const interpolated = [];
@@ -72,6 +82,38 @@ for (const file of walk(SRC)) {
       keys.add(raw.slice(1, -1).replace(/\\(["'\\])/g, "$1").replace(/\\n/g, "\n"));
     }
   }
+}
+
+// A binding named `t` that is not the translator.
+//
+// `.map((t: any) => ... t("sold", "מכר") ...)` type-checks — `any` is
+// callable — and then throws at runtime, because `t` is a trade object. The
+// inbox crashed this way. Any parameter or local named `t` shadows the
+// translator for its whole scope, so the name is simply not available.
+const SHADOW = /(?:\(|,\s*)(t)\s*(?::\s*(?!TFunction)[^,)=]+)?\s*(?:=>|[,)])|\b(?:const|let|var)\s+(t)\s*=(?!\s*useT\(\))/g;
+const shadows = [];
+for (const file of walk(SRC)) {
+  if (file.includes("/i18n/")) continue;
+  const text = stripComments(readFileSync(file, "utf8"));
+  const lines = text.split("\n");
+  for (const m of text.matchAll(SHADOW)) {
+    const line = text.slice(0, m.index).split("\n").length;
+    const src = lines[line - 1];
+    if (/\bconst t = useT\(\)/.test(src)) continue;
+    if (/\bt\s*:\s*TFunction/.test(src)) continue;
+    // A translator that cannot use the hook (a class component) is still
+    // the translator, and `f(t)` passes it rather than rebinding it.
+    if (/translateUI\(/.test(src)) continue;
+    if (/\w\(t\)/.test(src)) continue;
+    shadows.push({ file: relative(ROOT, file), line, snippet: src.trim().slice(0, 100) });
+  }
+}
+if (shadows.length) {
+  console.log(`✗ ${shadows.length} binding(s) named \`t\` that shadow the translator:\n`);
+  for (const sdw of shadows) console.log(`    ${sdw.file}:${sdw.line}\n      ${sdw.snippet}`);
+  console.log("");
+} else {
+  console.log("✓ Nothing shadows the translator.\n");
 }
 
 // The dictionary is a TS module; read it as text rather than importing, so
@@ -123,4 +165,4 @@ else {
   }
 }
 
-if (process.argv.includes("--strict") && interpolated.length) process.exit(1);
+if (process.argv.includes("--strict") && (interpolated.length || shadows.length)) process.exit(1);

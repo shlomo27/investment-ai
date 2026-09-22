@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import { useT } from "../i18n/t";
 import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { fetchRecommendations } from "../store/slices/notificationsSlice";
@@ -20,6 +21,7 @@ const SignalSummaryCard: React.FC<{
   subtitle: string;
   isHe: boolean;
 }> = ({ title, recs, tone, subtitle, isHe }) => {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
   const COLLAPSED = 3;
   const visible = expanded ? recs : recs.slice(0, COLLAPSED);
@@ -55,8 +57,8 @@ const SignalSummaryCard: React.FC<{
           className="mt-2 text-xs text-blue-400 hover:text-blue-300 underline"
         >
           {expanded
-            ? (isHe ? "הצג פחות" : "Show less")
-            : (isHe ? `הצג את כל ${recs.length} ההמלצות` : `Show all ${recs.length}`)}
+            ? (t("Show less", "הצג פחות"))
+            : t("Show all {n}", "הצג את כל {n} ההמלצות", { n: recs.length })}
         </button>
       )}
     </div>
@@ -64,6 +66,7 @@ const SignalSummaryCard: React.FC<{
 };
 
 const FundDashboard: React.FC = () => {
+  const t = useT();
   const dispatch = useAppDispatch();
   const { recommendations } = useAppSelector((s) => s.notifications);
   const { user } = useAppSelector((s) => s.auth);
@@ -159,7 +162,7 @@ const FundDashboard: React.FC = () => {
             (r.reason === "sec_unavailable" ? " — the SEC fetch failed" : "")
       );
     } catch (e: any) {
-      setCikResult(e?.response?.data?.detail || (isHe ? "נכשל" : "Failed"));
+      setCikResult(e?.response?.data?.detail || (t("Failed", "נכשל")));
     }
     setCikBusy(false);
   };
@@ -181,9 +184,7 @@ const FundDashboard: React.FC = () => {
       // engine is down looks identical to one that found nothing to remove,
       // and the reader is left pressing the button again.
       const why = r.engine_down
-        ? (isHe
-            ? " לא הוסרו המלצות כי מנוע הניתוח למטה — זו הגנה מכוונת, כדי שתקלה לא תרוקן את הפיד."
-            : " Nothing was retired because the analysis engine is down — a deliberate guard so an outage cannot empty the feed.")
+        ? (t(" Nothing was retired because the analysis engine is down — a deliberate guard so an outage cannot empty the feed.", " לא הוסרו המלצות כי מנוע הניתוח למטה — זו הגנה מכוונת, כדי שתקלה לא תרוקן את הפיד."))
         : r.reason
           ? ` (${r.reason})`
           : "";
@@ -419,11 +420,11 @@ const FundDashboard: React.FC = () => {
     try {
       const res = await marketApi.backfillBeta();
       if (res.already_running) {
-        setBetaResult(isHe ? "כבר רצה מדידה — תן לה לסיים." : "A run is already in progress.");
+        setBetaResult(t("A run is already in progress.", "כבר רצה מדידה — תן לה לסיים."));
       }
       setBetaStatus({ running: true });
     } catch (e: any) {
-      setBetaResult(e?.response?.data?.detail || (isHe ? "נכשל" : "Failed"));
+      setBetaResult(e?.response?.data?.detail || (t("Failed", "נכשל")));
     }
   };
 
@@ -502,9 +503,9 @@ const FundDashboard: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{isHe ? "לוח ניהול מערכת" : "System Control Panel"}</h1>
+          <h1 className="text-2xl font-bold">{t("System Control Panel", "לוח ניהול מערכת")}</h1>
           <p className="text-gray-400 text-sm mt-1">
-            {isHe ? "מצב הסריקות, המנועים וההמלצות" : "Scans, engines and signal status"}
+            {t("Scans, engines and signal status", "מצב הסריקות, המנועים וההמלצות")}
           </p>
         </div>
       </div>
@@ -547,19 +548,19 @@ const FundDashboard: React.FC = () => {
       )}
       {activeTab === "sectors" && (
         <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6">
-          <h2 className="font-bold mb-4">{isHe ? "ביצועי סקטורים" : "Sector Performance"}</h2>
+          <h2 className="font-bold mb-4">{t("Sector Performance", "ביצועי סקטורים")}</h2>
           <SectorDashboard isHebrew={isHe} />
         </div>
       )}
       {activeTab === "earnings" && (
         <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6">
-          <h2 className="font-bold mb-4">{isHe ? "דוחות רווחים קרובים" : "Upcoming Earnings"}</h2>
+          <h2 className="font-bold mb-4">{t("Upcoming Earnings", "דוחות רווחים קרובים")}</h2>
           <EarningsCalendar isHebrew={isHe} daysAhead={30} />
         </div>
       )}
       {activeTab === "compare" && (
         <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6">
-          <h2 className="font-bold mb-4">{isHe ? "השוואת מניות" : "Stock Comparison"}</h2>
+          <h2 className="font-bold mb-4">{t("Stock Comparison", "השוואת מניות")}</h2>
           <StockComparison isHebrew={isHe} />
         </div>
       )}
@@ -570,31 +571,31 @@ const FundDashboard: React.FC = () => {
       {/* Operational status — what an operator actually needs at a glance */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-          <p className="text-xs text-gray-400 mb-1">{isHe ? "המלצות פעילות" : "Active Signals"}</p>
+          <p className="text-xs text-gray-400 mb-1">{t("Active Signals", "המלצות פעילות")}</p>
           <p className="text-2xl font-bold text-blue-400">{approvedRecs.length}</p>
-          <p className="text-xs text-gray-500">{isHe ? "בפיד הסיגנלים" : "in the signals feed"}</p>
+          <p className="text-xs text-gray-500">{t("in the signals feed", "בפיד הסיגנלים")}</p>
         </div>
         <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-          <p className="text-xs text-gray-400 mb-1">{isHe ? "מניות ביקום" : "Universe"}</p>
+          <p className="text-xs text-gray-400 mb-1">{t("Universe", "מניות ביקום")}</p>
           <p className="text-2xl font-bold">{universeStats?.universe_total ?? "—"}</p>
           <p className="text-xs text-gray-500">
-            {universeStats?.active_pool ?? "—"} {isHe ? "במאגר הסריקה" : "in scan pool"}
+            {universeStats?.active_pool ?? "—"} {t("in scan pool", "במאגר הסריקה")}
           </p>
         </div>
         <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-          <p className="text-xs text-gray-400 mb-1">{isHe ? "בתור לסריקה" : "Scan Queue"}</p>
+          <p className="text-xs text-gray-400 mb-1">{t("Scan Queue", "בתור לסריקה")}</p>
           <p className="text-2xl font-bold text-purple-300">{scanStatus?.remaining ?? "—"}</p>
           <p className="text-xs text-gray-500">
-            {isHe ? "נותרו בסריקה הרבעונית" : "remaining this sweep"}
+            {t("remaining this sweep", "נותרו בסריקה הרבעונית")}
           </p>
         </div>
         <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-          <p className="text-xs text-gray-400 mb-1">{isHe ? "דוחות שנאספו" : "Earnings Collected"}</p>
+          <p className="text-xs text-gray-400 mb-1">{t("Earnings Collected", "דוחות שנאספו")}</p>
           <p className="text-2xl font-bold text-amber-300">{earningsStatus?.queue_count ?? "—"}</p>
           <p className="text-xs text-gray-500">
             {earningsStatus?.analyzed_count != null && earningsStatus?.companies?.length
-              ? `${earningsStatus.analyzed_count}/${earningsStatus.companies.length} ${isHe ? "נותחו" : "analyzed"}`
-              : (isHe ? "מחברות שדיווחו" : "from reporters")}
+              ? `${earningsStatus.analyzed_count}/${earningsStatus.companies.length} ${t("analyzed", "נותחו")}`
+              : (t("from reporters", "מחברות שדיווחו"))}
           </p>
         </div>
       </div>
@@ -602,17 +603,17 @@ const FundDashboard: React.FC = () => {
       {/* AI Signal Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <SignalSummaryCard
-          title={isHe ? "המלצות LONG" : "LONG Signals"}
+          title={t("LONG Signals", "המלצות LONG")}
           recs={longRecs}
           tone="long"
-          subtitle={isHe ? "המלצות BUY/STRONG_BUY פעילות" : "Active BUY/STRONG_BUY"}
+          subtitle={t("Active BUY/STRONG_BUY", "המלצות BUY/STRONG_BUY פעילות")}
           isHe={isHe}
         />
         <SignalSummaryCard
-          title={isHe ? "המלצות SHORT" : "SHORT Signals"}
+          title={t("SHORT Signals", "המלצות SHORT")}
           recs={shortRecs}
           tone="short"
-          subtitle={isHe ? "המלצות SELL/STRONG_SELL פעילות" : "Active SELL/STRONG_SELL"}
+          subtitle={t("Active SELL/STRONG_SELL", "המלצות SELL/STRONG_SELL פעילות")}
           isHe={isHe}
         />
       </div>
@@ -622,13 +623,13 @@ const FundDashboard: React.FC = () => {
         {/* Universe Stats */}
         <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold">{isHe ? "יקום המניות" : "Stock Universe"}</h2>
+            <h2 className="font-bold">{t("Stock Universe", "יקום המניות")}</h2>
             <button
               onClick={handleLoadUniverse}
               disabled={universeLoading}
               className="text-xs text-blue-400 hover:text-blue-300 disabled:text-gray-600"
             >
-              {universeLoading ? (isHe ? "טוען..." : "Loading...") : (isHe ? "רענן יקום" : "Refresh Universe")}
+              {universeLoading ? (t("Loading...", "טוען...")) : (t("Refresh Universe", "רענן יקום"))}
             </button>
           </div>
 
@@ -636,20 +637,20 @@ const FundDashboard: React.FC = () => {
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-gray-800 rounded-xl p-3">
-                  <p className="text-xs text-gray-400">{isHe ? "סה\"כ ביקום" : "In Universe"}</p>
+                  <p className="text-xs text-gray-400">{t("In Universe", "סה\"כ ביקום")}</p>
                   <p className="text-xl font-bold text-white">{universeStats.universe_total.toLocaleString()}</p>
                   <p className="text-xs text-gray-500">S&P 500 + S&P 400</p>
                 </div>
                 <div className="bg-blue-900/20 border border-blue-900/40 rounded-xl p-3">
-                  <p className="text-xs text-blue-400">{isHe ? "ממתינות לסריקה היום" : "Today's Scan Pool"}</p>
+                  <p className="text-xs text-blue-400">{t("Today's Scan Pool", "ממתינות לסריקה היום")}</p>
                   <p className="text-xl font-bold text-blue-400">{universeStats.active_pool}</p>
-                  <p className="text-xs text-gray-500">{isHe ? "מניות לניתוח AI" : "stocks for AI analysis"}</p>
+                  <p className="text-xs text-gray-500">{t("stocks for AI analysis", "מניות לניתוח AI")}</p>
                 </div>
               </div>
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500 text-sm">
-              {isHe ? "אין נתוני יקום — טען יקום תחילה" : "No universe data — load universe first"}
+              {t("No universe data — load universe first", "אין נתוני יקום — טען יקום תחילה")}
             </div>
           )}
 
@@ -661,12 +662,10 @@ const FundDashboard: React.FC = () => {
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-sm text-gray-300">
-                  {isHe ? "מדידת תנודתיות (בטא)" : "Measure volatility (beta)"}
+                  {t("Measure volatility (beta)", "מדידת תנודתיות (בטא)")}
                 </p>
                 <p className="text-xs text-gray-500">
-                  {isHe
-                    ? "רץ אוטומטית כל יום ראשון 07:40 — הכפתור רק כדי לא לחכות"
-                    : "Runs automatically every Sunday 07:40 — the button is only to avoid waiting"}
+                  {t("Runs automatically every Sunday 07:40 — the button is only to avoid waiting", "רץ אוטומטית כל יום ראשון 07:40 — הכפתור רק כדי לא לחכות")}
                 </p>
                 {universeStats && typeof universeStats.beta_measured === "number" && (
                   <p className="text-xs mt-1">
@@ -689,7 +688,7 @@ const FundDashboard: React.FC = () => {
                 disabled={betaRunning}
                 className="shrink-0 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-blue-300 border border-gray-700 hover:border-blue-700 disabled:text-gray-600"
               >
-                {betaRunning ? (isHe ? "רצה..." : "Running...") : (isHe ? "הפעל מדידה" : "Run")}
+                {betaRunning ? (t("Running...", "רצה...")) : (t("Run", "הפעל מדידה"))}
               </button>
             </div>
             {betaRunning && (
@@ -698,7 +697,7 @@ const FundDashboard: React.FC = () => {
                   ? (isHe
                       ? `מודד כעת — ${betaStatus.done} מתוך ${betaStatus.total}. אפשר לעזוב את הדף, הריצה ממשיכה בשרת.`
                       : `Measuring — ${betaStatus.done} of ${betaStatus.total}. You can leave the page; the run continues on the server.`)
-                  : (isHe ? "מתחיל..." : "Starting...")}
+                  : (t("Starting...", "מתחיל..."))}
               </p>
             )}
             {betaResult && <p className="text-xs text-gray-400 mt-2">{betaResult}</p>}
@@ -709,12 +708,10 @@ const FundDashboard: React.FC = () => {
               evaluation would lock out every other prospect still looking. */}
           <div className="mt-4 pt-4 border-t border-gray-800">
             <p className="text-sm text-gray-300">
-              {isHe ? "חשבונות הדגמה" : "Demo accounts"}
+              {t("Demo accounts", "חשבונות הדגמה")}
             </p>
             <p className="text-xs text-gray-500 mb-3">
-              {isHe
-                ? "חשבון נפרד לכל חברה. לקוח רגיל, לא אדמין, בלי התראות ובלי טלגרם"
-                : "One per company. A plain client account, not an admin, no notifications, no Telegram"}
+              {t("One per company. A plain client account, not an admin, no notifications, no Telegram", "חשבון נפרד לכל חברה. לקוח רגיל, לא אדמין, בלי התראות ובלי טלגרם")}
             </p>
 
             <div className="flex items-center gap-2">
@@ -722,7 +719,7 @@ const FundDashboard: React.FC = () => {
                 value={demoLabel}
                 onChange={(e) => setDemoLabel(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleCreateDemo(); }}
-                placeholder={isHe ? "שם החברה (למשל ibi)" : "Company name (e.g. ibi)"}
+                placeholder={t("Company name (e.g. ibi)", "שם החברה (למשל ibi)")}
                 className="flex-1 px-3 py-1.5 rounded-lg text-xs bg-gray-900 text-gray-200 border border-gray-800 placeholder-gray-600 focus:border-blue-600 focus:outline-none"
               />
               <button
@@ -730,7 +727,7 @@ const FundDashboard: React.FC = () => {
                 disabled={demoBusy || !demoLabel.trim()}
                 className="shrink-0 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-blue-300 border border-gray-700 hover:border-blue-700 disabled:text-gray-600"
               >
-                {demoBusy ? (isHe ? "יוצר..." : "Creating...") : (isHe ? "צור" : "Create")}
+                {demoBusy ? (t("Creating...", "יוצר...")) : (t("Create", "צור"))}
               </button>
             </div>
 
@@ -757,13 +754,11 @@ const FundDashboard: React.FC = () => {
                   className="mt-2 px-2 py-1 rounded border border-gray-700 text-blue-300 hover:border-blue-700"
                 >
                   {demoCopied
-                    ? (isHe ? "הועתק" : "Copied")
-                    : (isHe ? "העתק אימייל וסיסמה" : "Copy email and password")}
+                    ? (t("Copied", "הועתק"))
+                    : (t("Copy email and password", "העתק אימייל וסיסמה"))}
                 </button>
                 <p className="text-gray-500 mt-2">
-                  {isHe
-                    ? "העתק עכשיו — הסיסמה מוצגת פעם אחת בלבד."
-                    : "Copy it now — the password is shown only once."}
+                  {t("Copy it now — the password is shown only once.", "העתק עכשיו — הסיסמה מוצגת פעם אחת בלבד.")}
                 </p>
               </div>
             )}
@@ -774,15 +769,13 @@ const FundDashboard: React.FC = () => {
                 failing on every symbol, or working with nothing to report. */}
             <div className="mt-4 pt-4 border-t border-gray-800">
               <p className="text-sm text-gray-300">
-                {isHe ? "סריקה טכנית (חינם, רצה כל 30 דקות)" : "Technical scan (free, every 30 min)"}
+                {t("Technical scan (free, every 30 min)", "סריקה טכנית (חינם, רצה כל 30 דקות)")}
               </p>
               {taScan === null ? (
-                <p className="text-xs text-gray-500 mt-1">{isHe ? "טוען..." : "Loading..."}</p>
+                <p className="text-xs text-gray-500 mt-1">{t("Loading...", "טוען...")}</p>
               ) : !taScan.ran ? (
                 <p className="text-xs text-red-400 mt-1">
-                  {isHe
-                    ? "לא נרשמה אף ריצה מוצלחת — הסריקה לא השלימה מעבר."
-                    : "No completed pass recorded — the scan has not finished a run."}
+                  {t("No completed pass recorded — the scan has not finished a run.", "לא נרשמה אף ריצה מוצלחת — הסריקה לא השלימה מעבר.")}
                 </p>
               ) : (
                 <>
@@ -791,8 +784,8 @@ const FundDashboard: React.FC = () => {
                     : (taScan.minutes_ago ?? 999) <= 180 ? "text-yellow-400"
                     : "text-red-400"
                   }`}>
-                    {isHe ? "ריצה אחרונה: לפני " : "Last run: "}
-                    {taScan.minutes_ago != null ? `${taScan.minutes_ago} ${isHe ? "דקות" : "min ago"}` : "—"}
+                    {t("Last run: ", "ריצה אחרונה: לפני ")}
+                    {taScan.minutes_ago != null ? `${taScan.minutes_ago} ${t("min ago", "דקות")}` : "—"}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     {isHe
@@ -801,16 +794,12 @@ const FundDashboard: React.FC = () => {
                   </p>
                   {(taScan.errors ?? 0) > 0 && (taScan.errors ?? 0) >= (taScan.success ?? 0) && (
                     <p className="text-xs text-red-400 mt-1">
-                      {isHe
-                        ? "רוב הסריקות נכשלות — כנראה בעיית נתוני מחיר, לא בעיית התראות."
-                        : "Most scans are failing — this is a price-data problem, not an alerting one."}
+                      {t("Most scans are failing — this is a price-data problem, not an alerting one.", "רוב הסריקות נכשלות — כנראה בעיית נתוני מחיר, לא בעיית התראות.")}
                     </p>
                   )}
                   {(taScan.errors ?? 0) === 0 && (taScan.alerted ?? 0) === 0 && (
                     <p className="text-xs text-gray-500 mt-1">
-                      {isHe
-                        ? "הסריקה עובדת ולא היו שינויי סיגנל מאומתים — כלומר אין על מה להתריע."
-                        : "The scan is working and no confirmed signal changes occurred — nothing to alert on."}
+                      {t("The scan is working and no confirmed signal changes occurred — nothing to alert on.", "הסריקה עובדת ולא היו שינויי סיגנל מאומתים — כלומר אין על מה להתריע.")}
                     </p>
                   )}
                 </>
@@ -822,26 +811,24 @@ const FundDashboard: React.FC = () => {
                 social alerts" read as a fault. */}
             <div className="mt-4 pt-4 border-t border-gray-800">
               <p className="text-sm text-gray-300">
-                {isHe ? "סריקת חדשות ורשתות חברתיות (בתשלום)" : "News and social scan (paid)"}
+                {t("News and social scan (paid)", "סריקת חדשות ורשתות חברתיות (בתשלום)")}
               </p>
               {taScan?.analyses_paused ? (
                 <p className="text-xs text-yellow-400 mt-1">
-                  {isHe
-                    ? "מושהית כרגע — היא מבצעת חיפושי X בתשלום, ולכן נעצרת יחד עם שאר הניתוחים."
-                    : "Currently paused — it runs paid X searches, so it stops with the other analyses."}
+                  {t("Currently paused — it runs paid X searches, so it stops with the other analyses.", "מושהית כרגע — היא מבצעת חיפושי X בתשלום, ולכן נעצרת יחד עם שאר הניתוחים.")}
                 </p>
               ) : !taScan?.news_scan ? (
                 <p className="text-xs text-gray-500 mt-1">
-                  {isHe ? "טרם נרשמה ריצה." : "No pass recorded yet."}
+                  {t("No pass recorded yet.", "טרם נרשמה ריצה.")}
                 </p>
               ) : (
                 <>
                   <p className={`text-xs mt-1 ${
                     (taScan.news_scan.minutes_ago ?? 999) <= 45 ? "text-green-400" : "text-yellow-400"
                   }`}>
-                    {isHe ? "ריצה אחרונה: לפני " : "Last run: "}
+                    {t("Last run: ", "ריצה אחרונה: לפני ")}
                     {taScan.news_scan.minutes_ago != null
-                      ? `${taScan.news_scan.minutes_ago} ${isHe ? "דקות" : "min ago"}`
+                      ? `${taScan.news_scan.minutes_ago} ${t("min ago", "דקות")}`
                       : "—"}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
@@ -858,14 +845,14 @@ const FundDashboard: React.FC = () => {
                 reasoning about which it might be. */}
             <div className="mt-4 pt-4 border-t border-gray-800">
               <p className="text-sm text-gray-300">
-                {isHe ? "בדיקת מצב התראות למניה" : "Alert state for one symbol"}
+                {t("Alert state for one symbol", "בדיקת מצב התראות למניה")}
               </p>
               <div className="flex items-center gap-2 mt-2">
                 <input
                   value={sigSymbol}
                   onChange={(e) => setSigSymbol(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") checkSignalState(); }}
-                  placeholder={isHe ? "סימול (למשל GOOGL)" : "Symbol (e.g. GOOGL)"}
+                  placeholder={t("Symbol (e.g. GOOGL)", "סימול (למשל GOOGL)")}
                   className="flex-1 px-3 py-1.5 rounded-lg text-xs bg-gray-900 text-gray-200 border border-gray-800 placeholder-gray-600 focus:border-blue-600 focus:outline-none"
                 />
                 <button
@@ -873,7 +860,7 @@ const FundDashboard: React.FC = () => {
                   disabled={!sigSymbol.trim()}
                   className="shrink-0 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-blue-300 border border-gray-700 hover:border-blue-700 disabled:text-gray-600"
                 >
-                  {isHe ? "בדוק" : "Check"}
+                  {t("Check", "בדוק")}
                 </button>
               </div>
               {sigState && (
@@ -883,27 +870,27 @@ const FundDashboard: React.FC = () => {
                   ) : (
                     <>
                       <p className="text-gray-300">
-                        <span className="text-gray-500">{isHe ? "סיגנל מאושר אחרון: " : "Confirmed signal: "}</span>
-                        <span dir="ltr">{sigState.confirmed_signal || (isHe ? "— אין" : "— none")}</span>
+                        <span className="text-gray-500">{t("Confirmed signal: ", "סיגנל מאושר אחרון: ")}</span>
+                        <span dir="ltr">{sigState.confirmed_signal || (t("— none", "— אין"))}</span>
                       </p>
                       <p className="text-gray-300">
-                        <span className="text-gray-500">{isHe ? "שינוי ממתין לאימות: " : "Pending change: "}</span>
+                        <span className="text-gray-500">{t("Pending change: ", "שינוי ממתין לאימות: ")}</span>
                         <span dir="ltr">
                           {sigState.pending_change
                             ? `${sigState.pending_change.signal} (×${sigState.pending_change.count ?? 1})`
-                            : (isHe ? "אין" : "none")}
+                            : (t("none", "אין"))}
                         </span>
                       </p>
                       <p className="text-gray-300">
-                        <span className="text-gray-500">{isHe ? "צינון פעיל: " : "Cooldown: "}</span>
+                        <span className="text-gray-500">{t("Cooldown: ", "צינון פעיל: ")}</span>
                         <span dir="ltr">
                           {sigState.cooldown_signal
                             ? `${sigState.cooldown_signal} · ${Math.ceil((sigState.cooldown_expires_in_seconds || 0) / 60)}m`
-                            : (isHe ? "אין" : "none")}
+                            : (t("none", "אין"))}
                         </span>
                       </p>
                       <p className={sigState.recipients?.holders + sigState.recipients?.watchers_with_alerts_on > 0 ? "text-gray-300" : "text-red-400"}>
-                        <span className="text-gray-500">{isHe ? "נמענים: " : "Recipients: "}</span>
+                        <span className="text-gray-500">{t("Recipients: ", "נמענים: ")}</span>
                         {isHe
                           ? `${sigState.recipients?.holders ?? 0} מחזיקים · ${sigState.recipients?.watchers_with_alerts_on ?? 0} עוקבים עם התראות (מתוך ${sigState.recipients?.on_watchlist_total ?? 0} ברשימת מעקב)`
                           : `${sigState.recipients?.holders ?? 0} holders · ${sigState.recipients?.watchers_with_alerts_on ?? 0} watchers with alerts on (of ${sigState.recipients?.on_watchlist_total ?? 0} watching)`}
@@ -919,19 +906,17 @@ const FundDashboard: React.FC = () => {
                 fortnight is worse than one that costs money. */}
             <div className="mt-4 pt-4 border-t border-gray-800">
               <p className="text-sm text-gray-300">
-                {isHe ? "עצירת ניתוחים בתשלום" : "Pause paid analyses"}
+                {t("Pause paid analyses", "עצירת ניתוחים בתשלום")}
               </p>
               <p className="text-xs text-gray-500 mb-2">
-                {isHe
-                  ? "עוצר את כל הקריאות שעולות כסף (Claude, GPT, Gemini, Grok). הניתוח הטכני וההתראות שלו ממשיכים — הם חינם."
-                  : "Stops every call that costs money (Claude, GPT, Gemini, Grok). The technical scan and its alerts keep running — they are free."}
+                {t("Stops every call that costs money (Claude, GPT, Gemini, Grok). The technical scan and its alerts keep running — they are free.", "עוצר את כל הקריאות שעולות כסף (Claude, GPT, Gemini, Grok). הניתוח הטכני וההתראות שלו ממשיכים — הם חינם.")}
               </p>
               {pause?.paused ? (
                 <div className="rounded-lg bg-yellow-900/20 border border-yellow-700/40 p-2">
                   <p className="text-xs text-yellow-300">
-                    {isHe ? "הניתוחים מושהים" : "Analyses are paused"}
+                    {t("Analyses are paused", "הניתוחים מושהים")}
                     {pause.until
-                      ? ` · ${isHe ? "עד" : "until"} ${new Date(pause.until).toLocaleString(isHe ? "he-IL" : "en-US")}`
+                      ? ` · ${t("until", "עד")} ${new Date(pause.until).toLocaleString(isHe ? "he-IL" : "en-US")}`
                       : ""}
                   </p>
                   <button
@@ -939,7 +924,7 @@ const FundDashboard: React.FC = () => {
                     disabled={pauseBusy}
                     className="mt-2 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-green-300 border border-gray-700 hover:border-green-700 disabled:text-gray-600"
                   >
-                    {isHe ? "חדש ניתוחים עכשיו" : "Resume now"}
+                    {t("Resume now", "חדש ניתוחים עכשיו")}
                   </button>
                 </div>
               ) : (
@@ -967,12 +952,10 @@ const FundDashboard: React.FC = () => {
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm text-gray-300">
-                    {isHe ? "הסרת המלצות ישנות" : "Retire stale recommendations"}
+                    {t("Retire stale recommendations", "הסרת המלצות ישנות")}
                   </p>
                   <p className="text-xs text-gray-500">
-                    {isHe
-                      ? "רץ אוטומטית כל יום ב-06:00 — מעל 30 יום לניתוח מחדש, מעל 45 יום יורד מהפיד"
-                      : "Runs daily at 06:00 — past 30 days re-analysed, past 45 days removed from the feed"}
+                    {t("Runs daily at 06:00 — past 30 days re-analysed, past 45 days removed from the feed", "רץ אוטומטית כל יום ב-06:00 — מעל 30 יום לניתוח מחדש, מעל 45 יום יורד מהפיד")}
                   </p>
                 </div>
                 <button
@@ -980,7 +963,7 @@ const FundDashboard: React.FC = () => {
                   disabled={staleBusy}
                   className="shrink-0 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-blue-300 border border-gray-700 hover:border-blue-700 disabled:text-gray-600"
                 >
-                  {staleBusy ? (isHe ? "מריץ..." : "Running...") : (isHe ? "הרץ עכשיו" : "Run now")}
+                  {staleBusy ? (t("Running...", "מריץ...")) : (t("Run now", "הרץ עכשיו"))}
                 </button>
               </div>
               {staleResult && <p className="text-xs text-gray-400 mt-2">{staleResult}</p>}
@@ -993,12 +976,10 @@ const FundDashboard: React.FC = () => {
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm text-gray-300">
-                    {isHe ? "סוגי מניות (GOOGL/GOOG)" : "Share classes (GOOGL/GOOG)"}
+                    {t("Share classes (GOOGL/GOOG)", "סוגי מניות (GOOGL/GOOG)")}
                   </p>
                   <p className="text-xs text-gray-500">
-                    {isHe
-                      ? "מושך מזהי חברה מה-SEC. בלעדיהם המערכת לא יודעת ששתי מניות הן אותה חברה"
-                      : "Fetches SEC issuer ids. Without them the system cannot tell two tickers are one company"}
+                    {t("Fetches SEC issuer ids. Without them the system cannot tell two tickers are one company", "מושך מזהי חברה מה-SEC. בלעדיהם המערכת לא יודעת ששתי מניות הן אותה חברה")}
                   </p>
                 </div>
                 <button
@@ -1006,7 +987,7 @@ const FundDashboard: React.FC = () => {
                   disabled={cikBusy}
                   className="shrink-0 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-blue-300 border border-gray-700 hover:border-blue-700 disabled:text-gray-600"
                 >
-                  {cikBusy ? (isHe ? "מריץ..." : "Running...") : (isHe ? "הרץ עכשיו" : "Run now")}
+                  {cikBusy ? (t("Running...", "מריץ...")) : (t("Run now", "הרץ עכשיו"))}
                 </button>
               </div>
               {cikResult && <p className="text-xs text-gray-400 mt-2">{cikResult}</p>}
@@ -1023,7 +1004,7 @@ const FundDashboard: React.FC = () => {
                   onClick={handleDiagnose}
                   className="px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-gray-300 border border-gray-700 hover:border-gray-500"
                 >
-                  {isHe ? "בדוק סימבול" : "Check symbol"}
+                  {t("Check symbol", "בדוק סימבול")}
                 </button>
               </div>
               {diagResult && (
@@ -1048,13 +1029,13 @@ const FundDashboard: React.FC = () => {
                         same — and they call for completely different
                         follow-ups. */}
                     {d.login_count > 0 ? (
-                      <span className="text-green-400" title={`${d.login_count} ${isHe ? "כניסות" : "logins"}`}>
-                        {isHe ? "נכנס " : "used "}
+                      <span className="text-green-400" title={`${d.login_count} ${t("logins", "כניסות")}`}>
+                        {t("used ", "נכנס ")}
                         {new Date(d.last_login_at!).toLocaleDateString(isHe ? "he-IL" : "en-US")}
                         {d.login_count > 1 ? ` ×${d.login_count}` : ""}
                       </span>
                     ) : (
-                      <span className="text-gray-600">{isHe ? "טרם נכנס" : "not used yet"}</span>
+                      <span className="text-gray-600">{t("not used yet", "טרם נכנס")}</span>
                     )}
                     <div className="flex-1" />
                     {d.is_active ? (
@@ -1062,10 +1043,10 @@ const FundDashboard: React.FC = () => {
                         onClick={() => handleRevokeDemo(d.id, d.email)}
                         className="text-red-400 hover:text-red-300 border border-gray-800 rounded px-2 py-0.5"
                       >
-                        {isHe ? "בטל גישה" : "Revoke"}
+                        {t("Revoke", "בטל גישה")}
                       </button>
                     ) : (
-                      <span className="text-gray-600">{isHe ? "בוטל" : "revoked"}</span>
+                      <span className="text-gray-600">{t("revoked", "בוטל")}</span>
                     )}
                   </div>
                 ))}
@@ -1077,7 +1058,7 @@ const FundDashboard: React.FC = () => {
             <div className={`mt-3 p-3 rounded-xl text-xs ${universeResult.error ? "bg-red-900/20 text-red-400" : "bg-green-900/20 text-green-400"}`}>
               {universeResult.error
                 ? universeResult.error
-                : `${isHe ? "נוספו" : "Inserted"} ${universeResult.inserted} | ${isHe ? "עודכנו" : "Updated"} ${universeResult.updated ?? 0} | ${isHe ? "סה\"כ" : "Total"} ${universeResult.total ?? ""}`}
+                : `${t("Inserted", "נוספו")} ${universeResult.inserted} | ${t("Updated", "עודכנו")} ${universeResult.updated ?? 0} | ${t("Total", "סה\"כ")} ${universeResult.total ?? ""}`}
             </div>
           )}
         </div>
@@ -1085,13 +1066,13 @@ const FundDashboard: React.FC = () => {
         {/* Pre-Screener Control */}
         <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold">{isHe ? "פרה-סקרינר" : "Pre-Screener"}</h2>
+            <h2 className="font-bold">{t("Pre-Screener", "פרה-סקרינר")}</h2>
             <button
               onClick={handleRunScreener}
               disabled={screenerRunning}
               className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
             >
-              {screenerRunning ? (isHe ? "מריץ..." : "Running...") : (isHe ? "הרץ עכשיו" : "Run Now")}
+              {screenerRunning ? (t("Running...", "מריץ...")) : (t("Run Now", "הרץ עכשיו"))}
             </button>
           </div>
 
@@ -1100,7 +1081,7 @@ const FundDashboard: React.FC = () => {
               <div className="flex items-center gap-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
                 <p className="text-xs text-blue-300">
-                  {screenerStatus.phase || (isHe ? "רץ..." : "Running...")}
+                  {screenerStatus.phase || (t("Running...", "רץ..."))}
                 </p>
               </div>
               {screenerStatus.downloaded != null && screenerStatus.universe_size ? (
@@ -1116,22 +1097,18 @@ const FundDashboard: React.FC = () => {
                 </div>
               ) : null}
               <p className="text-xs text-gray-500 mt-2">
-                {isHe
-                  ? "ההרצה לוקחת כמה דקות ורצה בשרת — אפשר לעזוב את הדף ולחזור."
-                  : "The run takes a few minutes on the server — you can leave the page and come back."}
+                {t("The run takes a few minutes on the server — you can leave the page and come back.", "ההרצה לוקחת כמה דקות ורצה בשרת — אפשר לעזוב את הדף ולחזור.")}
               </p>
             </div>
           )}
           <p className="text-xs text-gray-400 mb-4">
-            {isHe
-              ? "רץ כל יום שלישי — יום לפני הסריקה השבועית — ומדרג את כל ~900 מניות היקום לפי מומנטום (50% מומנטום 3 חודשים, 30% מומנטום 6 חודשים, 20% נפח) ובוחר את המאגר הפעיל: 80 החזקות ביותר ללונג + 20 החלשות ביותר לשורט. מניה שנכנסה למאגר נשארת בו לפחות שבוע — כך היא מובטחת להיכלל בסריקה השבועית המעמיקה ולא נופלת בין הכיסאות."
-              : "Runs every Tuesday, the day before the weekly scan, ranking all ~900 universe stocks by momentum (50% 3-month, 30% 6-month, 20% volume) and selects the active pool: top 80 for LONG + weakest 20 for SHORT. A stock that enters the pool is held for at least a week, so it is guaranteed to be covered by the weekly deep scan."}
+            {t("Runs every Tuesday, the day before the weekly scan, ranking all ~900 universe stocks by momentum (50% 3-month, 30% 6-month, 20% volume) and selects the active pool: top 80 for LONG + weakest 20 for SHORT. A stock that enters the pool is held for at least a week, so it is guaranteed to be covered by the weekly deep scan.", "רץ כל יום שלישי — יום לפני הסריקה השבועית — ומדרג את כל ~900 מניות היקום לפי מומנטום (50% מומנטום 3 חודשים, 30% מומנטום 6 חודשים, 20% נפח) ובוחר את המאגר הפעיל: 80 החזקות ביותר ללונג + 20 החלשות ביותר לשורט. מניה שנכנסה למאגר נשארת בו לפחות שבוע — כך היא מובטחת להיכלל בסריקה השבועית המעמיקה ולא נופלת בין הכיסאות.")}
           </p>
 
           {universeStats?.pool_changes?.ran_at && (
             <div className="mb-4 bg-gray-800/50 rounded-xl p-3 space-y-2">
               <p className="text-xs text-gray-500 uppercase tracking-wide">
-                {isHe ? "שינויים בהרצה האחרונה" : "Last run changes"}
+                {t("Last run changes", "שינויים בהרצה האחרונה")}
                 {" · "}
                 {new Date(universeStats.pool_changes.ran_at).toLocaleString(isHe ? "he-IL" : "en-US")}
               </p>
@@ -1146,7 +1123,7 @@ const FundDashboard: React.FC = () => {
                 return (
                   <div className="border-b border-gray-700/60 pb-2">
                     <p className="text-xs text-gray-400">
-                      {isHe ? "נתוני מחיר נמשכו עבור" : "Price data fetched for"}{" "}
+                      {t("Price data fetched for", "נתוני מחיר נמשכו עבור")}{" "}
                       <span className={`font-bold ${tone}`}>
                         {fetched}/{size} ({pct}%)
                       </span>
@@ -1154,16 +1131,12 @@ const FundDashboard: React.FC = () => {
                     {universeStats.pool_changes.aborted ? (
                       <p className="text-xs text-yellow-400 mt-0.5">
                         {universeStats.pool_changes.abort_reason ||
-                          (isHe
-                            ? "לא היו מספיק נתונים לדירוג — המאגר נשאר ללא שינוי."
-                            : "Not enough data to rank — the pool was left unchanged.")}
+                          (t("Not enough data to rank — the pool was left unchanged.", "לא היו מספיק נתונים לדירוג — המאגר נשאר ללא שינוי."))}
                       </p>
                     ) : pct < 90 ? (
                       <div className="mt-0.5 space-y-1">
                         <p className="text-xs text-gray-500">
-                          {isHe
-                            ? "ספק הנתונים הגביל חלק מהבקשות — הדירוג נקבע על בסיס חלקי. מניה בלי נתוני מחיר לא נכנסת למאגר."
-                            : "The data provider throttled some requests — the ranking was decided on partial data. A stock without price data is not activated into the pool."}
+                          {t("The data provider throttled some requests — the ranking was decided on partial data. A stock without price data is not activated into the pool.", "ספק הנתונים הגביל חלק מהבקשות — הדירוג נקבע על בסיס חלקי. מניה בלי נתוני מחיר לא נכנסת למאגר.")}
                         </p>
                         {(universeStats.pool_changes.no_data_sample?.length ?? 0) > 0 && (
                           <details className="text-xs">
@@ -1189,7 +1162,7 @@ const FundDashboard: React.FC = () => {
 
               <div>
                 <p className="text-xs text-green-400 mb-1">
-                  {isHe ? "נכנסו" : "Entered"} ({universeStats.pool_changes.entered.length})
+                  {t("Entered", "נכנסו")} ({universeStats.pool_changes.entered.length})
                 </p>
                 {universeStats.pool_changes.entered.length > 0 ? (
                   <div className="flex flex-wrap gap-1">
@@ -1200,13 +1173,13 @@ const FundDashboard: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-600">{isHe ? "אין" : "None"}</p>
+                  <p className="text-xs text-gray-600">{t("None", "אין")}</p>
                 )}
               </div>
 
               <div>
                 <p className="text-xs text-red-400 mb-1">
-                  {isHe ? "יצאו" : "Exited"} ({universeStats.pool_changes.exited.length})
+                  {t("Exited", "יצאו")} ({universeStats.pool_changes.exited.length})
                 </p>
                 {universeStats.pool_changes.exited.length > 0 ? (
                   <div className="flex flex-wrap gap-1">
@@ -1217,7 +1190,7 @@ const FundDashboard: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-600">{isHe ? "אין" : "None"}</p>
+                  <p className="text-xs text-gray-600">{t("None", "אין")}</p>
                 )}
               </div>
 
@@ -1230,9 +1203,7 @@ const FundDashboard: React.FC = () => {
               )}
 
               <p className="text-xs text-gray-500 border-t border-gray-700/60 pt-2">
-                {isHe
-                  ? "⚠️ הרשימה הזאת היא תקציב סריקה בלבד — היא קובעת על אילו מניות מושקע ניתוח AI מעמיק השבוע. יציאה מהרשימה אינה המלצת מכירה. מניה שמשתמש מחזיק או שיש עליה המלצה פעילה ממשיכה להיות מנותחת גם מחוץ למאגר, והמלצת מכירה מגיעה רק מניתוח בפועל."
-                  : "⚠️ This list is a scanning budget only — it decides which stocks get deep AI analysis this week. Leaving it is NOT a sell signal. A stock a user holds, or one with a live recommendation, keeps being analyzed even outside the pool; a sell only ever comes from an actual analysis."}
+                {t("⚠️ This list is a scanning budget only — it decides which stocks get deep AI analysis this week. Leaving it is NOT a sell signal. A stock a user holds, or one with a live recommendation, keeps being analyzed even outside the pool; a sell only ever comes from an actual analysis.", "⚠️ הרשימה הזאת היא תקציב סריקה בלבד — היא קובעת על אילו מניות מושקע ניתוח AI מעמיק השבוע. יציאה מהרשימה אינה המלצת מכירה. מניה שמשתמש מחזיק או שיש עליה המלצה פעילה ממשיכה להיות מנותחת גם מחוץ למאגר, והמלצת מכירה מגיעה רק מניתוח בפועל.")}
               </p>
             </div>
           )}
@@ -1267,7 +1238,7 @@ const FundDashboard: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <p className="text-xs text-gray-500">
                       {poolLoading
-                        ? (isHe ? "טוען..." : "Loading...")
+                        ? (t("Loading...", "טוען..."))
                         : isHe
                         ? `${pool?.analyzed ?? 0} מתוך ${pool?.count ?? 0} כבר נותחו`
                         : `${pool?.analyzed ?? 0} of ${pool?.count ?? 0} already analyzed`}
@@ -1276,7 +1247,7 @@ const FundDashboard: React.FC = () => {
                       onClick={() => setPoolOpen(false)}
                       className="text-xs text-gray-400 hover:text-gray-300"
                     >
-                      {isHe ? "סגור" : "Collapse"}
+                      {t("Collapse", "סגור")}
                     </button>
                   </div>
 
@@ -1286,9 +1257,9 @@ const FundDashboard: React.FC = () => {
                       const buySide = a && ["BUY", "STRONG_BUY"].includes(a.recommendation_type);
                       const sellSide = a && ["SELL", "STRONG_SELL"].includes(a.recommendation_type);
                       const verdict = !a
-                        ? (isHe ? "טרם נותחה" : "not analyzed yet")
+                        ? (t("not analyzed yet", "טרם נותחה"))
                         : a.status === "REJECTED"
-                        ? (isHe ? "נדחתה בוועדה" : "rejected")
+                        ? (t("rejected", "נדחתה בוועדה"))
                         : a.recommendation_type;
                       return (
                         <div
@@ -1313,18 +1284,18 @@ const FundDashboard: React.FC = () => {
                                 to={`/research/${a.recommendation_id}`}
                                 className="px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-300 hover:bg-blue-900/70"
                               >
-                                {isHe ? "כלכלי" : "Fundamental"}
+                                {t("Fundamental", "כלכלי")}
                               </Link>
                               <Link
                                 to={`/technical/${a.recommendation_id}`}
                                 className="px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300 hover:bg-purple-900/70"
                               >
-                                {isHe ? "טכני" : "Technical"}
+                                {t("Technical", "טכני")}
                               </Link>
                             </div>
                           ) : (
                             <span className="text-gray-600 shrink-0">
-                              {isHe ? "בתור לסריקה" : "queued"}
+                              {t("queued", "בתור לסריקה")}
                             </span>
                           )}
                         </div>
@@ -1338,10 +1309,10 @@ const FundDashboard: React.FC = () => {
             <div className="flex flex-col items-center justify-center py-6 text-center mb-4">
               <p className="text-2xl mb-2">📭</p>
               <p className="text-sm text-gray-400 font-medium">
-                {isHe ? "הסקרינר טרם רץ" : "Screener hasn't run yet"}
+                {t("Screener hasn't run yet", "הסקרינר טרם רץ")}
               </p>
               <p className="text-xs text-gray-600 mt-1">
-                {isHe ? "לחץ 'הרץ עכשיו' לבצע סינון ראשוני" : "Click 'Run Now' to score the universe"}
+                {t("Click 'Run Now' to score the universe", "לחץ 'הרץ עכשיו' לבצע סינון ראשוני")}
               </p>
             </div>
           ) : null}
@@ -1350,9 +1321,9 @@ const FundDashboard: React.FC = () => {
             <div className={`p-3 rounded-xl text-xs ${screenerResult.error ? "bg-red-900/20 text-red-400" : "bg-blue-900/20 text-blue-300"}`}>
               {screenerResult.error ? screenerResult.error : (
                 <span>
-                  {isHe ? "דורגו" : "Scored"} {screenerResult.passed_filter ?? 0} |{" "}
+                  {t("Scored", "דורגו")} {screenerResult.passed_filter ?? 0} |{" "}
                   <span className="text-blue-300">
-                    {isHe ? "במאגר" : "In pool"}: {screenerResult.pool_size ?? screenerResult.selected ?? 0}
+                    {t("In pool", "במאגר")}: {screenerResult.pool_size ?? screenerResult.selected ?? 0}
                   </span>{" "}
                   | <span className="text-green-400">+{screenerResult.entered ?? 0}</span>{" "}
                   <span className="text-red-400">−{screenerResult.exited ?? 0}</span>
@@ -1367,11 +1338,9 @@ const FundDashboard: React.FC = () => {
       <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="font-bold">{isHe ? "מעקב דוחות כספיים" : "Earnings Monitoring"}</h2>
+            <h2 className="font-bold">{t("Earnings Monitoring", "מעקב דוחות כספיים")}</h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              {isHe
-                ? "בודק כל יום ב-07:30. כל חברה שמפרסמת דוח מנותחת מיד — זה המנוע העיקרי. סריקה מלאה על כל היקום רצה כרשת ביטחון כל ~80 יום."
-                : "Checks daily at 07:30. Every company that reports is analyzed immediately — that's the primary engine. A full-universe sweep runs as a safety net every ~80 days."}
+              {t("Checks daily at 07:30. Every company that reports is analyzed immediately — that's the primary engine. A full-universe sweep runs as a safety net every ~80 days.", "בודק כל יום ב-07:30. כל חברה שמפרסמת דוח מנותחת מיד — זה המנוע העיקרי. סריקה מלאה על כל היקום רצה כרשת ביטחון כל ~80 יום.")}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1380,36 +1349,36 @@ const FundDashboard: React.FC = () => {
               disabled={earningsChecking}
               className="text-xs bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
             >
-              {earningsChecking ? (isHe ? "בודק..." : "Checking...") : (isHe ? "בדוק עכשיו" : "Check Now")}
+              {earningsChecking ? (t("Checking...", "בודק...")) : (t("Check Now", "בדוק עכשיו"))}
             </button>
             <button
               onClick={handleRequeueReporters}
               disabled={batchStarting}
               className="text-xs bg-amber-700 hover:bg-amber-600 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
-              title={isHe ? "מחזיר לתור כל חברה שדיווחה ולא נותחה באמת (למשל בזמן נפילת מנוע)" : "Re-queue reporters that never got a real analysis"}
+              title={t("Re-queue reporters that never got a real analysis", "מחזיר לתור כל חברה שדיווחה ולא נותחה באמת (למשל בזמן נפילת מנוע)")}
             >
-              {batchStarting ? (isHe ? "בודק..." : "Checking...") : (isHe ? "נתח דוחות שלא נותחו" : "Re-queue reporters")}
+              {batchStarting ? (t("Checking...", "בודק...")) : (t("Re-queue reporters", "נתח דוחות שלא נותחו"))}
             </button>
             <button
               onClick={handleRunQuarterlyBatch}
               disabled={batchStarting}
               className="text-xs bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
-              title={isHe ? "המשך את אצוות הסריקה הרבעונית של היום (אם נעצרה בפריסה)" : "Resume today's quarterly batch (if a deploy killed it)"}
+              title={t("Resume today's quarterly batch (if a deploy killed it)", "המשך את אצוות הסריקה הרבעונית של היום (אם נעצרה בפריסה)")}
             >
-              {batchStarting ? (isHe ? "מפעיל..." : "Starting...") : (isHe ? "המשך סריקה רבעונית" : "Resume Quarterly Batch")}
+              {batchStarting ? (t("Starting...", "מפעיל...")) : (t("Resume Quarterly Batch", "המשך סריקה רבעונית"))}
             </button>
             <button
               onClick={handleResetEarnings}
               className="text-xs text-red-400 hover:text-red-300 border border-red-900/40 px-2 py-1.5 rounded-lg"
-              title={isHe ? "מחק את כל נתוני הדוחות מ-Redis" : "Clear all earnings data from Redis"}
+              title={t("Clear all earnings data from Redis", "מחק את כל נתוני הדוחות מ-Redis")}
             >
-              {isHe ? "איפוס" : "Reset"}
+              {t("Reset", "איפוס")}
             </button>
             <button
               onClick={loadEarningsStatus}
               className="text-xs text-gray-400 hover:text-gray-200"
             >
-              {isHe ? "רענן" : "Refresh"}
+              {t("Refresh", "רענן")}
             </button>
           </div>
         </div>
@@ -1424,7 +1393,7 @@ const FundDashboard: React.FC = () => {
                 {isHe ? `סריקה רבעונית ${qStatus.quarter}` : `Quarterly sweep ${qStatus.quarter}`}
                 {qStatus.batch_running && (
                   <span className="ml-2 text-purple-300">
-                    {isHe ? "· אצווה רצה כעת" : "· batch running now"}
+                    {t("· batch running now", "· אצווה רצה כעת")}
                   </span>
                 )}
               </span>
@@ -1453,9 +1422,7 @@ const FundDashboard: React.FC = () => {
               : batchResult.started
                 ? (isHe ? `האצווה רצה ברקע — ${batchResult.remaining_before} מניות בתור. עקוב ביומן הסריקות.` : `Batch running — ${batchResult.remaining_before} in queue. Watch the scan log.`)
                 : batchResult.reason === "batch already running"
-                  ? (isHe
-                      ? "אצווה כבר רצה — זו אינה שגיאה. עקוב אחרי הפס למעלה."
-                      : "A batch is already running — this is not an error. Watch the bar above.")
+                  ? (t("A batch is already running — this is not an error. Watch the bar above.", "אצווה כבר רצה — זו אינה שגיאה. עקוב אחרי הפס למעלה."))
                   : (isHe ? `לא הופעל: ${batchResult.reason}${batchResult.remaining != null ? ` (בתור: ${batchResult.remaining})` : ""}` : `Not started: ${batchResult.reason}`)}
           </div>
         )}
@@ -1480,9 +1447,7 @@ const FundDashboard: React.FC = () => {
             {/* FMP not configured warning */}
             {!earningsStatus.fmp_configured && (
               <div className="mb-4 p-3 rounded-xl bg-yellow-900/20 border border-yellow-800/40 text-xs text-yellow-300">
-                {isHe
-                  ? "FMP_API_KEY לא מוגדר — הוסף ב-Railway כדי להפעיל מעקב דוחות"
-                  : "FMP_API_KEY not set — add it in Railway to enable earnings tracking"}
+                {t("FMP_API_KEY not set — add it in Railway to enable earnings tracking", "FMP_API_KEY לא מוגדר — הוסף ב-Railway כדי להפעיל מעקב דוחות")}
               </div>
             )}
 
@@ -1499,7 +1464,7 @@ const FundDashboard: React.FC = () => {
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-sm font-medium">
-                      {isHe ? "דוחות שנותחו" : "Reporters analyzed"}
+                      {t("Reporters analyzed", "דוחות שנותחו")}
                     </span>
                     <span className="text-sm font-bold">
                       {done}
@@ -1538,9 +1503,7 @@ const FundDashboard: React.FC = () => {
               ) : (
                 <div className="inline-flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1.5 text-xs text-gray-400">
                   <span className="w-2 h-2 bg-gray-500 rounded-full" />
-                  {isHe
-                    ? "אין סריקה מלאה פעילה — דוחות חדשים מנותחים מיד עם פרסומם"
-                    : "No full sweep running — new reports are analyzed as they arrive"}
+                  {t("No full sweep running — new reports are analyzed as they arrive", "אין סריקה מלאה פעילה — דוחות חדשים מנותחים מיד עם פרסומם")}
                 </div>
               )}
             </div>
@@ -1550,7 +1513,7 @@ const FundDashboard: React.FC = () => {
               <div className="mb-3">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs text-gray-500 uppercase tracking-wide">
-                    {isHe ? "פרסמו דוחות — סטטוס ניתוח" : "Reported — analysis status"}
+                    {t("Reported — analysis status", "פרסמו דוחות — סטטוס ניתוח")}
                   </p>
                   <p className="text-xs text-gray-400">
                     {isHe
@@ -1562,14 +1525,14 @@ const FundDashboard: React.FC = () => {
                   {earningsStatus.companies.map((c: any) => {
                     const done = c.analyzed;
                     const badge = done
-                      ? { txt: isHe ? "✓ נותחה" : "✓ analyzed", cls: "text-green-300 bg-green-900/30 border-green-800/40" }
+                      ? { txt: t("✓ analyzed", "✓ נותחה"), cls: "text-green-300 bg-green-900/30 border-green-800/40" }
                       : c.queued
-                        ? { txt: isHe ? "⏳ בתור" : "⏳ queued", cls: "text-yellow-300 bg-yellow-900/20 border-yellow-800/40" }
-                        : { txt: isHe ? "• ממתינה" : "• pending", cls: "text-gray-400 bg-gray-800/40 border-gray-700" };
+                        ? { txt: t("⏳ queued", "⏳ בתור"), cls: "text-yellow-300 bg-yellow-900/20 border-yellow-800/40" }
+                        : { txt: t("• pending", "• ממתינה"), cls: "text-gray-400 bg-gray-800/40 border-gray-700" };
                     return (
                       <div key={c.symbol} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 border ${done ? "bg-green-900/10 border-green-900/30" : "bg-gray-800/30 border-gray-800"}`}>
                         <span className="font-mono font-bold text-xs text-white w-14">{c.symbol}</span>
-                        <span className="text-xs text-gray-500" title={isHe ? "תאריך הדוח" : "report date"}>
+                        <span className="text-xs text-gray-500" title={t("report date", "תאריך הדוח")}>
                           {c.earnings_date}
                         </span>
                         {/* The analysis date makes the claim checkable: it has
@@ -1577,7 +1540,7 @@ const FundDashboard: React.FC = () => {
                         {c.analyzed_at && (
                           <span
                             className="text-[10px] text-gray-600"
-                            title={isHe ? "תאריך הניתוח" : "analysis date"}
+                            title={t("analysis date", "תאריך הניתוח")}
                           >
                             ← {c.analyzed_at}
                           </span>
@@ -1588,9 +1551,7 @@ const FundDashboard: React.FC = () => {
                   })}
                 </div>
                 <p className="text-[11px] text-gray-600 mt-1.5">
-                  {isHe
-                    ? "כל חברה שדיווחה מנותחת בסופו של דבר; המדווחות מקבלות עדיפות בתור. 'בתור' = ממתינה לניתוח בסבב הקרוב."
-                    : "Every reporter is analyzed eventually; reporters get queue priority. 'queued' = awaiting analysis in an upcoming batch."}
+                  {t("Every reporter is analyzed eventually; reporters get queue priority. 'queued' = awaiting analysis in an upcoming batch.", "כל חברה שדיווחה מנותחת בסופו של דבר; המדווחות מקבלות עדיפות בתור. 'בתור' = ממתינה לניתוח בסבב הקרוב.")}
                 </p>
               </div>
             )}
@@ -1599,7 +1560,7 @@ const FundDashboard: React.FC = () => {
             {earningsStatus.pending?.length > 0 && (
               <div>
                 <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">
-                  {isHe ? "עתידיים — ממתינים לפרסום" : "Upcoming — not yet reported"}
+                  {t("Upcoming — not yet reported", "עתידיים — ממתינים לפרסום")}
                 </p>
                 <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1">
                   {earningsStatus.pending.map((c: any) => (
@@ -1615,14 +1576,14 @@ const FundDashboard: React.FC = () => {
             {/* Last check */}
             {earningsStatus.last_check && (
               <p className="text-xs text-gray-600 mt-3">
-                {isHe ? "בדיקה אחרונה:" : "Last check:"}{" "}
+                {t("Last check:", "בדיקה אחרונה:")}{" "}
                 {new Date(earningsStatus.last_check).toLocaleString(isHe ? "he-IL" : "en-US")}
               </p>
             )}
           </>
         ) : (
           <div className="text-center py-6 text-gray-500 text-sm">
-            {isHe ? "טוען נתוני דוחות..." : "Loading earnings data..."}
+            {t("Loading earnings data...", "טוען נתוני דוחות...")}
           </div>
         )}
       </div>
@@ -1631,33 +1592,31 @@ const FundDashboard: React.FC = () => {
       <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
-            <h2 className="font-bold mb-1">{isHe ? "סריקת AI מלאה" : "Run Full AI Scan"}</h2>
+            <h2 className="font-bold mb-1">{t("Run Full AI Scan", "סריקת AI מלאה")}</h2>
             <p className="text-xs text-gray-400 mb-2">
-              {isHe
-                ? "מריץ ניתוח AI מלא על המניות שבמאגר הסריקה (80 LONG + 20 SHORT, ועד 140 עם המניות המוחזקות) — 3 במקביל עד סיום. מניה שנותחה ב-14 הימים האחרונים מדולגת, אלא אם פרסמה דוח מאז. כיסוי כל היקום נעשה בסריקה הרבעונית, לא כאן."
-                : "Runs full AI analysis on the stocks in the scan pool (80 LONG + 20 SHORT, up to 140 with sticky holds) — 3 concurrent until done. A stock analyzed in the last 14 days is skipped unless it has reported since. Full-universe coverage comes from the quarterly sweep, not from here."}
+              {t("Runs full AI analysis on the stocks in the scan pool (80 LONG + 20 SHORT, up to 140 with sticky holds) — 3 concurrent until done. A stock analyzed in the last 14 days is skipped unless it has reported since. Full-universe coverage comes from the quarterly sweep, not from here.", "מריץ ניתוח AI מלא על המניות שבמאגר הסריקה (80 LONG + 20 SHORT, ועד 140 עם המניות המוחזקות) — 3 במקביל עד סיום. מניה שנותחה ב-14 הימים האחרונים מדולגת, אלא אם פרסמה דוח מאז. כיסוי כל היקום נעשה בסריקה הרבעונית, לא כאן.")}
             </p>
             <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-800/50 rounded-lg px-3 py-2 w-fit flex-wrap">
               <span className="text-blue-400">1.</span>
-              <span>{isHe ? "רענן יקום" : "Refresh Universe"}</span>
+              <span>{t("Refresh Universe", "רענן יקום")}</span>
               <span className="text-gray-700">→</span>
               <span className="text-blue-400">2.</span>
-              <span>{isHe ? "הרץ סקרינר" : "Run Screener"}</span>
+              <span>{t("Run Screener", "הרץ סקרינר")}</span>
               <span className="text-gray-700">→</span>
               <span className="text-green-400">3.</span>
-              <span className="text-green-400 font-medium">{isHe ? "סרוק עכשיו" : "Scan Now"}</span>
+              <span className="text-green-400 font-medium">{t("Scan Now", "סרוק עכשיו")}</span>
             </div>
 
             {/* Live progress during scan */}
             {scanRunning && scanStatus && scanStatus.scanned > 0 && (
               <div className="mt-3 p-3 rounded-xl bg-blue-900/20 border border-blue-900/30 text-xs text-blue-300 space-y-1">
                 <p className="font-medium">
-                  {isHe ? "סורק..." : "Scanning..."} ({scanStatus.scanned}/{scanStatus.total})
+                  {t("Scanning...", "סורק...")} ({scanStatus.scanned}/{scanStatus.total})
                 </p>
                 <p>
-                  <span className="text-green-400">{isHe ? "אושרו" : "Approved"}: {scanStatus.approved}</span>{" "}|{" "}
-                  <span className="text-red-400">{isHe ? "נדחו" : "Rejected"}: {scanStatus.rejected}</span>
-                  {scanStatus.errors > 0 && <span className="text-yellow-400"> | {isHe ? "שגיאות" : "Errors"}: {scanStatus.errors}</span>}
+                  <span className="text-green-400">{t("Approved", "אושרו")}: {scanStatus.approved}</span>{" "}|{" "}
+                  <span className="text-red-400">{t("Rejected", "נדחו")}: {scanStatus.rejected}</span>
+                  {scanStatus.errors > 0 && <span className="text-yellow-400"> | {t("Errors", "שגיאות")}: {scanStatus.errors}</span>}
                 </p>
                 {scanStatus.symbols_done?.length > 0 && (
                   <p className="font-mono text-gray-400 break-all">{scanStatus.symbols_done.slice(-10).join(", ")}</p>
@@ -1668,11 +1627,11 @@ const FundDashboard: React.FC = () => {
             {/* Final result */}
             {!scanRunning && scanResult?.done && scanStatus && (
               <div className="mt-3 p-3 rounded-xl bg-green-900/20 border border-green-900/30 text-xs text-green-300 space-y-1">
-                <p className="font-medium text-green-400">✓ {isHe ? "הסריקה הושלמה!" : "Scan complete!"}</p>
+                <p className="font-medium text-green-400">✓ {t("Scan complete!", "הסריקה הושלמה!")}</p>
                 <p>
-                  {isHe ? "נסרקו" : "Scanned"}: <strong>{scanStatus.scanned}</strong> |{" "}
-                  <span className="text-green-400">{isHe ? "אושרו" : "Approved"}: {scanStatus.approved}</span> |{" "}
-                  <span className="text-red-400">{isHe ? "נדחו" : "Rejected"}: {scanStatus.rejected}</span>
+                  {t("Scanned", "נסרקו")}: <strong>{scanStatus.scanned}</strong> |{" "}
+                  <span className="text-green-400">{t("Approved", "אושרו")}: {scanStatus.approved}</span> |{" "}
+                  <span className="text-red-400">{t("Rejected", "נדחו")}: {scanStatus.rejected}</span>
                 </p>
               </div>
             )}
@@ -1685,9 +1644,7 @@ const FundDashboard: React.FC = () => {
 
             {!scanRunning && !scanResult && (
               <p className="text-xs text-gray-600 mt-3">
-                {isHe
-                  ? "הסריקה רצה אוטומטית כל יום רביעי ב-09:00 שעון ישראל"
-                  : "Scan runs automatically every Wednesday at 09:00 Israel time"}
+                {t("Scan runs automatically every Wednesday at 09:00 Israel time", "הסריקה רצה אוטומטית כל יום רביעי ב-09:00 שעון ישראל")}
               </p>
             )}
 
@@ -1700,12 +1657,12 @@ const FundDashboard: React.FC = () => {
             {scanRunning ? (
               <>
                 <span className="animate-spin">⟳</span>
-                {isHe ? "סורק..." : "Scanning..."}
+                {t("Scanning...", "סורק...")}
               </>
             ) : (
               <>
                 <span>⚡</span>
-                {isHe ? "סרוק עכשיו" : "Scan Now"}
+                {t("Scan Now", "סרוק עכשיו")}
               </>
             )}
           </button>
@@ -1717,17 +1674,15 @@ const FundDashboard: React.FC = () => {
       {/* Simulation Panel */}
       <div className="bg-gray-900 rounded-2xl p-6 border border-purple-900/40">
         <h2 className="font-bold mb-1 text-purple-300">
-          {isHe ? "🧪 לוח סימולציה — בדיקת זרימה מלאה" : "🧪 Simulation Panel — Full Flow Test"}
+          {t("🧪 Simulation Panel — Full Flow Test", "🧪 לוח סימולציה — בדיקת זרימה מלאה")}
         </h2>
         <p className="text-xs text-gray-400 mb-5">
-          {isHe
-            ? "בדוק את כל המערכת מקצה לקצה: סריקת מניה → רשימת מאסטר → פוזיציה → TA Alert → התראה"
-            : "Test the full system: stock scan → master list → position → TA alert → notification"}
+          {t("Test the full system: stock scan → master list → position → TA alert → notification", "בדוק את כל המערכת מקצה לקצה: סריקת מניה → רשימת מאסטר → פוזיציה → TA Alert → התראה")}
         </p>
 
         {/* Symbol input */}
         <div className="mb-5 flex items-center gap-3">
-          <label className="text-xs text-gray-400 w-24">{isHe ? "מניה לבדיקה:" : "Test symbol:"}</label>
+          <label className="text-xs text-gray-400 w-24">{t("Test symbol:", "מניה לבדיקה:")}</label>
           <input
             value={simSymbol}
             onChange={e => setSimSymbol(e.target.value.toUpperCase())}
@@ -1741,7 +1696,7 @@ const FundDashboard: React.FC = () => {
             {
               step: 1,
               icon: "⚡",
-              title: isHe ? "הרץ סריקת AI מלאה" : "Run Full AI Scan",
+              title: t("Run Full AI Scan", "הרץ סריקת AI מלאה"),
               desc: isHe ? `Claude מנתח את ${simSymbol} ומחליט BUY/SELL/HOLD` : `Claude analyzes ${simSymbol} and decides BUY/SELL/HOLD`,
               action: async () => {
                 const r = await marketApi.scanPoolNow();
@@ -1759,21 +1714,21 @@ const FundDashboard: React.FC = () => {
             {
               step: 4,
               icon: "📊",
-              title: isHe ? "הפעל TA Scan עכשיו" : "Run TA Scan Now",
-              desc: isHe ? "ניתוח טכני מיידי — אם יש סיגנל BUY/SELL תקבל התראה" : "Immediate technical analysis — if BUY/SELL signal, you get an alert",
+              title: t("Run TA Scan Now", "הפעל TA Scan עכשיו"),
+              desc: t("Immediate technical analysis — if BUY/SELL signal, you get an alert", "ניתוח טכני מיידי — אם יש סיגנל BUY/SELL תקבל התראה"),
               action: async () => marketApi.simulateTaScan(),
             },
             {
               step: 5,
               icon: "🔔",
-              title: isHe ? "שלח התראת בדיקה" : "Send Test Notification",
-              desc: isHe ? "שולח התראה ישירה לכל הערוצים (Push + SMS + Email + תיבת דואר)" : "Sends alert to all channels (Push + SMS + Email + Inbox)",
+              title: t("Send Test Notification", "שלח התראת בדיקה"),
+              desc: t("Sends alert to all channels (Push + SMS + Email + Inbox)", "שולח התראה ישירה לכל הערוצים (Push + SMS + Email + תיבת דואר)"),
               action: async () => marketApi.simulateTestNotification(),
             },
             {
               step: 6,
               icon: "🧠",
-              title: isHe ? "בדיקת 3 מנועי ה-AI" : "AI Engines Check",
+              title: t("AI Engines Check", "בדיקת 3 מנועי ה-AI"),
               desc: isHe
                 ? `ניתוח אמיתי מלא של ${simSymbol} — מוודא ש-Claude, GPT (חדשות) ו-Gemini (מאקרו) כולם פועלים. לוקח 1-3 דקות ועולה ~10-25 סנט`
                 : `Real full analysis of ${simSymbol} — verifies Claude, GPT (news) and Gemini (macro) all fire. Takes 1-3 min, costs ~$0.10-0.25`,
@@ -1782,16 +1737,14 @@ const FundDashboard: React.FC = () => {
             {
               step: 7,
               icon: "🛠️",
-              title: isHe ? "בדיקת ערוץ אדמין + תקציב" : "Admin Channel + Budget Check",
-              desc: isHe
-                ? "שולח הודעת בדיקה לערוץ האדמין ומציג את ההוצאה היומית המוערכת והתקרה"
-                : "Sends a test message to the admin channel and shows today's estimated spend + cap",
+              title: t("Admin Channel + Budget Check", "בדיקת ערוץ אדמין + תקציב"),
+              desc: t("Sends a test message to the admin channel and shows today's estimated spend + cap", "שולח הודעת בדיקה לערוץ האדמין ומציג את ההוצאה היומית המוערכת והתקרה"),
               action: async () => marketApi.simulateTestAdminAlert(),
             },
             {
               step: 8,
               icon: "📡",
-              title: isHe ? "בדיקת מקורות מחיר" : "Price Sources Check",
+              title: t("Price Sources Check", "בדיקת מקורות מחיר"),
               desc: isHe
                 ? `בודק אחד-אחד את Yahoo, Alpaca, FMP, Finnhub ו-Polygon על ${simSymbol} ומראה מי מחזיר מחיר. חינם ומיידי — בלי AI.`
                 : `Probes Yahoo, Alpaca, FMP, Finnhub and Polygon one by one on ${simSymbol} and shows which return a price. Free and instant — no AI.`,
@@ -1800,16 +1753,14 @@ const FundDashboard: React.FC = () => {
             {
               step: 9,
               icon: "💾",
-              title: isHe ? "הורד גיבוי מלא" : "Download Full Backup",
-              desc: isHe
-                ? "מוריד את כל הנתונים (קובץ CSV לכל טבלה, בתוך ZIP) למחשב שלך. Railway מספקת גיבויים רק במסלול Pro — זו רשת הביטחון בפועל. הרץ לפני כל שינוי במסד הנתונים."
-                : "Downloads all data (one CSV per table, zipped) to your machine. Railway only offers backups on the Pro plan — this is the actual safety net. Run it before any database change.",
+              title: t("Download Full Backup", "הורד גיבוי מלא"),
+              desc: t("Downloads all data (one CSV per table, zipped) to your machine. Railway only offers backups on the Pro plan — this is the actual safety net. Run it before any database change.", "מוריד את כל הנתונים (קובץ CSV לכל טבלה, בתוך ZIP) למחשב שלך. Railway מספקת גיבויים רק במסלול Pro — זו רשת הביטחון בפועל. הרץ לפני כל שינוי במסד הנתונים."),
               action: async () => marketApi.downloadBackup(),
             },
             {
               step: 10,
               icon: "🔎",
-              title: isHe ? "בדיקת דוח לחברה" : "Earnings Check for a Symbol",
+              title: t("Earnings Check for a Symbol", "בדיקת דוח לחברה"),
               desc: isHe
                 ? `מראה מה כל לוח הדוחות אומר על ${simSymbol} — מה רשום אצלנו, מה Finnhub אומר על העבר ועל העתיד, ומה נאסד"ק אומר — ואיזו מסקנה המערכת מסיקה. חינם ומיידי.`
                 : `Shows what every earnings calendar says about ${simSymbol} — what we stored, what Finnhub says about past and future, what Nasdaq says — and the verdict the watcher reaches. Free and instant.`,
@@ -1831,15 +1782,15 @@ const FundDashboard: React.FC = () => {
                     <div className="mt-2 space-y-1 text-xs">
                       <p className="text-sm font-medium text-white">{simStep[step].verdict}</p>
                       {[
-                        [isHe ? "רשום אצלנו כדיווחה" : "stored as reported",
+                        [t("stored as reported", "רשום אצלנו כדיווחה"),
                          String(simStep[step].stored?.in_reported_set)],
-                        [isHe ? "תאריך הדוח שרשום אצלנו" : "recorded report date",
+                        [t("recorded report date", "תאריך הדוח שרשום אצלנו"),
                          simStep[step].recorded_date || "—"],
-                        [isHe ? "Finnhub — עתידי" : "Finnhub — upcoming",
+                        [t("Finnhub — upcoming", "Finnhub — עתידי"),
                          simStep[step].finnhub_upcoming],
-                        [isHe ? "Finnhub — כבר דיווחה" : "Finnhub — already reported",
+                        [t("Finnhub — already reported", "Finnhub — כבר דיווחה"),
                          simStep[step].finnhub_reported],
-                        [isHe ? "נאסד\"ק בתאריך הרשום" : "Nasdaq on recorded date",
+                        [t("Nasdaq on recorded date", "נאסד\"ק בתאריך הרשום"),
                          simStep[step].nasdaq_on_recorded_date || "—"],
                       ].map(([label, value]) => (
                         <div key={label} className="flex gap-2 px-2 py-1 rounded bg-gray-800/40">
@@ -1878,7 +1829,7 @@ const FundDashboard: React.FC = () => {
                         }`}
                       >
                         {simStep[step].batch_quotes?.ok ? "✅" : "⚠️"}{" "}
-                        {isHe ? "ציטוטים מרובים (פרה-סקרינר): " : "Batch quotes (screener): "}
+                        {t("Batch quotes (screener): ", "ציטוטים מרובים (פרה-סקרינר): ")}
                         {simStep[step].batch_quotes?.detail}
                       </div>
 
@@ -1888,17 +1839,17 @@ const FundDashboard: React.FC = () => {
                       {simStep[step].health && !simStep[step].health.error && (
                         <div className="mt-3">
                           <p className="text-xs text-gray-400 font-medium mb-1">
-                            {isHe ? "בריאות הספקים — 7 ימים אחרונים, מתוך ניתוחים אמיתיים" : "Provider health — last 7 days, from real analyses"}
+                            {t("Provider health — last 7 days, from real analyses", "בריאות הספקים — 7 ימים אחרונים, מתוך ניתוחים אמיתיים")}
                           </p>
                           <div className="overflow-x-auto">
                             <table className="text-xs w-full">
                               <thead className="text-gray-500">
                                 <tr>
-                                  <th className="text-right py-1 pr-2">{isHe ? "ספק" : "Provider"}</th>
-                                  <th className="text-right py-1 pr-2">{isHe ? "הצליח" : "OK"}</th>
-                                  <th className="text-right py-1 pr-2">{isHe ? "נכשל" : "Fail"}</th>
+                                  <th className="text-right py-1 pr-2">{t("Provider", "ספק")}</th>
+                                  <th className="text-right py-1 pr-2">{t("OK", "הצליח")}</th>
+                                  <th className="text-right py-1 pr-2">{t("Fail", "נכשל")}</th>
                                   <th className="text-right py-1 pr-2">%</th>
-                                  <th className="text-right py-1">{isHe ? "מצב" : "State"}</th>
+                                  <th className="text-right py-1">{t("State", "מצב")}</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1920,7 +1871,7 @@ const FundDashboard: React.FC = () => {
                                           ? (isHe ? `מדולג ${Math.ceil(h.skipped_for_seconds / 60)} דק׳` : `skipped ${Math.ceil(h.skipped_for_seconds / 60)}m`)
                                           : h.consecutive_failures > 0
                                             ? (isHe ? `${h.consecutive_failures} כשלונות ברצף` : `${h.consecutive_failures} in a row`)
-                                            : (isHe ? "פעיל" : "active")}
+                                            : (t("active", "פעיל"))}
                                       </td>
                                     </tr>
                                   );
@@ -1938,17 +1889,17 @@ const FundDashboard: React.FC = () => {
                       {simStep[step].fundamentals && !simStep[step].fundamentals.error && (
                         <div className="mt-3">
                           <p className="text-xs text-gray-400 font-medium mb-1">
-                            {isHe ? "כיסוי נתוני יסוד — כמה מהניתוחים קיבלו כל נתון, ומאיזה מקור" : "Fundamentals coverage — how often each figure arrived, and from where"}
+                            {t("Fundamentals coverage — how often each figure arrived, and from where", "כיסוי נתוני יסוד — כמה מהניתוחים קיבלו כל נתון, ומאיזה מקור")}
                           </p>
                           <div className="overflow-x-auto">
                             <table className="text-xs w-full">
                               <thead className="text-gray-500">
                                 <tr>
-                                  <th className="text-right py-1 pr-2">{isHe ? "נתון" : "Field"}</th>
-                                  <th className="text-right py-1 pr-2">{isHe ? "התקבל" : "Got"}</th>
-                                  <th className="text-right py-1 pr-2">{isHe ? "חסר" : "Missing"}</th>
+                                  <th className="text-right py-1 pr-2">{t("Field", "נתון")}</th>
+                                  <th className="text-right py-1 pr-2">{t("Got", "התקבל")}</th>
+                                  <th className="text-right py-1 pr-2">{t("Missing", "חסר")}</th>
                                   <th className="text-right py-1 pr-2">%</th>
-                                  <th className="text-right py-1">{isHe ? "מקור" : "Filled by"}</th>
+                                  <th className="text-right py-1">{t("Filled by", "מקור")}</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1976,9 +1927,7 @@ const FundDashboard: React.FC = () => {
                             </table>
                           </div>
                           <p className="text-xs text-gray-600 mt-1">
-                            {isHe
-                              ? "הספירה מתחילה מהפריסה הזאת ומתמלאת עם כל ניתוח."
-                              : "Counting starts from this deploy and fills in with each analysis."}
+                            {t("Counting starts from this deploy and fills in with each analysis.", "הספירה מתחילה מהפריסה הזאת ומתמלאת עם כל ניתוח.")}
                           </p>
                         </div>
                       )}
@@ -1987,9 +1936,9 @@ const FundDashboard: React.FC = () => {
                     <div className="mt-2 space-y-1.5">
                       {Object.entries(simStep[step].engines as Record<string, { ok: boolean; detail: string }>).map(([engine, res]) => {
                         const labels: Record<string, string> = {
-                          claude: isHe ? "Claude — פונדמנטלי + ועדה" : "Claude — fundamental + senior",
-                          openai_news: isHe ? "GPT — ניתוח חדשות" : "GPT — news analysis",
-                          gemini_macro: isHe ? "Gemini — מאקרו" : "Gemini — macro",
+                          claude: t("Claude — fundamental + senior", "Claude — פונדמנטלי + ועדה"),
+                          openai_news: t("GPT — news analysis", "GPT — ניתוח חדשות"),
+                          gemini_macro: t("Gemini — macro", "Gemini — מאקרו"),
                         };
                         return (
                           <div key={engine} className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${res.ok ? "bg-green-900/20 text-green-300" : "bg-red-900/20 text-red-300"}`}>
@@ -2001,23 +1950,23 @@ const FundDashboard: React.FC = () => {
                       })}
                       {simStep[step].news_sources && Object.keys(simStep[step].news_sources).length > 0 && (
                         <p className="text-xs text-cyan-400/80">
-                          📰 {isHe ? "מקורות חדשות:" : "News sources:"}{" "}
+                          📰 {t("News sources:", "מקורות חדשות:")}{" "}
                           {Object.entries(simStep[step].news_sources as Record<string, number>)
                             .map(([src, n]) => `${src} (${n})`).join(" · ")}
-                          {" — "}{simStep[step].news_articles_total} {isHe ? "כתבות" : "articles"}
+                          {" — "}{simStep[step].news_articles_total} {t("articles", "כתבות")}
                         </p>
                       )}
                       {simStep[step].data_sources && (
                         <div className="mt-1 space-y-1">
-                          <p className="text-xs text-gray-400 font-medium">{isHe ? "מקורות נתונים:" : "Data sources:"}</p>
+                          <p className="text-xs text-gray-400 font-medium">{t("Data sources:", "מקורות נתונים:")}</p>
                           {Object.entries(simStep[step].data_sources as Record<string, { ok: boolean; detail: string }>).map(([src, res]) => {
                             const srcLabels: Record<string, string> = {
-                              price_fundamentals: isHe ? "מחיר + פונדמנטלס (Yahoo/TASE)" : "Price + fundamentals",
-                              social_sentiment: isHe ? "סנטימנט רשתות" : "Social sentiment",
-                              news: isHe ? "חדשות" : "News",
-                              grok_x: isHe ? "Grok — סריקת X/טוויטר" : "Grok — X/Twitter scan",
-                              insider_activity: isHe ? "עסקאות בעלי עניין" : "Insider activity",
-                              sec_filings: isHe ? "דוחות SEC" : "SEC filings",
+                              price_fundamentals: t("Price + fundamentals", "מחיר + פונדמנטלס (Yahoo/TASE)"),
+                              social_sentiment: t("Social sentiment", "סנטימנט רשתות"),
+                              news: t("News", "חדשות"),
+                              grok_x: t("Grok — X/Twitter scan", "Grok — סריקת X/טוויטר"),
+                              insider_activity: t("Insider activity", "עסקאות בעלי עניין"),
+                              sec_filings: t("SEC filings", "דוחות SEC"),
                             };
                             return (
                               <div key={src} className="flex items-center gap-2 text-xs px-2 py-0.5 rounded bg-gray-800/40 text-gray-300">
@@ -2047,24 +1996,24 @@ const FundDashboard: React.FC = () => {
                         const icon = sent ? "✅" : d?.will_send === false || d?.configured === false ? "❌" : "⚠️";
                         const issues = [];
                         if (ch === "telegram") {
-                          if (!d?.has_bot_token) issues.push(isHe ? "אין BOT_TOKEN" : "no BOT_TOKEN");
-                          else if (!d?.has_chat_id) issues.push(isHe ? "אין CHAT_ID" : "no CHAT_ID");
-                        } else if (!d?.enabled) issues.push(isHe ? "כבוי בהגדרות" : "disabled in settings");
-                        else if (ch === "push" && !d?.has_token) issues.push(isHe ? "אין push token" : "no push token");
-                        else if (ch === "sms" && !d?.has_phone) issues.push(isHe ? "אין טלפון" : "no phone");
-                        else if (ch === "sms" && !d?.twilio_configured) issues.push(isHe ? "Twilio לא מוגדר" : "Twilio not configured");
-                        else if (ch === "email" && !d?.sendgrid_configured) issues.push(isHe ? "SendGrid לא מוגדר" : "SendGrid not configured");
+                          if (!d?.has_bot_token) issues.push(t("no BOT_TOKEN", "אין BOT_TOKEN"));
+                          else if (!d?.has_chat_id) issues.push(t("no CHAT_ID", "אין CHAT_ID"));
+                        } else if (!d?.enabled) issues.push(t("disabled in settings", "כבוי בהגדרות"));
+                        else if (ch === "push" && !d?.has_token) issues.push(t("no push token", "אין push token"));
+                        else if (ch === "sms" && !d?.has_phone) issues.push(t("no phone", "אין טלפון"));
+                        else if (ch === "sms" && !d?.twilio_configured) issues.push(t("Twilio not configured", "Twilio לא מוגדר"));
+                        else if (ch === "email" && !d?.sendgrid_configured) issues.push(t("SendGrid not configured", "SendGrid לא מוגדר"));
                         return (
                           <div key={ch} className={`flex items-center gap-2 text-xs px-2 py-1 rounded ${sent ? "bg-green-900/20 text-green-300" : "bg-gray-800/60 text-gray-400"}`}>
                             <span>{icon}</span>
                             <span className="uppercase font-mono w-10">{ch}</span>
-                            <span>{sent ? (isHe ? "נשלח!" : "Sent!") : issues.join(", ") || (isHe ? "נכשל" : "failed")}</span>
+                            <span>{sent ? (t("Sent!", "נשלח!")) : issues.join(", ") || (t("failed", "נכשל"))}</span>
                           </div>
                         );
                       })}
                       {simStep[step].channels?.length === 0 && (
                         <p className="text-xs text-yellow-500 mt-1">
-                          {isHe ? "אף ערוץ לא נשלח — ראה הסבר למטה" : "No channels sent — see explanation below"}
+                          {t("No channels sent — see explanation below", "אף ערוץ לא נשלח — ראה הסבר למטה")}
                         </p>
                       )}
                     </div>
@@ -2093,7 +2042,7 @@ const FundDashboard: React.FC = () => {
                   }}
                   className="text-xs bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
                 >
-                  {simLoading[step] ? "..." : (isHe ? "הרץ" : "Run")}
+                  {simLoading[step] ? "..." : (t("Run", "הרץ"))}
                 </button>
                 {removeAction && (
                   <button
@@ -2110,7 +2059,7 @@ const FundDashboard: React.FC = () => {
                     }}
                     className="text-xs bg-red-900/60 hover:bg-red-800/60 disabled:bg-gray-700 text-red-300 px-3 py-1.5 rounded-lg"
                   >
-                    {simLoading[`${step}_rm`] ? "..." : (isHe ? "מחק" : "Remove")}
+                    {simLoading[`${step}_rm`] ? "..." : (t("Remove", "מחק"))}
                   </button>
                 )}
               </div>
@@ -2119,12 +2068,12 @@ const FundDashboard: React.FC = () => {
         </div>
 
         <div className="mt-4 text-xs text-gray-500 space-y-1 border-t border-gray-800 pt-4">
-          <p className="font-medium text-gray-400">{isHe ? "מה נדרש לכל ערוץ?" : "What each channel needs:"}</p>
-          <p>📧 <strong>Email</strong> — {isHe ? "הגדר SENDGRID_API_KEY אמיתי ב-Railway (לא SG.xxxxx). חינם עד 100 מיילים/יום. אימות שולח ב-sendgrid.com" : "Set real SENDGRID_API_KEY in Railway (not SG.xxxxx). Free up to 100 emails/day. Verify sender at sendgrid.com"}</p>
-          <p>📱 <strong>SMS</strong> — {isHe ? "הגדר TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER אמיתיים ב-Railway. טלפון משתמש חייב להיות בפורמט +972XXXXXXXXX" : "Set real TWILIO_ACCOUNT_SID, AUTH_TOKEN, FROM_NUMBER in Railway. User phone must be +972XXXXXXXXX format"}</p>
-          <p>✈️ <strong>Telegram</strong> — {isHe ? "צור Bot ב-@BotFather → הגדר TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID ב-Railway. שלח /start לבוט כדי לקבל את ה-Chat ID" : "Create Bot via @BotFather → set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in Railway. Send /start to bot to get Chat ID"}</p>
-          <p>🔔 <strong>Push</strong> — {isHe ? "דורש Firebase FCM + הרשאת דפדפן. הדפדפן חייב לאשר התראות ולשמור push_token" : "Requires Firebase FCM + browser permission. Browser must grant notifications and register push_token"}</p>
-          <p className="mt-2 text-gray-600">{isHe ? "אחרי הסימולציה — לחץ 'מחק' בשלב 3 להסרת הפוזיציה" : "After simulation — click 'Remove' in Step 3 to delete the test position"}</p>
+          <p className="font-medium text-gray-400">{t("What each channel needs:", "מה נדרש לכל ערוץ?")}</p>
+          <p>📧 <strong>Email</strong> — {t("Set real SENDGRID_API_KEY in Railway (not SG.xxxxx). Free up to 100 emails/day. Verify sender at sendgrid.com", "הגדר SENDGRID_API_KEY אמיתי ב-Railway (לא SG.xxxxx). חינם עד 100 מיילים/יום. אימות שולח ב-sendgrid.com")}</p>
+          <p>📱 <strong>SMS</strong> — {t("Set real TWILIO_ACCOUNT_SID, AUTH_TOKEN, FROM_NUMBER in Railway. User phone must be +972XXXXXXXXX format", "הגדר TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER אמיתיים ב-Railway. טלפון משתמש חייב להיות בפורמט +972XXXXXXXXX")}</p>
+          <p>✈️ <strong>Telegram</strong> — {t("Create Bot via @BotFather → set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in Railway. Send /start to bot to get Chat ID", "צור Bot ב-@BotFather → הגדר TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID ב-Railway. שלח /start לבוט כדי לקבל את ה-Chat ID")}</p>
+          <p>🔔 <strong>Push</strong> — {t("Requires Firebase FCM + browser permission. Browser must grant notifications and register push_token", "דורש Firebase FCM + הרשאת דפדפן. הדפדפן חייב לאשר התראות ולשמור push_token")}</p>
+          <p className="mt-2 text-gray-600">{t("After simulation — click 'Remove' in Step 3 to delete the test position", "אחרי הסימולציה — לחץ 'מחק' בשלב 3 להסרת הפוזיציה")}</p>
         </div>
       </div>
 

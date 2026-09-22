@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useT } from "../i18n/t";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useAppSelector, useAppDispatch } from "../store";
 import { recommendationsApi, ordersApi } from "../api/client";
@@ -639,6 +640,7 @@ const SIG_TEXT: Record<string, string> = {
 // ─── Component ───────────────────────────────────────────────────────────────────
 
 const ResearchReport: React.FC = () => {
+  const t = useT();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
@@ -732,24 +734,24 @@ const ResearchReport: React.FC = () => {
       if (value) structuredNumbers.push({ label, value });
     };
     const entry = rec.current_price_at_recommendation;
-    push(isHe ? "מחיר בעת ההמלצה" : "Price at recommendation", entry ? `$${entry.toFixed(2)}` : null);
-    push(isHe ? "מחיר יעד" : "Target price", rec.target_price ? `$${rec.target_price.toFixed(2)}` : null);
-    push(isHe ? "סטופ לוס" : "Stop loss", rec.stop_loss ? `$${rec.stop_loss.toFixed(2)}` : null);
+    push(t("Price at recommendation", "מחיר בעת ההמלצה"), entry ? `$${entry.toFixed(2)}` : null);
+    push(t("Target price", "מחיר יעד"), rec.target_price ? `$${rec.target_price.toFixed(2)}` : null);
+    push(t("Stop loss", "סטופ לוס"), rec.stop_loss ? `$${rec.stop_loss.toFixed(2)}` : null);
     push(
-      isHe ? "תשואה צפויה" : "Expected return",
+      t("Expected return", "תשואה צפויה"),
       rec.expected_return_pct != null ? `${rec.expected_return_pct.toFixed(1)}%` : null
     );
     // Beta may be genuinely absent. Saying so beats printing a number that
     // was never measured — a blank here is information, not a gap.
     push(
-      isHe ? "תנודתיות (בטא)" : "Volatility (beta)",
-      rec.beta != null ? rec.beta.toFixed(2) : (isHe ? "לא נמדד" : "not measured")
+      t("Volatility (beta)", "תנודתיות (בטא)"),
+      rec.beta != null ? rec.beta.toFixed(2) : (t("not measured", "לא נמדד"))
     );
     push(
-      isHe ? "שווי צפוי (EV)" : "Expected value",
+      t("Expected value", "שווי צפוי (EV)"),
       fa?.expected_value != null ? `$${Number(fa.expected_value).toFixed(2)}` : null
     );
-    push(isHe ? "אופק השקעה" : "Horizon", fa?.investment_horizon?.replace("_", " ") ?? null);
+    push(t("Horizon", "אופק השקעה"), fa?.investment_horizon?.replace("_", " ") ?? null);
   }
 
   // Read out of the committee's prose by pattern — labelled as such in the UI.
@@ -769,9 +771,9 @@ const ResearchReport: React.FC = () => {
   const returnPositive = (returnPct || 0) >= 0;
 
   const triggerBadgeText = () => {
-    if (rec.trigger_type === "PRICE_ALERT") return { text: isHe ? "תנועת מחיר" : "Price Alert", cls: "bg-orange-900/30 text-orange-300" };
-    if (rec.trigger_type === "NEWS_ALERT") return { text: isHe ? "חדשות" : "News Alert", cls: "bg-purple-900/30 text-purple-300" };
-    if (rec.trigger_type === "EARNINGS") return { text: isHe ? "דוח רבעוני" : "Earnings", cls: "bg-blue-900/30 text-blue-300" };
+    if (rec.trigger_type === "PRICE_ALERT") return { text: t("Price Alert", "תנועת מחיר"), cls: "bg-orange-900/30 text-orange-300" };
+    if (rec.trigger_type === "NEWS_ALERT") return { text: t("News Alert", "חדשות"), cls: "bg-purple-900/30 text-purple-300" };
+    if (rec.trigger_type === "EARNINGS") return { text: t("Earnings", "דוח רבעוני"), cls: "bg-blue-900/30 text-blue-300" };
     return null;
   };
   const trigger = triggerBadgeText();
@@ -795,7 +797,7 @@ const ResearchReport: React.FC = () => {
 
       {/* Back */}
       <Link to="/recommendations" className="text-sm text-gray-400 hover:text-gray-200 flex items-center gap-1">
-        ← {isHe ? "חזור להמלצות" : "Back to Recommendations"}
+        ← {t("Back to Recommendations", "חזור להמלצות")}
       </Link>
 
       {/* Hero Header */}
@@ -818,7 +820,7 @@ const ResearchReport: React.FC = () => {
             {rec.sector && <p className="text-xs text-gray-500 mt-0.5">{rec.sector}</p>}
           </div>
           <div className="text-right">
-            <p className="text-xs text-gray-500">{isHe ? "מחיר בעת ניתוח" : "Price at analysis"}</p>
+            <p className="text-xs text-gray-500">{t("Price at analysis", "מחיר בעת ניתוח")}</p>
             <p className="text-2xl font-bold">{currentPrice ? `$${currentPrice.toFixed(2)}` : "—"}</p>
             <p className="text-xs text-gray-500 mt-1">
               {new Date(rec.created_at).toLocaleString(isHe ? "he-IL" : "en-US")}
@@ -829,12 +831,12 @@ const ResearchReport: React.FC = () => {
         {/* Key Numbers Row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
           <div>
-            <p className="text-xs text-gray-500">{isHe ? "ביטחון" : "Confidence"}</p>
+            <p className="text-xs text-gray-500">{t("Confidence", "ביטחון")}</p>
             <ScoreBar value={rec.confidence_score} color={isShort ? "bg-red-500" : "bg-green-500"} />
             <p className="text-sm font-bold mt-0.5">{rec.confidence_score.toFixed(0)}%</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">{isShort ? (isHe ? "יעד שורט" : "Short Target") : (isHe ? "מחיר יעד" : "Target Price")}</p>
+            <p className="text-xs text-gray-500">{isShort ? (t("Short Target", "יעד שורט")) : (t("Target Price", "מחיר יעד"))}</p>
             <p className="text-sm font-bold">{rec.target_price ? `$${rec.target_price.toFixed(2)}` : "—"}</p>
             {currentPrice && rec.target_price && (
               <p className={`num text-xs ${isShort ? "text-red-400" : "text-green-400"}`}>
@@ -843,7 +845,7 @@ const ResearchReport: React.FC = () => {
             )}
           </div>
           <div>
-            <p className="text-xs text-gray-500">{isHe ? "סטופ לוס" : "Stop Loss"}</p>
+            <p className="text-xs text-gray-500">{t("Stop Loss", "סטופ לוס")}</p>
             <p className="text-sm font-bold">{rec.stop_loss ? `$${rec.stop_loss.toFixed(2)}` : "—"}</p>
             {/* .num: this is almost always negative, and without LTR
                 isolation "-11.7%" renders as "11.7%-" in the RTL layout. */}
@@ -854,7 +856,7 @@ const ResearchReport: React.FC = () => {
             )}
           </div>
           <div>
-            <p className="text-xs text-gray-500">{isHe ? "תשואה צפויה" : "Expected Return"}</p>
+            <p className="text-xs text-gray-500">{t("Expected Return", "תשואה צפויה")}</p>
             <p className={`num text-sm font-bold ${returnPositive ? "text-green-400" : "text-red-400"}`}>
               {returnPct != null ? `${returnPct >= 0 ? "+" : ""}${returnPct.toFixed(1)}%` : "—"}
             </p>
@@ -868,21 +870,21 @@ const ResearchReport: React.FC = () => {
               onClick={() => setTradeModal({ type: OrderType.BUY })}
               className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl py-3 font-medium"
             >
-              {isHe ? "רכשת אצל הברוקר? הוסף לתיק" : "Bought at your broker? Add to portfolio"}
+              {t("Bought at your broker? Add to portfolio", "רכשת אצל הברוקר? הוסף לתיק")}
             </button>
           ) : (
             <button
               onClick={() => setTradeModal({ type: OrderType.SELL })}
               className="flex-1 bg-red-600 hover:bg-red-700 text-white rounded-xl py-3 font-medium"
             >
-              {isHe ? "פתחת שורט אצל הברוקר? עדכן בתיק" : "Shorted at your broker? Record it"}
+              {t("Shorted at your broker? Record it", "פתחת שורט אצל הברוקר? עדכן בתיק")}
             </button>
           )}
           <Link
             to={`/technical/${rec.id}`}
             className="flex-1 border border-blue-700 text-blue-400 hover:text-blue-300 rounded-xl py-3 text-sm font-medium text-center transition-colors"
           >
-            {isHe ? "ניתוח טכני ←" : "Technical Analysis →"}
+            {t("Technical Analysis →", "ניתוח טכני ←")}
           </Link>
         </div>
       </div>
@@ -896,26 +898,22 @@ const ResearchReport: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="text-blue-400 text-lg">🔒</span>
             <h2 className="font-bold text-sm uppercase tracking-wide text-gray-300">
-              {isHe ? "הניתוח המלא" : "Full analysis"}
+              {t("Full analysis", "הניתוח המלא")}
             </h2>
           </div>
           <p className="text-sm text-gray-400 leading-relaxed">
-            {isHe
-              ? "הסיגנל, מחירי היעד והניתוח הטכני מוצגים למעלה. הניתוח הכלכלי המלא, נימוקי ועדת ההשקעות וניתוח החדשות זמינים למנויים — או לכל מניה שאתה עוקב אחריה."
-              : "The signal, target prices and technical analysis are shown above. The full fundamental analysis, investment committee reasoning and news analysis are available to subscribers — or on any stock you follow."}
+            {t("The signal, target prices and technical analysis are shown above. The full fundamental analysis, investment committee reasoning and news analysis are available to subscribers — or on any stock you follow.", "הסיגנל, מחירי היעד והניתוח הטכני מוצגים למעלה. הניתוח הכלכלי המלא, נימוקי ועדת ההשקעות וניתוח החדשות זמינים למנויים — או לכל מניה שאתה עוקב אחריה.")}
           </p>
           {isNative() ? (
             <button
               onClick={() => setPaywallOpen(true)}
               className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 py-2.5 rounded-xl text-sm"
             >
-              {isHe ? "שדרג למנוי" : "Upgrade"}
+              {t("Upgrade", "שדרג למנוי")}
             </button>
           ) : (
             <p className="text-xs text-gray-500">
-              {isHe
-                ? "שדרוג זמין באפליקציה לאייפון ולאנדרואיד."
-                : "Upgrading is available in the iOS and Android app."}
+              {t("Upgrading is available in the iOS and Android app.", "שדרוג זמין באפליקציה לאייפון ולאנדרואיד.")}
             </p>
           )}
         </div>
@@ -929,11 +927,9 @@ const ResearchReport: React.FC = () => {
       {/* The numbers that decide the case, lifted out of the notes. */}
       {!rec.reasoning_locked && (structuredNumbers.length > 0 || ratioRows.length > 0) && (
         <Collapsible
-          title={isHe ? "מספרי מפתח" : "Key numbers"}
+          title={t("Key numbers", "מספרי מפתח")}
           summary={
-            isHe
-              ? "הערכת שווי, מינוף ותשואה — במספרים"
-              : "Valuation, leverage and returns — as figures"
+            t("Valuation, leverage and returns — as figures", "הערכת שווי, מינוף ותשואה — במספרים")
           }
           defaultOpen
           isHe={isHe}
@@ -945,8 +941,8 @@ const ResearchReport: React.FC = () => {
       {/* Short Catalysts */}
       {isShort && fa?.short_catalysts && fa.short_catalysts.length > 0 && (
         <Collapsible
-          title={isHe ? "קטליזטורים לירידה" : "Downside Catalysts"}
-          summary={`${fa.short_catalysts.length} ${isHe ? "גורמים שעשויים להוריד את המניה" : "factors that could push the stock down"}`}
+          title={t("Downside Catalysts", "קטליזטורים לירידה")}
+          summary={`${fa.short_catalysts.length} ${t("factors that could push the stock down", "גורמים שעשויים להוריד את המניה")}`}
           tone="warn"
           isHe={isHe}
         >
@@ -964,11 +960,9 @@ const ResearchReport: React.FC = () => {
       {/* Fundamental Analysis */}
       {fa && (
         <Collapsible
-          title={isHe ? "ניתוח פונדמנטלי" : "Fundamental Analysis"}
+          title={t("Fundamental Analysis", "ניתוח פונדמנטלי")}
           summary={
-            isHe
-              ? "הערכת שווי, בריאות פיננסית, צמיחה ותזרים"
-              : "Valuation, financial health, growth and cash flow"
+            t("Valuation, financial health, growth and cash flow", "הערכת שווי, בריאות פיננסית, צמיחה ותזרים")
           }
           badge={
             fa.valuation_assessment ? (
@@ -985,7 +979,7 @@ const ResearchReport: React.FC = () => {
             {/* Assessment Badges */}
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-400">{isHe ? "הערכת שווי" : "Valuation"}</span>
+                <span className="text-gray-400">{t("Valuation", "הערכת שווי")}</span>
                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                   fa.valuation_assessment === "UNDERVALUED" ? "bg-green-900/40 text-green-400" :
                   fa.valuation_assessment === "OVERVALUED" ? "bg-red-900/40 text-red-400" :
@@ -995,7 +989,7 @@ const ResearchReport: React.FC = () => {
                 </span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-400">{isHe ? "בריאות פיננסית" : "Financial Health"}</span>
+                <span className="text-gray-400">{t("Financial Health", "בריאות פיננסית")}</span>
                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                   fa.financial_health === "EXCELLENT" || fa.financial_health === "GOOD" ? "bg-green-900/40 text-green-400" :
                   fa.financial_health === "POOR" ? "bg-red-900/40 text-red-400" :
@@ -1005,7 +999,7 @@ const ResearchReport: React.FC = () => {
                 </span>
               </div>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-400">{isHe ? "אופק השקעה" : "Horizon"}</span>
+                <span className="text-gray-400">{t("Horizon", "אופק השקעה")}</span>
                 <span className="text-xs text-gray-300 bg-gray-800 px-2 py-0.5 rounded">
                   {fa.investment_horizon?.replace("_", " ")}
                 </span>
@@ -1028,11 +1022,11 @@ const ResearchReport: React.FC = () => {
           {/* Bull / Bear */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-green-950/20 rounded-xl p-4 border border-green-900/20">
-              <p className="text-xs font-bold text-green-400 mb-2">{isHe ? "תרחיש חיובי" : "Bull Case"}</p>
+              <p className="text-xs font-bold text-green-400 mb-2">{t("Bull Case", "תרחיש חיובי")}</p>
               <p className="text-sm text-gray-300">{fa.bull_case}</p>
             </div>
             <div className="bg-red-950/20 rounded-xl p-4 border border-red-900/20">
-              <p className="text-xs font-bold text-red-400 mb-2">{isHe ? "תרחיש שלילי" : "Bear Case"}</p>
+              <p className="text-xs font-bold text-red-400 mb-2">{t("Bear Case", "תרחיש שלילי")}</p>
               <p className="text-sm text-gray-300">{fa.bear_case}</p>
             </div>
           </div>
@@ -1041,7 +1035,7 @@ const ResearchReport: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {fa.catalysts && fa.catalysts.length > 0 && (
               <div>
-                <p className="text-xs font-bold text-gray-400 mb-2">{isHe ? "קטליזטורים חיוביים" : "Positive Catalysts"}</p>
+                <p className="text-xs font-bold text-gray-400 mb-2">{t("Positive Catalysts", "קטליזטורים חיוביים")}</p>
                 <ul className="space-y-1">
                   {fa.catalysts.map((c, i) => (
                     <li key={i} className="text-xs text-gray-300 flex items-start gap-1.5">
@@ -1053,7 +1047,7 @@ const ResearchReport: React.FC = () => {
             )}
             {fa.risk_factors && fa.risk_factors.length > 0 && (
               <div>
-                <p className="text-xs font-bold text-gray-400 mb-2">{isHe ? "גורמי סיכון" : "Risk Factors"}</p>
+                <p className="text-xs font-bold text-gray-400 mb-2">{t("Risk Factors", "גורמי סיכון")}</p>
                 <ul className="space-y-1">
                   {fa.risk_factors.map((r, i) => (
                     <li key={i} className="text-xs text-gray-300 flex items-start gap-1.5">
@@ -1072,7 +1066,7 @@ const ResearchReport: React.FC = () => {
             <details className="group">
               <summary className="cursor-pointer text-xs font-bold text-gray-400 mb-2 list-none flex items-center gap-2">
                 <span className="text-gray-600 group-open:rotate-90 transition-transform">▶</span>
-                {isHe ? "הערות אנליסט — הנוסח המלא" : "Analyst notes — full text"}
+                {t("Analyst notes — full text", "הערות אנליסט — הנוסח המלא")}
               </summary>
               <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">
                 {fa.analyst_notes}
@@ -1082,7 +1076,7 @@ const ResearchReport: React.FC = () => {
 
           {fa.sector_comparison && (
             <div>
-              <p className="text-xs font-bold text-gray-400 mb-1">{isHe ? "השוואה לסקטור" : "Sector Comparison"}</p>
+              <p className="text-xs font-bold text-gray-400 mb-1">{t("Sector Comparison", "השוואה לסקטור")}</p>
               <p className="text-sm text-gray-300">{fa.sector_comparison}</p>
             </div>
           )}
@@ -1100,8 +1094,8 @@ const ResearchReport: React.FC = () => {
               <div className={`rounded-xl p-4 border ${hasConfirmed ? "bg-red-950/30 border-red-700/40" : "bg-gray-800/40 border-gray-700/40"}`}>
                 <p className={`text-xs font-bold mb-2 ${hasConfirmed ? "text-red-400" : "text-gray-300"}`}>
                   {hasConfirmed
-                    ? `⚠️ ${isHe ? "חריגות קריטיות" : "Hard Exclusion Flags"}`
-                    : `🛡️ ${isHe ? "בדיקת כללי פסילה (✓ עבר · ⚠ לא ניתן לאמת)" : "Exclusion Rule Checks (✓ passed · ⚠ unverifiable)"}`}
+                    ? `⚠️ ${t("Hard Exclusion Flags", "חריגות קריטיות")}`
+                    : `🛡️ ${t("Exclusion Rule Checks (✓ passed · ⚠ unverifiable)", "בדיקת כללי פסילה (✓ עבר · ⚠ לא ניתן לאמת)")}`}
                 </p>
                 <ul className="space-y-1">
                   {items.map((it, i) => (
@@ -1118,7 +1112,7 @@ const ResearchReport: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {fa.moat_classification && (
               <div className="bg-gray-800/50 rounded-xl p-4">
-                <p className="text-xs font-bold text-gray-400 mb-2">{isHe ? "חפיר תחרותי" : "Economic Moat"}</p>
+                <p className="text-xs font-bold text-gray-400 mb-2">{t("Economic Moat", "חפיר תחרותי")}</p>
                 <span className={`text-sm font-bold px-2 py-1 rounded ${
                   fa.moat_classification === "NONE" ? "bg-gray-700 text-gray-400" : "bg-blue-900/40 text-blue-300"
                 }`}>{fa.moat_classification?.replace(/_/g, " ")}</span>
@@ -1127,7 +1121,7 @@ const ResearchReport: React.FC = () => {
             )}
             {fa.catalyst_validation && (
               <div className="bg-gray-800/50 rounded-xl p-4">
-                <p className="text-xs font-bold text-gray-400 mb-2">{isHe ? "אימות קטליזטור" : "Catalyst Validation"}</p>
+                <p className="text-xs font-bold text-gray-400 mb-2">{t("Catalyst Validation", "אימות קטליזטור")}</p>
                 <div className="flex items-center gap-2 mb-2">
                   <div className="flex gap-1">
                     {[1,2,3,4,5].map(n => (
@@ -1140,7 +1134,7 @@ const ResearchReport: React.FC = () => {
                   <p className="text-xs text-gray-300">{fa.catalyst_validation.primary_catalyst}</p>
                 )}
                 {fa.catalyst_validation?.expected_date && (
-                  <p className="text-xs text-gray-500 mt-1">{isHe ? "תאריך צפוי:" : "Expected:"} {fa.catalyst_validation.expected_date}</p>
+                  <p className="text-xs text-gray-500 mt-1">{t("Expected:", "תאריך צפוי:")} {fa.catalyst_validation.expected_date}</p>
                 )}
               </div>
             )}
@@ -1152,18 +1146,18 @@ const ResearchReport: React.FC = () => {
       {/* Scenario Analysis + EV */}
       {fa?.scenario_analysis && (
         <Collapsible
-          title={isHe ? "ניתוח תרחישים" : "Scenario Analysis"}
-          summary={isHe ? "מה קורה במקרה הטוב, הסביר והרע" : "The bull, base and bear cases"}
+          title={t("Scenario Analysis", "ניתוח תרחישים")}
+          summary={t("The bull, base and bear cases", "מה קורה במקרה הטוב, הסביר והרע")}
           isHe={isHe}
         >
           <div className="flex items-center justify-between mb-4">
             {fa.expected_value != null && (
               <div className="text-right">
-                <p className="text-xs text-gray-500">{isHe ? "ערך מצופה (EV)" : "Expected Value"}</p>
+                <p className="text-xs text-gray-500">{t("Expected Value", "ערך מצופה (EV)")}</p>
                 <p className="text-lg font-bold text-blue-400">${fa.expected_value.toFixed(2)}</p>
                 {fa.expected_value_vs_current_pct != null && (
                   <p className={`text-xs font-medium ${fa.expected_value_vs_current_pct >= 0 ? "text-green-400" : "text-red-400"}`}>
-                    {fa.expected_value_vs_current_pct >= 0 ? "+" : ""}{fa.expected_value_vs_current_pct.toFixed(1)}% {isHe ? "מהמחיר הנוכחי" : "vs current"}
+                    {fa.expected_value_vs_current_pct >= 0 ? "+" : ""}{fa.expected_value_vs_current_pct.toFixed(1)}% {t("vs current", "מהמחיר הנוכחי")}
                   </p>
                 )}
               </div>
@@ -1180,13 +1174,13 @@ const ResearchReport: React.FC = () => {
                 bear: { bar: "bg-red-500", text: "text-red-400", bg: "bg-red-950/20 border-red-900/30" },
               };
               const c = colors[key];
-              const label = { bull: isHe ? "תרחיש שורי" : "Bull Case", base: isHe ? "תרחיש בסיס" : "Base Case", bear: isHe ? "תרחיש דובי" : "Bear Case" }[key];
+              const label = { bull: t("Bull Case", "תרחיש שורי"), base: t("Base Case", "תרחיש בסיס"), bear: t("Bear Case", "תרחיש דובי") }[key];
               return (
                 <div key={key} className={`rounded-xl p-4 border ${c.bg}`}>
                   <div className="flex items-center justify-between mb-2">
                     <span className={`text-xs font-bold ${c.text}`}>{label}</span>
                     <div className="flex items-center gap-3 text-sm">
-                      <span className="text-gray-400">{isHe ? "הסתברות" : "P"}:</span>
+                      <span className="text-gray-400">{t("P", "הסתברות")}:</span>
                       <span className={`font-bold ${c.text}`}>{s.probability_pct}%</span>
                       {s.price_target && <span className="text-gray-300 font-mono">${s.price_target.toFixed(2)}</span>}
                       {(() => {
@@ -1205,7 +1199,7 @@ const ResearchReport: React.FC = () => {
                   </div>
                   {s.trigger && <p className="text-xs text-gray-400">{s.trigger}</p>}
                   {s.timeline_months && (
-                    <p className="text-xs text-gray-500 mt-1">{isHe ? "טווח זמן" : "Timeline"}: {s.timeline_months}M</p>
+                    <p className="text-xs text-gray-500 mt-1">{t("Timeline", "טווח זמן")}: {s.timeline_months}M</p>
                   )}
                 </div>
               );
@@ -1216,8 +1210,8 @@ const ResearchReport: React.FC = () => {
           {fa.allocation_recommendation && fa.allocation_recommendation !== "NONE" && (
             <div className="mt-4 pt-4 border-t border-gray-800 flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-500">{isHe ? "המלצת הקצאה" : "Allocation Recommendation"}</p>
-                <p className="text-xs text-gray-400">{fa.suggested_weight_range && `${isHe ? "משקל מוצע" : "Suggested weight"}: ${fa.suggested_weight_range}`}</p>
+                <p className="text-xs text-gray-500">{t("Allocation Recommendation", "המלצת הקצאה")}</p>
+                <p className="text-xs text-gray-400">{fa.suggested_weight_range && `${t("Suggested weight", "משקל מוצע")}: ${fa.suggested_weight_range}`}</p>
               </div>
               <span className={`text-sm font-bold px-3 py-1.5 rounded-lg border ${
                 fa.allocation_recommendation === "HIGH" ? "bg-green-900/40 text-green-300 border-green-700/40" :
@@ -1225,7 +1219,18 @@ const ResearchReport: React.FC = () => {
                 fa.allocation_recommendation === "LOW" ? "bg-yellow-900/40 text-yellow-300 border-yellow-700/40" :
                 "bg-gray-800 text-gray-400 border-gray-700"
               }`}>
-                {isHe ? ({ HIGH: "הקצאה גבוהה", MEDIUM: "הקצאה בינונית", LOW: "הקצאה נמוכה", HOLD: "המתן" } as Record<string, string>)[fa.allocation_recommendation] || fa.allocation_recommendation : fa.allocation_recommendation}
+                {(() => {
+                  // Without this every non-Hebrew reader saw the raw enum —
+                  // "MEDIUM" is a database token, not a label.
+                  const ALLOCATION: Record<string, [string, string]> = {
+                    HIGH: ["High allocation", "הקצאה גבוהה"],
+                    MEDIUM: ["Medium allocation", "הקצאה בינונית"],
+                    LOW: ["Low allocation", "הקצאה נמוכה"],
+                    HOLD: ["Hold", "המתן"],
+                  };
+                  const pair = ALLOCATION[fa.allocation_recommendation];
+                  return pair ? t(pair[0], pair[1]) : fa.allocation_recommendation;
+                })()}
               </span>
             </div>
           )}
@@ -1235,8 +1240,8 @@ const ResearchReport: React.FC = () => {
       {/* Thesis Breakers */}
       {fa?.thesis_breakers && fa.thesis_breakers.length > 0 && (
         <Collapsible
-          title={isHe ? "שוברי התזה — סיכונים קריטיים" : "Thesis Breakers — Critical Risks"}
-          summary={`${fa.thesis_breakers.length} ${isHe ? "אירועים שיבטלו את ההמלצה אם יקרו" : "events that would invalidate this call"}`}
+          title={t("Thesis Breakers — Critical Risks", "שוברי התזה — סיכונים קריטיים")}
+          summary={`${fa.thesis_breakers.length} ${t("events that would invalidate this call", "אירועים שיבטלו את ההמלצה אם יקרו")}`}
           tone="warn"
           isHe={isHe}
         >
@@ -1247,10 +1252,10 @@ const ResearchReport: React.FC = () => {
                 <div className="flex-1">
                   <p className="text-sm text-gray-200 font-medium">{tb.risk}</p>
                   <div className="flex gap-4 mt-1.5 text-xs text-gray-500">
-                    <span>{isHe ? "הסתברות" : "Probability"}: <span className="text-orange-400 font-medium">{tb.probability_pct}%</span></span>
-                    <span>{isHe ? "השפעה" : "Impact"}: <span className="text-red-400 font-medium">{tb.impact_pct}%</span></span>
+                    <span>{t("Probability", "הסתברות")}: <span className="text-orange-400 font-medium">{tb.probability_pct}%</span></span>
+                    <span>{t("Impact", "השפעה")}: <span className="text-red-400 font-medium">{tb.impact_pct}%</span></span>
                     {tb.risk_adjusted_cost_pct && (
-                      <span>{isHe ? "עלות מתואמת" : "Adj. Cost"}: <span className="text-gray-300 font-medium">{tb.risk_adjusted_cost_pct.toFixed(1)}%</span></span>
+                      <span>{t("Adj. Cost", "עלות מתואמת")}: <span className="text-gray-300 font-medium">{tb.risk_adjusted_cost_pct.toFixed(1)}%</span></span>
                     )}
                   </div>
                 </div>
@@ -1265,10 +1270,10 @@ const ResearchReport: React.FC = () => {
         <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800 flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-bold text-gray-300">
-              {isHe ? "מודלים כמותיים — DCF · DDM · Monte Carlo · Comps · Sensitivity" : "Quantitative Models — DCF · DDM · Monte Carlo · Comps · Sensitivity"}
+              {t("Quantitative Models — DCF · DDM · Monte Carlo · Comps · Sensitivity", "מודלים כמותיים — DCF · DDM · Monte Carlo · Comps · Sensitivity")}
             </p>
             <p className="text-xs text-gray-500 mt-0.5">
-              {isHe ? "לא חושבו עבור המלצה זו. לחץ להרצה." : "Not yet computed for this recommendation. Click to generate."}
+              {t("Not yet computed for this recommendation. Click to generate.", "לא חושבו עבור המלצה זו. לחץ להרצה.")}
             </p>
           </div>
           <button
@@ -1277,9 +1282,9 @@ const ResearchReport: React.FC = () => {
             className="shrink-0 bg-blue-700 hover:bg-blue-600 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors flex items-center gap-2"
           >
             {quantLoading ? (
-              <><span className="animate-spin inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full" />{isHe ? "מחשב..." : "Computing..."}</>
+              <><span className="animate-spin inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full" />{t("Computing...", "מחשב...")}</>
             ) : (
-              isHe ? "הרץ מודלים ←" : "Generate Models →"
+              t("Generate Models →", "הרץ מודלים ←")
             )}
           </button>
         </div>
@@ -1291,19 +1296,19 @@ const ResearchReport: React.FC = () => {
       {/* Senior Committee Decision */}
       {(rec.senior_notes || rec.senior_review_notes) && (
         <Collapsible
-          title={isHe ? "ועדת הבכיר — החלטה סופית" : "Senior Committee — Final Decision"}
-          summary={isHe ? "הנימוק לאישור וההערות המלאות" : "The approval reasoning and full notes"}
+          title={t("Senior Committee — Final Decision", "ועדת הבכיר — החלטה סופית")}
+          summary={t("The approval reasoning and full notes", "הנימוק לאישור וההערות המלאות")}
           isHe={isHe}
         >
           {rec.senior_review_notes && (
             <div className="mb-3">
-              <p className="text-xs text-gray-500 mb-1">{isHe ? "אישור" : "Approval Reasoning"}</p>
+              <p className="text-xs text-gray-500 mb-1">{t("Approval Reasoning", "אישור")}</p>
               <p className="text-sm text-gray-300">{rec.senior_review_notes}</p>
             </div>
           )}
           {rec.senior_notes && (
             <div>
-              <p className="text-xs text-gray-500 mb-1">{isHe ? "הערות ועדה" : "Committee Notes"}</p>
+              <p className="text-xs text-gray-500 mb-1">{t("Committee Notes", "הערות ועדה")}</p>
               <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">{rec.senior_notes}</p>
             </div>
           )}
@@ -1318,7 +1323,7 @@ const ResearchReport: React.FC = () => {
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-800 bg-gray-900/80">
           <span className="text-xs text-gray-500 tracking-widest font-mono">TECHNICAL ANALYSIS</span>
           <span className="text-xs text-blue-500 group-hover:text-blue-400 font-mono tracking-wider">
-            {isHe ? "פתח טרמינל ←" : "OPEN TERMINAL →"}
+            {t("OPEN TERMINAL →", "פתח טרמינל ←")}
           </span>
         </div>
         {rec.technical_analysis ? (
@@ -1344,7 +1349,7 @@ const ResearchReport: React.FC = () => {
           </div>
         ) : (
           <div className="px-5 py-6 flex flex-col items-center gap-2">
-            <p className="text-gray-500 text-sm">{isHe ? "ניתוח טכני טרם בוצע — לחץ להרצה" : "Technical analysis not yet run — click to open"}</p>
+            <p className="text-gray-500 text-sm">{t("Technical analysis not yet run — click to open", "ניתוח טכני טרם בוצע — לחץ להרצה")}</p>
           </div>
         )}
       </Link>

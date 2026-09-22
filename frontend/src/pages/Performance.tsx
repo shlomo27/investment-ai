@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useT } from "../i18n/t";
 import { useAppSelector } from "../store";
 import { performanceApi } from "../api/client";
 import PerformanceComparisonChart from "../components/Charts/PerformanceComparisonChart";
@@ -7,6 +8,7 @@ import PortfolioHistoryChart from "../components/Charts/PortfolioHistoryChart";
 import BacktestChart from "../components/Charts/BacktestChart";
 
 const Performance: React.FC = () => {
+  const t = useT();
   const { user } = useAppSelector((s) => s.auth);
   const isHe = user?.preferred_language === "he";
 
@@ -29,10 +31,10 @@ const Performance: React.FC = () => {
 
   const resultLabel = (r: string) =>
     r === "WIN"
-      ? (isHe ? "ניצחון" : "WIN")
+      ? (t("WIN", "ניצחון"))
       : r === "LOSS"
-      ? (isHe ? "הפסד" : "LOSS")
-      : (isHe ? "ניטרלי" : "NEUTRAL");
+      ? (t("LOSS", "הפסד"))
+      : (t("NEUTRAL", "ניטרלי"));
 
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
@@ -40,12 +42,10 @@ const Performance: React.FC = () => {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold print-header">
-            {isHe ? "ביצועי מערכת AI" : "AI Performance Analytics"}
+            {t("AI Performance Analytics", "ביצועי מערכת AI")}
           </h1>
           <p className="text-gray-400 text-sm mt-1">
-            {isHe
-              ? "השוואה אובייקטיבית בין ביצועי ההמלצות לבין S&P 500"
-              : "Objective comparison of AI recommendations vs the S&P 500"}
+            {t("Objective comparison of AI recommendations vs the S&P 500", "השוואה אובייקטיבית בין ביצועי ההמלצות לבין S&P 500")}
           </p>
         </div>
         <button
@@ -53,7 +53,7 @@ const Performance: React.FC = () => {
           className="no-print flex items-center gap-2 text-sm bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white rounded-xl px-4 py-2 transition-colors"
         >
           <span>📄</span>
-          {isHe ? "ייצוא PDF" : "Export PDF"}
+          {t("Export PDF", "ייצוא PDF")}
         </button>
       </div>
 
@@ -73,32 +73,31 @@ const Performance: React.FC = () => {
               // counting it as one printed 18.1% directly above "13W / 3L" —
               // a subtitle from which any reader computes 81%. The neutral
               // count is stated so the sample is not overstated either.
-              label: isHe ? "אחוז הצלחה" : "Win Rate",
+              label: t("Win Rate", "אחוז הצלחה"),
               value: `${summary.win_rate_pct}%`,
-              sub: isHe
-                ? `${summary.win_count} מוצלחות / ${summary.loss_count} כושלות · ${summary.neutral_count} ללא שינוי`
-                : `${summary.win_count}W / ${summary.loss_count}L · ${summary.neutral_count} flat`,
+              sub: t("{w} wins / {l} losses · {n} flat", "{w} מוצלחות / {l} כושלות · {n} ללא שינוי",
+                     { w: summary.win_count, l: summary.loss_count, n: summary.neutral_count }),
               color: summary.win_rate_pct >= 55 ? "text-green-400" : summary.win_rate_pct >= 45 ? "text-yellow-400" : "text-red-400",
             },
             {
-              label: isHe ? "תשואה ממוצעת" : "Avg Return",
+              label: t("Avg Return", "תשואה ממוצעת"),
               value: `${summary.avg_return_pct > 0 ? "+" : ""}${summary.avg_return_pct}%`,
-              sub: isHe ? "לעסקה" : "per trade",
+              sub: t("per trade", "לעסקה"),
               color: summary.avg_return_pct >= 0 ? "text-green-400" : "text-red-400",
             },
             {
               // Distinct from the cumulative alpha on the chart below, which
               // compounds a portfolio over time. Both were labelled "Alpha vs
               // S&P 500" and showed opposite signs on the same screen.
-              label: isHe ? "עודף תשואה לעסקה" : "Excess return per trade",
+              label: t("Excess return per trade", "עודף תשואה לעסקה"),
               value: `${summary.avg_vs_market_pct > 0 ? "+" : ""}${summary.avg_vs_market_pct}%`,
-              sub: isHe ? "ממוצע מול S&P 500" : "avg vs S&P 500",
+              sub: t("avg vs S&P 500", "ממוצע מול S&P 500"),
               color: summary.avg_vs_market_pct >= 0 ? "text-green-400" : "text-red-400",
             },
             {
-              label: isHe ? "סה\"כ במעקב" : "Tracked",
+              label: t("Tracked", "סה\"כ במעקב"),
               value: summary.total_tracked,
-              sub: isHe ? "המלצות" : "recommendations",
+              sub: t("recommendations", "המלצות"),
               color: "text-white",
             },
           ].map((kpi) => (
@@ -111,7 +110,7 @@ const Performance: React.FC = () => {
         </div>
       ) : (
         <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800 text-center text-gray-500">
-          {isHe ? "טרם נאספו נתוני ביצועים. יתעדכן לאחר 30 יום מאישור ההמלצה הראשונה." : "No performance data yet. Updates 30 days after first approved recommendation."}
+          {t("No performance data yet. Updates 30 days after first approved recommendation.", "טרם נאספו נתוני ביצועים. יתעדכן לאחר 30 יום מאישור ההמלצה הראשונה.")}
         </div>
       )}
 
@@ -131,8 +130,8 @@ const Performance: React.FC = () => {
       {summary?.best_trade && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[
-            { label: isHe ? "העסקה הטובה ביותר" : "Best Trade", trade: summary.best_trade, color: "green" },
-            { label: isHe ? "העסקה הגרועה ביותר" : "Worst Trade", trade: summary.worst_trade, color: "red" },
+            { label: t("Best Trade", "העסקה הטובה ביותר"), trade: summary.best_trade, color: "green" },
+            { label: t("Worst Trade", "העסקה הגרועה ביותר"), trade: summary.worst_trade, color: "red" },
           ].map((item) => (
             <div key={item.label} className={`bg-gray-900 rounded-2xl p-5 border border-${item.color}-900/40`}>
               <p className="text-xs text-gray-500 mb-2">{item.label}</p>
@@ -157,19 +156,19 @@ const Performance: React.FC = () => {
       {history.length > 0 && (
         <div className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
           <div className="p-5 border-b border-gray-800">
-            <h2 className="font-bold">{isHe ? "תוצאות אחרונות" : "Recent Outcomes"}</h2>
+            <h2 className="font-bold">{t("Recent Outcomes", "תוצאות אחרונות")}</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-800 text-gray-500 text-xs">
-                  <th className="text-start px-5 py-3">{isHe ? "סימבול" : "Symbol"}</th>
-                  <th className="text-start px-4 py-3">{isHe ? "סוג" : "Type"}</th>
-                  <th className="text-start px-4 py-3">{isHe ? "כניסה" : "Entry"}</th>
-                  <th className="text-start px-4 py-3">{isHe ? "יציאה" : "Exit"}</th>
-                  <th className="text-start px-4 py-3">{isHe ? "תשואה" : "Return"}</th>
-                  <th className="text-start px-4 py-3">{isHe ? "vs שוק" : "vs Market"}</th>
-                  <th className="text-start px-4 py-3">{isHe ? "תוצאה" : "Result"}</th>
+                  <th className="text-start px-5 py-3">{t("Symbol", "סימבול")}</th>
+                  <th className="text-start px-4 py-3">{t("Type", "סוג")}</th>
+                  <th className="text-start px-4 py-3">{t("Entry", "כניסה")}</th>
+                  <th className="text-start px-4 py-3">{t("Exit", "יציאה")}</th>
+                  <th className="text-start px-4 py-3">{t("Return", "תשואה")}</th>
+                  <th className="text-start px-4 py-3">{t("vs Market", "vs שוק")}</th>
+                  <th className="text-start px-4 py-3">{t("Result", "תוצאה")}</th>
                 </tr>
               </thead>
               <tbody>

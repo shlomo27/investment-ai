@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useT } from "../../i18n/t";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
@@ -11,19 +12,20 @@ interface Props {
 }
 
 const CustomTooltip = ({ active, payload, label, isHe }: any) => {
+  const t = useT();
   if (!active || !payload?.length) return null;
   const d = payload[0]?.payload;
   return (
     <div className="bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-xs shadow-lg">
       <p className="text-gray-400 mb-2">{label}</p>
       <p className="text-white font-bold mb-1">
-        {isHe ? "שווי כולל:" : "Total:"} ₪{d?.total_value?.toLocaleString("en", { minimumFractionDigits: 2 })}
+        {t("Total:", "שווי כולל:")} ₪{d?.total_value?.toLocaleString("en", { minimumFractionDigits: 2 })}
       </p>
       <p className="text-blue-400 mb-1">
-        {isHe ? "שוק:" : "Market:"} ₪{d?.market_value?.toLocaleString("en", { minimumFractionDigits: 2 })}
+        {t("Market:", "שוק:")} ₪{d?.market_value?.toLocaleString("en", { minimumFractionDigits: 2 })}
       </p>
       <p className="text-gray-400 mb-1">
-        {isHe ? "מזומן:" : "Cash:"} ₪{d?.cash_balance?.toLocaleString("en", { minimumFractionDigits: 2 })}
+        {t("Cash:", "מזומן:")} ₪{d?.cash_balance?.toLocaleString("en", { minimumFractionDigits: 2 })}
       </p>
       <p className={`font-bold mt-1 ${d?.total_pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
         P&L: {d?.total_pnl >= 0 ? "+" : ""}₪{d?.total_pnl?.toFixed(2)} ({d?.total_pnl_pct?.toFixed(2)}%)
@@ -33,6 +35,7 @@ const CustomTooltip = ({ active, payload, label, isHe }: any) => {
 };
 
 const PortfolioHistoryChart: React.FC<Props> = ({ isHe = false, days = 90 }) => {
+  const t = useT();
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState(days);
@@ -48,10 +51,10 @@ const PortfolioHistoryChart: React.FC<Props> = ({ isHe = false, days = 90 }) => 
   useEffect(() => { load(period); }, [period]);
 
   const PERIODS = [
-    { label: isHe ? "30י" : "30D", value: 30 },
-    { label: isHe ? "90י" : "90D", value: 90 },
-    { label: isHe ? "180י" : "6M", value: 180 },
-    { label: isHe ? "שנה" : "1Y", value: 365 },
+    { label: t("30D", "30י"), value: 30 },
+    { label: t("90D", "90י"), value: 90 },
+    { label: t("6M", "180י"), value: 180 },
+    { label: t("1Y", "שנה"), value: 365 },
   ];
 
   const formatDate = (d: string) =>
@@ -69,11 +72,11 @@ const PortfolioHistoryChart: React.FC<Props> = ({ isHe = false, days = 90 }) => 
       <div className="p-5 border-b border-gray-800 flex items-center justify-between">
         <div>
           <h2 className="font-bold text-base">
-            {isHe ? "ביצועי תיק לאורך זמן" : "Portfolio Performance Over Time"}
+            {t("Portfolio Performance Over Time", "ביצועי תיק לאורך זמן")}
           </h2>
           {change !== null && (
             <p className={`text-xs mt-0.5 ${positive ? "text-green-400" : "text-red-400"}`}>
-              {positive ? "▲" : "▼"} {Math.abs(change).toFixed(2)}% {isHe ? "בתקופה" : "in period"}
+              {positive ? "▲" : "▼"} {Math.abs(change).toFixed(2)}% {t("in period", "בתקופה")}
             </p>
           )}
         </div>
@@ -103,9 +106,7 @@ const PortfolioHistoryChart: React.FC<Props> = ({ isHe = false, days = 90 }) => 
           <div className="h-56 flex flex-col items-center justify-center text-center gap-3">
             <span className="text-3xl">📈</span>
             <p className="text-gray-500 text-sm">
-              {isHe
-                ? "תמונת מצב יומית תיאסף החל מהיום. הגרף יופיע לאחר מספר ימים."
-                : "Daily snapshots start accumulating today. Chart appears within a few days."}
+              {t("Daily snapshots start accumulating today. Chart appears within a few days.", "תמונת מצב יומית תיאסף החל מהיום. הגרף יופיע לאחר מספר ימים.")}
             </p>
           </div>
         ) : (

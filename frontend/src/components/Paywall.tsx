@@ -21,6 +21,7 @@ import React, { useEffect, useState } from "react";
 import { isNative } from "../platform";
 import { getPackages, purchase, restore, type Package } from "../services/purchases";
 import { authApi } from "../api/client";
+import { useT } from "../i18n/t";
 
 type Props = {
   isHe: boolean;
@@ -31,33 +32,24 @@ type Props = {
   onUpgraded: () => void;
 };
 
-const BENEFITS_HE = [
-  "מעקב אחרי מניות ללא הגבלה",
-  "כל ההמלצות החיות, לא רק החמש המובילות",
-  "הניתוח הכלכלי המלא ונימוקי ועדת ההשקעות",
-  "התראות על כל המניות שאתה עוקב אחריהן",
+// One list of pairs rather than two arrays keyed by language: parallel
+// BENEFITS_HE / BENEFITS_EN arrays cannot grow a third language without a
+// third array, and this is the screen that asks people for money.
+const BENEFITS: Array<[string, string]> = [
+  ["Follow unlimited stocks", "מעקב אחרי מניות ללא הגבלה"],
+  ["Every live recommendation, not just the top five", "כל ההמלצות החיות, לא רק החמש המובילות"],
+  ["Full fundamental analysis and committee reasoning", "הניתוח הכלכלי המלא ונימוקי ועדת ההשקעות"],
+  ["Alerts on every stock you follow", "התראות על כל המניות שאתה עוקב אחריהן"],
 ];
 
-const BENEFITS_EN = [
-  "Follow unlimited stocks",
-  "Every live recommendation, not just the top five",
-  "Full fundamental analysis and committee reasoning",
-  "Alerts on every stock you follow",
-];
-
-const REASON_HE: Record<string, string> = {
-  watchlist: "הגעת למכסת המניות בתוכנית החינמית.",
-  research: "הניתוח המלא זמין למנויים.",
-  recommendations: "יש עוד המלצות חיות שלא מוצגות בתוכנית החינמית.",
-};
-
-const REASON_EN: Record<string, string> = {
-  watchlist: "You've reached the free plan's stock limit.",
-  research: "The full analysis is available to subscribers.",
-  recommendations: "There are more live recommendations than the free plan shows.",
+const REASONS: Record<string, [string, string]> = {
+  watchlist: ["You've reached the free plan's stock limit.", "הגעת למכסת המניות בתוכנית החינמית."],
+  research: ["The full analysis is available to subscribers.", "הניתוח המלא זמין למנויים."],
+  recommendations: ["There are more live recommendations than the free plan shows.", "יש עוד המלצות חיות שלא מוצגות בתוכנית החינמית."],
 };
 
 const Paywall: React.FC<Props> = ({ isHe, reason, onClose, onUpgraded }) => {
+  const t = useT();
   const [packages, setPackages] = useState<Package[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -114,9 +106,7 @@ const Paywall: React.FC<Props> = ({ isHe, reason, onClose, onUpgraded }) => {
       // the purchase failed — that sends the user to request a refund for
       // something they successfully bought.
       setError(
-        isHe
-          ? "הרכישה התקבלה. ההפעלה עשויה לקחת דקה — נסה 'שחזור רכישות' בעוד רגע."
-          : "Purchase received. Activation can take a moment — try Restore Purchases shortly."
+        t("Purchase received. Activation can take a moment — try Restore Purchases shortly.", "הרכישה התקבלה. ההפעלה עשויה לקחת דקה — נסה 'שחזור רכישות' בעוד רגע.")
       );
     }
   };
@@ -130,14 +120,15 @@ const Paywall: React.FC<Props> = ({ isHe, reason, onClose, onUpgraded }) => {
     if (confirmed) onUpgraded();
     else
       setError(
-        isHe ? "לא נמצא מנוי פעיל לשחזור." : "No active subscription found to restore."
+        t("No active subscription found to restore.", "לא נמצא מנוי פעיל לשחזור.")
       );
   };
 
   if (!isNative()) return null;
 
-  const benefits = isHe ? BENEFITS_HE : BENEFITS_EN;
-  const reasonText = reason ? (isHe ? REASON_HE : REASON_EN)[reason] : null;
+  const benefits = BENEFITS.map(([en, he]) => t(en, he));
+  const pair = reason ? REASONS[reason] : null;
+  const reasonText = pair ? t(pair[0], pair[1]) : null;
 
   return (
     <div
@@ -150,13 +141,13 @@ const Paywall: React.FC<Props> = ({ isHe, reason, onClose, onUpgraded }) => {
         <button
           onClick={onClose}
           className="self-start text-gray-500 hover:text-gray-300 text-sm mb-6"
-          aria-label={isHe ? "סגור" : "Close"}
+          aria-label={t("Close", "סגור")}
         >
           ✕
         </button>
 
         <h2 className="text-2xl font-bold text-white mb-2">
-          {isHe ? "שדרג למנוי" : "Upgrade"}
+          {t("Upgrade", "שדרג למנוי")}
         </h2>
         {reasonText && <p className="text-blue-400 text-sm mb-5">{reasonText}</p>}
 
@@ -170,12 +161,10 @@ const Paywall: React.FC<Props> = ({ isHe, reason, onClose, onUpgraded }) => {
         </ul>
 
         {loading ? (
-          <div className="text-gray-500 text-sm">{isHe ? "טוען..." : "Loading..."}</div>
+          <div className="text-gray-500 text-sm">{t("Loading...", "טוען...")}</div>
         ) : packages.length === 0 ? (
           <div className="text-gray-400 text-sm">
-            {isHe
-              ? "המנויים אינם זמינים כרגע. נסה שוב מאוחר יותר."
-              : "Subscriptions are unavailable right now. Please try again later."}
+            {t("Subscriptions are unavailable right now. Please try again later.", "המנויים אינם זמינים כרגע. נסה שוב מאוחר יותר.")}
           </div>
         ) : (
           <div className="space-y-3">
@@ -201,28 +190,24 @@ const Paywall: React.FC<Props> = ({ isHe, reason, onClose, onUpgraded }) => {
           disabled={busy}
           className="mt-6 text-gray-400 hover:text-gray-200 text-sm underline underline-offset-4 disabled:opacity-50"
         >
-          {isHe ? "שחזור רכישות" : "Restore Purchases"}
+          {t("Restore Purchases", "שחזור רכישות")}
         </button>
 
         <div className="mt-auto pt-8 space-y-2 text-[11px] text-gray-500 leading-relaxed">
           <p>
-            {isHe
-              ? "המנוי מתחדש אוטומטית עד לביטולו. ניתן לבטל בכל עת דרך הגדרות החשבון בחנות."
-              : "Subscription renews automatically until cancelled. Cancel any time in your store account settings."}
+            {t("Subscription renews automatically until cancelled. Cancel any time in your store account settings.", "המנוי מתחדש אוטומטית עד לביטולו. ניתן לבטל בכל עת דרך הגדרות החשבון בחנות.")}
           </p>
           {/* Apple requires links to terms and privacy on the purchase screen. */}
           <p className="flex gap-3">
             <a href="/privacy.html" className="underline" target="_blank" rel="noreferrer">
-              {isHe ? "מדיניות פרטיות" : "Privacy Policy"}
+              {t("Privacy Policy", "מדיניות פרטיות")}
             </a>
             <a href="/terms.html" className="underline" target="_blank" rel="noreferrer">
-              {isHe ? "תנאי שימוש" : "Terms of Use"}
+              {t("Terms of Use", "תנאי שימוש")}
             </a>
           </p>
           <p>
-            {isHe
-              ? "המערכת מספקת מידע וניתוח בלבד ואינה מהווה ייעוץ השקעות אישי. אין באמור המלצה לביצוע פעולה בניירות ערך."
-              : "This service provides information and analysis only. It is not personal investment advice or a recommendation to trade."}
+            {t("This service provides information and analysis only. It is not personal investment advice or a recommendation to trade.", "המערכת מספקת מידע וניתוח בלבד ואינה מהווה ייעוץ השקעות אישי. אין באמור המלצה לביצוע פעולה בניירות ערך.")}
           </p>
         </div>
       </div>

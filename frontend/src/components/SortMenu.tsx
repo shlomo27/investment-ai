@@ -9,6 +9,7 @@
  * the navigation's "More" sheet. On desktop it anchors under the button.
  */
 import React, { useEffect, useRef, useState } from "react";
+import { useT } from "../i18n/t";
 
 export type SortOption<K extends string> = {
   key: K;
@@ -33,6 +34,7 @@ function SortMenu<K extends string>({
   isHe,
   shortLabel,
 }: Props<K>) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -102,7 +104,7 @@ function SortMenu<K extends string>({
             arrow read as "press to change to something unspecified". */}
         <span className="md:hidden">↕ {shortLabel} ▾</span>
         <span className="hidden md:inline">
-          ↕ {isHe ? "מיון: " : "Sort: "}
+          ↕ {t("Sort: ", "מיון: ")}
           {current?.label ?? shortLabel} ▾
         </span>
       </button>
@@ -122,7 +124,7 @@ function SortMenu<K extends string>({
             >
               <div className="w-10 h-1 bg-gray-700 rounded-full mx-auto my-2" />
               <p className="px-4 pb-2 text-xs text-gray-500">
-                {isHe ? "מיין לפי" : "Sort by"}
+                {t("Sort by", "מיין לפי")}
               </p>
               {options.map(item)}
             </div>

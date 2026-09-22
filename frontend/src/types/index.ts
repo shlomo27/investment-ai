@@ -96,7 +96,8 @@ export interface User {
   is_active: boolean;
   is_admin: boolean;
   is_onboarded: boolean;
-  preferred_language: "he" | "en";
+  /** A language code from src/i18n/languages.ts — ten of them, not two. */
+  preferred_language: string;
   notification_email: boolean;
   notification_sms: boolean;
   notification_push: boolean;
@@ -692,7 +693,8 @@ export interface OnboardingData {
   notification_email: boolean;
   notification_sms: boolean;
   notification_push: boolean;
-  preferred_language: "he" | "en";
+  /** A language code from src/i18n/languages.ts — ten of them, not two. */
+  preferred_language: string;
 }
 
 export interface RiskQuestion {

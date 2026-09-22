@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useT } from "../../i18n/t";
 import { OrderType, ExposureCheck } from "../../types";
 import { ordersApi } from "../../api/client";
 
@@ -10,6 +11,7 @@ interface Props {
 }
 
 const OrderPanel: React.FC<Props> = ({ symbol, currentPrice, isHe = false, onOrderPlaced }) => {
+  const t = useT();
   const [orderType, setOrderType] = useState<OrderType>(OrderType.BUY);
   const [quantity, setQuantity] = useState<number>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -61,19 +63,19 @@ const OrderPanel: React.FC<Props> = ({ symbol, currentPrice, isHe = false, onOrd
           onClick={() => setOrderType(OrderType.BUY)}
           className={`flex-1 py-2 rounded-lg text-sm font-medium ${orderType === OrderType.BUY ? "bg-green-600 text-white" : "text-gray-400"}`}
         >
-          {isHe ? "קנייה" : "Buy"}
+          {t("Buy", "קנייה")}
         </button>
         <button
           type="button"
           onClick={() => setOrderType(OrderType.SELL)}
           className={`flex-1 py-2 rounded-lg text-sm font-medium ${orderType === OrderType.SELL ? "bg-red-600 text-white" : "text-gray-400"}`}
         >
-          {isHe ? "מכירה" : "Sell"}
+          {t("Sell", "מכירה")}
         </button>
       </div>
 
       <div>
-        <label className="block text-sm text-gray-400 mb-1">{isHe ? "כמות" : "Quantity"}</label>
+        <label className="block text-sm text-gray-400 mb-1">{t("Quantity", "כמות")}</label>
         <input
           type="number"
           value={quantity}
@@ -86,12 +88,12 @@ const OrderPanel: React.FC<Props> = ({ symbol, currentPrice, isHe = false, onOrd
       </div>
 
       <div className="flex justify-between text-sm py-2 border-t border-gray-800">
-        <span className="text-gray-400">{isHe ? "מחיר" : "Price"}</span>
+        <span className="text-gray-400">{t("Price", "מחיר")}</span>
         <span className="font-bold">₪{currentPrice.toLocaleString("en", { minimumFractionDigits: 2 })}</span>
       </div>
 
       <div className="flex justify-between text-sm font-bold">
-        <span>{isHe ? "סה\"כ" : "Total"}</span>
+        <span>{t("Total", "סה\"כ")}</span>
         <span className={orderType === OrderType.BUY ? "text-green-400" : "text-red-400"}>
           ₪{totalAmount.toLocaleString("en", { minimumFractionDigits: 2 })}
         </span>
@@ -111,7 +113,7 @@ const OrderPanel: React.FC<Props> = ({ symbol, currentPrice, isHe = false, onOrd
 
       {success && (
         <div className="bg-green-900/20 border border-green-700 rounded-lg p-2 text-xs text-green-400">
-          {isHe ? "הזמנה בוצעה בהצלחה!" : "Order placed successfully!"}
+          {t("Order placed successfully!", "הזמנה בוצעה בהצלחה!")}
         </div>
       )}
 
@@ -125,10 +127,10 @@ const OrderPanel: React.FC<Props> = ({ symbol, currentPrice, isHe = false, onOrd
         }`}
       >
         {isSubmitting
-          ? (isHe ? "מבצע..." : "Submitting...")
+          ? (t("Submitting...", "מבצע..."))
           : orderType === OrderType.BUY
-          ? (isHe ? "קנה" : "Buy")
-          : (isHe ? "מכור" : "Sell")}
+          ? (t("Buy", "קנה"))
+          : (t("Sell", "מכור"))}
       </button>
     </form>
   );

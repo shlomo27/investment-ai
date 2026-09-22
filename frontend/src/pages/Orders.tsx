@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
+import { useT } from "../i18n/t";
 import { useAppSelector } from "../store";
 import { ordersApi } from "../api/client";
 import { Order, OrderStatus, OrderType } from "../types";
 
 const Orders: React.FC = () => {
+  const t = useT();
   const { user } = useAppSelector((state) => state.auth);
   const isHe = user?.preferred_language === "he";
   const [orders, setOrders] = useState<Order[]>([]);
@@ -27,9 +29,10 @@ const Orders: React.FC = () => {
 
   const exportCSV = () => {
     if (!orders.length) return;
-    const headers = isHe
-      ? ['סמל', 'סוג', 'כמות', 'מחיר', 'סה"כ', 'סטטוס', 'תאריך']
-      : ['Symbol', 'Type', 'Quantity', 'Price', 'Total', 'Status', 'Date'];
+    const headers = [
+      t("Symbol", "סמל"), t("Type", "סוג"), t("Quantity", "כמות"), t("Price", "מחיר"),
+      t("Total", 'סה"כ'), t("Status", "סטטוס"), t("Date", "תאריך"),
+    ];
     const rows = orders.map(o => [
       o.symbol,
       o.order_type,
@@ -50,7 +53,7 @@ const Orders: React.FC = () => {
   };
 
   const handleCancel = async (orderId: number) => {
-    if (!window.confirm(isHe ? "האם לבטל את ההזמנה?" : "Cancel this order?")) return;
+    if (!window.confirm(t("Cancel this order?", "האם לבטל את ההזמנה?"))) return;
     try {
       await ordersApi.cancelOrder(orderId);
       fetchOrders();
@@ -76,13 +79,13 @@ const Orders: React.FC = () => {
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{isHe ? "היסטוריית עסקאות" : "Trade History"}</h1>
+        <h1 className="text-2xl font-bold">{t("Trade History", "היסטוריית עסקאות")}</h1>
         <button
           onClick={exportCSV}
           disabled={!orders.length}
           className="no-print text-sm bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 rounded-xl px-4 py-2 flex items-center gap-2 disabled:opacity-40"
         >
-          <span>📥</span>{isHe ? "ייצוא CSV" : "Export CSV"}
+          <span>📥</span>{t("Export CSV", "ייצוא CSV")}
         </button>
       </div>
 
@@ -112,7 +115,7 @@ const Orders: React.FC = () => {
       ) : orders.length === 0 ? (
         <div className="bg-gray-900 rounded-2xl p-12 border border-gray-800 text-center text-gray-500">
           <p className="text-4xl mb-3">📋</p>
-          <p>{isHe ? "אין עסקאות" : "No orders found"}</p>
+          <p>{t("No orders found", "אין עסקאות")}</p>
         </div>
       ) : (
         <div className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
@@ -150,7 +153,7 @@ const Orders: React.FC = () => {
                         onClick={() => handleCancel(order.id)}
                         className="text-xs text-red-400 hover:text-red-300 border border-red-800 px-2 py-1 rounded"
                       >
-                        {isHe ? "ביטול" : "Cancel"}
+                        {t("Cancel", "ביטול")}
                       </button>
                     )}
                   </td>

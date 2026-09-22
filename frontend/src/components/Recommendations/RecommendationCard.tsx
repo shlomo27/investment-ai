@@ -215,9 +215,10 @@ const RecommendationCard: React.FC<Props> = ({
                   cls: "bg-red-950/60 text-red-300 border-red-800/50",
                   icon: "⚡",
                 };
-              const betaHint = beta === null ? "" : isHe
-                ? `בטא ${beta.toFixed(2)} — המניה זזה בערך פי ${beta.toFixed(2)} מהשוק. מודד תנועה מול השוק בלבד; מניה רגועה עדיין יכולה לקפוץ על חדשות שלה.`
-                : `Beta ${beta.toFixed(2)} — moves about ${beta.toFixed(2)}× the market. Measures market-correlated movement only; a calm stock can still gap on its own news.`;
+              const betaHint = beta === null ? "" : t(
+                "Beta {beta} — moves about {beta}× the market. Measures market-correlated movement only; a calm stock can still gap on its own news.",
+                "בטא {beta} — המניה זזה בערך פי {beta} מהשוק. מודד תנועה מול השוק בלבד; מניה רגועה עדיין יכולה לקפוץ על חדשות שלה.",
+                { beta: beta.toFixed(2) });
               if (!isSell && !band) return null;
               return (
                 <>
@@ -249,15 +250,16 @@ const RecommendationCard: React.FC<Props> = ({
                 return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-green-900/40 text-green-300 border border-green-700/40">🟢 {t("Fresh", "עדכנית")}</span>;
               } else if (ageDays <= 30) {
                 return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300 border border-yellow-700/40"
-                             title={t("Within the refresh cycle — re-analysed within 30 days", "בתוך מחזור הריענון — הניתוח נבדק מחדש עד 30 יום")}>🟡 {isHe ? `${ageDays} ימים` : `${ageDays} days`}</span>;
+                             title={t("Within the refresh cycle — re-analysed within 30 days", "בתוך מחזור הריענון — הניתוח נבדק מחדש עד 30 יום")}>🟡 {t("{days} days", "{days} ימים", { days: ageDays })}</span>;
               } else {
                 // Say what the reader should do, not what the system is doing.
                 // "Awaiting re-check" is internal state: it tells someone
                 // holding a 49-day-old card nothing about whether to act on it.
                 return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-orange-900/40 text-orange-300 border border-orange-700/40"
-                             title={isHe
-                               ? `יעד המחיר והסטופ נקבעו לפני ${ageDays} ימים, לפני שינויי מחיר ואולי לפני דוח רבעוני. המניה בתור לניתוח מחדש; אם לא תיבדק עד גיל 45 יום ההמלצה תוסר מהפיד. עד אז אל תפעל לפי המספרים האלה בלי לבדוק את המחיר הנוכחי.`
-                               : `The target and stop were set ${ageDays} days ago, before subsequent price moves and possibly before an earnings report. It is queued for re-analysis and will be retired at 45 days if not re-checked. Until then do not act on these numbers without checking the current price.`}>🟠 {t("{days}-day-old analysis — verify price first", "ניתוח בן {days} ימים — אמת מחיר לפני פעולה", { days: ageDays })}</span>;
+                             title={t(
+                               "The target and stop were set {days} days ago, before subsequent price moves and possibly before an earnings report. It is queued for re-analysis and will be retired at 45 days if not re-checked. Until then do not act on these numbers without checking the current price.",
+                               "יעד המחיר והסטופ נקבעו לפני {days} ימים, לפני שינויי מחיר ואולי לפני דוח רבעוני. המניה בתור לניתוח מחדש; אם לא תיבדק עד גיל 45 יום ההמלצה תוסר מהפיד. עד אז אל תפעל לפי המספרים האלה בלי לבדוק את המחיר הנוכחי.",
+                               { days: ageDays })}>🟠 {t("{days}-day-old analysis — verify price first", "ניתוח בן {days} ימים — אמת מחיר לפני פעולה", { days: ageDays })}</span>;
               }
             })()}
           </div>
@@ -273,9 +275,14 @@ const RecommendationCard: React.FC<Props> = ({
               const cls = alloc === "HIGH" ? "bg-green-900/40 text-green-300 border-green-700/40"
                 : alloc === "MEDIUM" ? "bg-blue-900/40 text-blue-300 border-blue-700/40"
                 : "bg-yellow-900/40 text-yellow-300 border-yellow-700/40";
-              const label = isHe
-                ? ({ HIGH: "הקצאה גבוהה", MEDIUM: "הקצאה בינונית", LOW: "הקצאה נמוכה" } as Record<string, string>)[alloc] || alloc
-                : alloc;
+              // The enum value was shown raw to every non-Hebrew reader —
+              // "MEDIUM" is a database token, not a label.
+              const ALLOCATION: Record<string, [string, string]> = {
+                HIGH: ["High allocation", "הקצאה גבוהה"],
+                MEDIUM: ["Medium allocation", "הקצאה בינונית"],
+                LOW: ["Low allocation", "הקצאה נמוכה"],
+              };
+              const label = ALLOCATION[alloc] ? t(...ALLOCATION[alloc]) : alloc;
               return (
                 <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded border ${cls}`}>
                   {label}
@@ -399,9 +406,9 @@ const RecommendationCard: React.FC<Props> = ({
                 <>
                   <p
                     className="text-xs text-gray-400"
-                    title={isHe
-                      ? `מסכנים ${downPct.toFixed(1)}% כדי להרוויח ${upPct.toFixed(1)}% — ${basis}`
-                      : `Risking ${downPct.toFixed(1)}% to make ${upPct.toFixed(1)}% — ${basis}`}
+                    title={t("Risking {down}% to make {up}% — {basis}",
+                             "מסכנים {down}% כדי להרוויח {up}% — {basis}",
+                             { down: downPct.toFixed(1), up: upPct.toFixed(1), basis })}
                   >
                     {t("Risk / reward", "סיכוי מול סיכון")}
                   </p>
@@ -507,14 +514,17 @@ const RecommendationCard: React.FC<Props> = ({
                 {t("Technical Analysis", "ניתוח טכני")}
               </h4>
               {(() => {
-                const t = tech || rec.technical_analysis;
-                if (!t) return null;
+                // Named `ta`, not `t`: as `t` it shadowed the translator, which
+                // is why these three labels were the only ones on the card that
+                // could not be translated.
+                const ta = tech || rec.technical_analysis;
+                if (!ta) return null;
                 return (
                   <div className="grid grid-cols-3 gap-3">
                     {[
-                      { label: "RSI", value: t.rsi_14?.toFixed(1) },
-                      { label: "Signal", value: t.timing_signal },
-                      { label: "Score", value: `${t.technical_score}/100` },
+                      { label: "RSI", value: ta.rsi_14?.toFixed(1) },
+                      { label: t("Signal", "סיגנל"), value: ta.timing_signal },
+                      { label: t("Score", "ציון"), value: `${ta.technical_score}/100` },
                     ].map((item) => (
                       <div key={item.label} className="bg-gray-800 rounded-lg p-2 text-center">
                         <p className="text-xs text-gray-400">{item.label}</p>

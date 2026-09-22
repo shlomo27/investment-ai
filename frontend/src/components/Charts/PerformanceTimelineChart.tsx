@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useT } from "../../i18n/t";
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
@@ -10,23 +11,25 @@ interface Props {
 }
 
 const CustomTooltip = ({ active, payload, label, isHe }: any) => {
+  const t = useT();
   if (!active || !payload?.length) return null;
   const d = payload[0]?.payload;
   return (
     <div className="bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-xs shadow-lg">
       <p className="text-gray-400 mb-2 font-medium">{label}</p>
-      <p className="text-white mb-1">{isHe ? "סה\"כ עסקאות:" : "Total trades:"} {d?.total}</p>
-      <p className="text-green-400 mb-1">{isHe ? "ניצחונות:" : "Wins:"} {d?.wins}</p>
-      <p className="text-red-400 mb-1">{isHe ? "הפסדים:" : "Losses:"} {d?.losses}</p>
-      <p className="text-blue-400 mb-1">{isHe ? "אחוז הצלחה:" : "Win rate:"} {d?.win_rate}%</p>
+      <p className="text-white mb-1">{t("Total trades:", "סה\"כ עסקאות:")} {d?.total}</p>
+      <p className="text-green-400 mb-1">{t("Wins:", "ניצחונות:")} {d?.wins}</p>
+      <p className="text-red-400 mb-1">{t("Losses:", "הפסדים:")} {d?.losses}</p>
+      <p className="text-blue-400 mb-1">{t("Win rate:", "אחוז הצלחה:")} {d?.win_rate}%</p>
       <p className={`font-bold mt-1 ${d?.avg_return >= 0 ? "text-green-300" : "text-red-300"}`}>
-        {isHe ? "תשואה ממוצעת:" : "Avg return:"} {d?.avg_return > 0 ? "+" : ""}{d?.avg_return}%
+        {t("Avg return:", "תשואה ממוצעת:")} {d?.avg_return > 0 ? "+" : ""}{d?.avg_return}%
       </p>
     </div>
   );
 };
 
 const PerformanceTimelineChart: React.FC<Props> = ({ isHe = false }) => {
+  const t = useT();
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -42,7 +45,7 @@ const PerformanceTimelineChart: React.FC<Props> = ({ isHe = false }) => {
   if (!data.length) {
     return (
       <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800 flex items-center justify-center h-64 text-gray-500 text-sm">
-        {isHe ? "אין נתונים להצגה עדיין" : "No timeline data yet"}
+        {t("No timeline data yet", "אין נתונים להצגה עדיין")}
       </div>
     );
   }
@@ -59,10 +62,10 @@ const PerformanceTimelineChart: React.FC<Props> = ({ isHe = false }) => {
     <div className="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden">
       <div className="p-5 border-b border-gray-800">
         <h2 className="font-bold text-base">
-          {isHe ? "ביצועים חודשיים — אחוז הצלחה ותשואה" : "Monthly Performance — Win Rate & Return"}
+          {t("Monthly Performance — Win Rate & Return", "ביצועים חודשיים — אחוז הצלחה ותשואה")}
         </h2>
         <p className="text-xs text-gray-500 mt-0.5">
-          {isHe ? "פירוט לפי חודש של המלצות שמעקבן הושלם" : "Month-by-month breakdown of tracked recommendations"}
+          {t("Month-by-month breakdown of tracked recommendations", "פירוט לפי חודש של המלצות שמעקבן הושלם")}
         </p>
       </div>
       <div className="p-5">
@@ -93,8 +96,8 @@ const PerformanceTimelineChart: React.FC<Props> = ({ isHe = false }) => {
             />
             <Tooltip content={<CustomTooltip isHe={isHe} />} />
             <ReferenceLine yAxisId="rate" y={50} stroke="#374151" strokeDasharray="4 4" />
-            <Bar yAxisId="count" dataKey="wins" fill="#22c55e" opacity={0.8} name={isHe ? "ניצחונות" : "Wins"} stackId="a" />
-            <Bar yAxisId="count" dataKey="losses" fill="#ef4444" opacity={0.7} name={isHe ? "הפסדים" : "Losses"} stackId="a" />
+            <Bar yAxisId="count" dataKey="wins" fill="#22c55e" opacity={0.8} name={t("Wins", "ניצחונות")} stackId="a" />
+            <Bar yAxisId="count" dataKey="losses" fill="#ef4444" opacity={0.7} name={t("Losses", "הפסדים")} stackId="a" />
             <Line
               yAxisId="rate"
               type="monotone"
@@ -102,7 +105,7 @@ const PerformanceTimelineChart: React.FC<Props> = ({ isHe = false }) => {
               stroke="#60a5fa"
               strokeWidth={2.5}
               dot={{ fill: "#60a5fa", r: 3 }}
-              name={isHe ? "% הצלחה" : "Win Rate %"}
+              name={t("Win Rate %", "% הצלחה")}
             />
           </ComposedChart>
         </ResponsiveContainer>

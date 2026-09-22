@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useT } from "../i18n/t";
 import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { fetchPortfolioSummary } from "../store/slices/portfolioSlice";
@@ -6,6 +7,7 @@ import { fetchInbox, fetchUnreadCount, fetchRecommendations } from "../store/sli
 import { performanceApi } from "../api/client";
 
 const Dashboard: React.FC = () => {
+  const t = useT();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
   const { summary, isLoading: portfolioLoading } = useAppSelector((state) => state.portfolio);
@@ -46,9 +48,9 @@ const Dashboard: React.FC = () => {
 
   const getTriggerBadge = (notif: any) => {
     const trigger = notif.internal_detail?.trigger_type;
-    if (trigger === "PRICE_ALERT") return { label: isHe ? "תנועת מחיר" : "Price Alert", color: "bg-orange-900/50 text-orange-300" };
-    if (trigger === "NEWS_ALERT") return { label: isHe ? "חדשות" : "News Alert", color: "bg-purple-900/50 text-purple-300" };
-    if (trigger === "EARNINGS") return { label: isHe ? "דוח רבעוני" : "Earnings", color: "bg-blue-900/50 text-blue-300" };
+    if (trigger === "PRICE_ALERT") return { label: t("Price Alert", "תנועת מחיר"), color: "bg-orange-900/50 text-orange-300" };
+    if (trigger === "NEWS_ALERT") return { label: t("News Alert", "חדשות"), color: "bg-purple-900/50 text-purple-300" };
+    if (trigger === "EARNINGS") return { label: t("Earnings", "דוח רבעוני"), color: "bg-blue-900/50 text-blue-300" };
     return null;
   };
 
@@ -77,7 +79,7 @@ const Dashboard: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">
-            {isHe ? `שלום, ${user?.full_name}` : `Hello, ${user?.full_name}`}
+            {t("Hello, {name}", "שלום, {name}", { name: user?.full_name ?? "" })}
           </h1>
           <p className="text-gray-400 text-sm mt-1">
             {new Date().toLocaleDateString(isHe ? "he-IL" : "en-US", {
@@ -91,7 +93,7 @@ const Dashboard: React.FC = () => {
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-xl text-sm font-medium"
           >
             <span className="bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">{unreadCount}</span>
-            {isHe ? "הודעות חדשות" : "New Updates"}
+            {t("New Updates", "הודעות חדשות")}
           </Link>
         )}
       </div>
@@ -99,30 +101,30 @@ const Dashboard: React.FC = () => {
       {/* Profile Strip */}
       <div className="bg-gray-900 rounded-2xl px-5 py-4 border border-gray-800 flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">{isHe ? "פרופיל:" : "Profile:"}</span>
+          <span className="text-xs text-gray-500">{t("Profile:", "פרופיל:")}</span>
           <span className={`font-bold text-sm ${riskColors[riskProfile] || "text-white"}`}>
             {riskLabels[riskProfile] ? (isHe ? riskLabels[riskProfile].he : riskLabels[riskProfile].en) : riskProfile}
           </span>
         </div>
         <div className="w-px h-4 bg-gray-700" />
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">{isHe ? "נכסים:" : "Assets:"}</span>
+          <span className="text-xs text-gray-500">{t("Assets:", "נכסים:")}</span>
           <span className="text-sm font-medium text-white">
             {investmentTypeLabel[invType]?.icon} {isHe ? investmentTypeLabel[invType]?.he : investmentTypeLabel[invType]?.en}
           </span>
         </div>
         {(user as any)?.allows_volatile && (
-          <span className="px-2 py-0.5 bg-red-900/40 text-red-300 rounded text-xs">{isHe ? "תנודתיות גבוהה" : "High Volatility"}</span>
+          <span className="px-2 py-0.5 bg-red-900/40 text-red-300 rounded text-xs">{t("High Volatility", "תנודתיות גבוהה")}</span>
         )}
         {(user as any)?.allows_leveraged && (
-          <span className="px-2 py-0.5 bg-red-900/40 text-red-300 rounded text-xs">{isHe ? "ממונף" : "Leveraged"}</span>
+          <span className="px-2 py-0.5 bg-red-900/40 text-red-300 rounded text-xs">{t("Leveraged", "ממונף")}</span>
         )}
         {(user as any)?.allows_short && (
           <span className="px-2 py-0.5 bg-red-900/40 text-red-300 rounded text-xs">Short</span>
         )}
         <div className="flex-1" />
         <Link to="/recommendations" className="text-xs text-blue-400 hover:text-blue-300">
-          {isHe ? "עדכן פרופיל ←" : "Update profile →"}
+          {t("Update profile →", "עדכן פרופיל ←")}
         </Link>
       </div>
 
@@ -130,22 +132,22 @@ const Dashboard: React.FC = () => {
       {summary && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-            <p className="text-gray-400 text-xs mb-1">{isHe ? "שווי תיק כולל" : "Total Portfolio"}</p>
+            <p className="text-gray-400 text-xs mb-1">{t("Total Portfolio", "שווי תיק כולל")}</p>
             <p className="text-2xl font-bold">{formatCurrency(summary.total_value)}</p>
             <p className={`text-sm mt-1 ${pnlPositive ? "text-green-400" : "text-red-400"}`}>
               {pnlPositive ? "+" : ""}{formatCurrency(summary.total_pnl)} ({summary.total_pnl_pct.toFixed(2)}%)
             </p>
           </div>
           <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-            <p className="text-gray-400 text-xs mb-1">{isHe ? "מזומן זמין" : "Available Cash"}</p>
+            <p className="text-gray-400 text-xs mb-1">{t("Available Cash", "מזומן זמין")}</p>
             <p className="text-2xl font-bold text-green-400">{formatCurrency(summary.cash_balance)}</p>
           </div>
           <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-            <p className="text-gray-400 text-xs mb-1">{isHe ? "שווי שוק" : "Market Value"}</p>
+            <p className="text-gray-400 text-xs mb-1">{t("Market Value", "שווי שוק")}</p>
             <p className="text-2xl font-bold">{formatCurrency(summary.total_market_value)}</p>
           </div>
           <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-            <p className="text-gray-400 text-xs mb-1">{isHe ? "ציון סיכון" : "Risk Score"}</p>
+            <p className="text-gray-400 text-xs mb-1">{t("Risk Score", "ציון סיכון")}</p>
             <p className="text-2xl font-bold">
               <span className={riskColors[riskProfile] || "text-white"}>
                 {summary.risk_score ?? user?.risk_score ?? "—"}/100
@@ -160,12 +162,12 @@ const Dashboard: React.FC = () => {
         <div className="bg-red-900/20 border border-red-700/50 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-red-400 text-lg">⚠️</span>
-            <h3 className="font-bold text-red-400">{isHe ? "אזהרת סטופ לוס" : "Stop-Loss Alert"}</h3>
+            <h3 className="font-bold text-red-400">{t("Stop-Loss Alert", "אזהרת סטופ לוס")}</h3>
           </div>
           {stopLossWarnings.map(w => (
             <div key={w.symbol} className="flex items-center justify-between text-sm py-1">
               <span className="font-bold">{w.symbol}</span>
-              <span className="text-red-300">{isHe ? `מחיר נוכחי ₪${w.currentPrice} קרוב לסטופ ₪${w.stopLoss}` : `₪${w.currentPrice} near stop ₪${w.stopLoss}`}</span>
+              <span className="text-red-300">{t("{price} near stop {stop}", "מחיר נוכחי {price} קרוב לסטופ {stop}", { price: w.currentPrice, stop: w.stopLoss })}</span>
               <span className="text-red-400 font-bold">{w.pctFromStop.toFixed(1)}%</span>
             </div>
           ))}
@@ -176,9 +178,9 @@ const Dashboard: React.FC = () => {
         {/* Top Holdings */}
         <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold">{isHe ? "אחזקות עיקריות" : "Top Holdings"}</h2>
+            <h2 className="font-bold">{t("Top Holdings", "אחזקות עיקריות")}</h2>
             <Link to="/portfolio" className="text-blue-400 text-sm hover:text-blue-300">
-              {isHe ? "הכל" : "View all"}
+              {t("View all", "הכל")}
             </Link>
           </div>
           {portfolioLoading ? (
@@ -193,7 +195,7 @@ const Dashboard: React.FC = () => {
                 <div key={pos.symbol} className="flex items-center justify-between p-3 bg-gray-800 rounded-xl">
                   <div>
                     <p className="font-bold">{pos.symbol}</p>
-                    <p className="text-xs text-gray-400">{pos.quantity.toFixed(4)} {isHe ? "יח'" : "units"}</p>
+                    <p className="text-xs text-gray-400">{pos.quantity.toFixed(4)} {t("units", "יח'")}</p>
                   </div>
                   <div className="text-right">
                     <p className="font-medium">{formatCurrency(pos.current_value)}</p>
@@ -206,9 +208,9 @@ const Dashboard: React.FC = () => {
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">
-              <p>{isHe ? "אין אחזקות עדיין" : "No holdings yet"}</p>
+              <p>{t("No holdings yet", "אין אחזקות עדיין")}</p>
               <Link to="/recommendations" className="text-blue-400 text-sm mt-2 block">
-                {isHe ? "צפה בהמלצות לקנייה" : "View buy recommendations"}
+                {t("View buy recommendations", "צפה בהמלצות לקנייה")}
               </Link>
             </div>
           )}
@@ -217,9 +219,9 @@ const Dashboard: React.FC = () => {
         {/* Recent Notifications — trigger-aware */}
         <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold">{isHe ? "עדכונים אחרונים" : "Recent Updates"}</h2>
+            <h2 className="font-bold">{t("Recent Updates", "עדכונים אחרונים")}</h2>
             <Link to="/recommendations" className="text-blue-400 text-sm hover:text-blue-300">
-              {isHe ? "תיבת דואר" : "Inbox"}
+              {t("Inbox", "תיבת דואר")}
             </Link>
           </div>
           {notifications.length > 0 ? (
@@ -259,7 +261,7 @@ const Dashboard: React.FC = () => {
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">
-              <p>{isHe ? "אין עדכונים חדשים" : "No recent updates"}</p>
+              <p>{t("No recent updates", "אין עדכונים חדשים")}</p>
             </div>
           )}
         </div>
@@ -269,17 +271,17 @@ const Dashboard: React.FC = () => {
       {perfSummary && perfSummary.total_tracked > 0 && (
         <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-sm">{isHe ? "ביצועי AI — מעקב המלצות" : "AI Performance Tracker"}</h2>
+            <h2 className="font-bold text-sm">{t("AI Performance Tracker", "ביצועי AI — מעקב המלצות")}</h2>
             <Link to="/fund" className="text-xs text-blue-400 hover:text-blue-300">
-              {isHe ? "פרטים ←" : "Details →"}
+              {t("Details →", "פרטים ←")}
             </Link>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
-              { label: isHe ? "אחוז הצלחה" : "Win Rate", value: `${perfSummary.win_rate_pct}%`, color: "text-green-400" },
-              { label: isHe ? "תשואה ממוצעת" : "Avg Return", value: `${perfSummary.avg_return_pct > 0 ? "+" : ""}${perfSummary.avg_return_pct}%`, color: perfSummary.avg_return_pct >= 0 ? "text-green-400" : "text-red-400" },
+              { label: t("Win Rate", "אחוז הצלחה"), value: `${perfSummary.win_rate_pct}%`, color: "text-green-400" },
+              { label: t("Avg Return", "תשואה ממוצעת"), value: `${perfSummary.avg_return_pct > 0 ? "+" : ""}${perfSummary.avg_return_pct}%`, color: perfSummary.avg_return_pct >= 0 ? "text-green-400" : "text-red-400" },
               { label: isHe ? "alpha vs S&P500" : "vs S&P 500", value: `${perfSummary.avg_vs_market_pct > 0 ? "+" : ""}${perfSummary.avg_vs_market_pct}%`, color: perfSummary.avg_vs_market_pct >= 0 ? "text-green-400" : "text-red-400" },
-              { label: isHe ? "סה\"כ במעקב" : "Tracked", value: perfSummary.total_tracked, color: "text-white" },
+              { label: t("Tracked", "סה\"כ במעקב"), value: perfSummary.total_tracked, color: "text-white" },
             ].map(kpi => (
               <div key={kpi.label} className="bg-gray-800 rounded-xl p-3 text-center">
                 <p className="text-xs text-gray-500 mb-1">{kpi.label}</p>
@@ -291,8 +293,8 @@ const Dashboard: React.FC = () => {
             {/* Win bar */}
             <div className="flex-1">
               <div className="flex justify-between text-xs text-gray-500 mb-1">
-                <span>{isHe ? "ניצחונות" : "Wins"} ({perfSummary.win_count})</span>
-                <span>{isHe ? "הפסדים" : "Losses"} ({perfSummary.loss_count})</span>
+                <span>{t("Wins", "ניצחונות")} ({perfSummary.win_count})</span>
+                <span>{t("Losses", "הפסדים")} ({perfSummary.loss_count})</span>
               </div>
               <div className="w-full bg-red-900/40 rounded-full h-2 overflow-hidden">
                 <div className="bg-green-500 h-2 rounded-full" style={{ width: `${perfSummary.win_rate_pct}%` }} />

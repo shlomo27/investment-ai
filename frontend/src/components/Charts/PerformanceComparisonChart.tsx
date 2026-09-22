@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useT } from "../../i18n/t";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, ReferenceLine, Area, AreaChart,
@@ -10,6 +11,7 @@ interface Props {
 }
 
 const CustomTooltip = ({ active, payload, label, isHe }: any) => {
+  const t = useT();
   if (!active || !payload?.length) return null;
   const ai = payload.find((p: any) => p.dataKey === "ai_value");
   const spy = payload.find((p: any) => p.dataKey === "spy_value");
@@ -30,17 +32,18 @@ const CustomTooltip = ({ active, payload, label, isHe }: any) => {
       {alpha !== null && (
         <p className={`font-bold mt-1 ${parseFloat(alpha) >= 0 ? "text-green-300" : "text-red-300"}`}>
           {/* Cumulative, not the per-trade excess return in the KPI row above. */}
-          Alpha מצטברת: {parseFloat(alpha) >= 0 ? "+" : ""}{alpha}
+          {t("Cumulative alpha:", "Alpha מצטברת:")} {parseFloat(alpha) >= 0 ? "+" : ""}{alpha}
         </p>
       )}
       {payload[0]?.payload?.trade_count !== undefined && (
-        <p className="text-gray-500 mt-1">{payload[0].payload.trade_count} {isHe ? "עסקאות" : "trades"}</p>
+        <p className="text-gray-500 mt-1">{payload[0].payload.trade_count} {t("trades", "עסקאות")}</p>
       )}
     </div>
   );
 };
 
 const PerformanceComparisonChart: React.FC<Props> = ({ isHe = false }) => {
+  const t = useT();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +51,7 @@ const PerformanceComparisonChart: React.FC<Props> = ({ isHe = false }) => {
   useEffect(() => {
     performanceApi.getComparison()
       .then(setData)
-      .catch(() => setError(isHe ? "שגיאה בטעינת נתונים" : "Failed to load data"))
+      .catch(() => setError(t("Failed to load data", "שגיאה בטעינת נתונים")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -61,7 +64,7 @@ const PerformanceComparisonChart: React.FC<Props> = ({ isHe = false }) => {
   if (error || !data) {
     return (
       <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800 flex items-center justify-center h-80 text-gray-500 text-sm">
-        {error || (isHe ? "אין נתונים מספיקים להשוואה" : "Not enough tracked outcomes yet")}
+        {error || (t("Not enough tracked outcomes yet", "אין נתונים מספיקים להשוואה"))}
       </div>
     );
   }
@@ -71,9 +74,7 @@ const PerformanceComparisonChart: React.FC<Props> = ({ isHe = false }) => {
       <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800 flex flex-col items-center justify-center h-80 text-center gap-3">
         <span className="text-4xl">📊</span>
         <p className="text-gray-400 text-sm">
-          {isHe
-            ? "הגרף יופיע לאחר שמספיק המלצות יצברו תוצאות (30 יום מאישור)"
-            : "Chart appears once enough recommendations have tracked outcomes (30 days post-approval)"}
+          {t("Chart appears once enough recommendations have tracked outcomes (30 days post-approval)", "הגרף יופיע לאחר שמספיק המלצות יצברו תוצאות (30 יום מאישור)")}
         </p>
       </div>
     );
@@ -98,13 +99,13 @@ const PerformanceComparisonChart: React.FC<Props> = ({ isHe = false }) => {
         <div className="flex items-start justify-between">
           <div>
             <h2 className="font-bold text-base">
-              {isHe ? "AI מול S&P 500 — השוואה מצטברת" : "AI vs S&P 500 — Cumulative Return"}
+              {t("AI vs S&P 500 — Cumulative Return", "AI מול S&P 500 — השוואה מצטברת")}
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              {isHe ? "ערך היפותטי של $100 בהתחלה" : "Hypothetical $100 starting value"}
+              {t("Hypothetical $100 starting value", "ערך היפותטי של $100 בהתחלה")}
               {!data.using_real_spy && (
                 <span className="ml-2 text-yellow-600">
-                  {isHe ? "(SPY משוער)" : "(estimated SPY)"}
+                  {t("(estimated SPY)", "(SPY משוער)")}
                 </span>
               )}
             </p>
@@ -112,7 +113,7 @@ const PerformanceComparisonChart: React.FC<Props> = ({ isHe = false }) => {
           {/* Summary badges */}
           <div className="flex gap-3 items-center">
             <div className="text-right">
-              <p className="text-xs text-gray-500">{isHe ? "AI תשואה" : "AI Return"}</p>
+              <p className="text-xs text-gray-500">{t("AI Return", "AI תשואה")}</p>
               <p className={`text-lg font-bold ${data.total_ai_return >= 0 ? "text-green-400" : "text-red-400"}`}>
                 {data.total_ai_return > 0 ? "+" : ""}{data.total_ai_return}%
               </p>
@@ -128,7 +129,7 @@ const PerformanceComparisonChart: React.FC<Props> = ({ isHe = false }) => {
                 ? "bg-green-900/30 border-green-700/50 text-green-300"
                 : "bg-red-900/30 border-red-700/50 text-red-300"
             }`}>
-              Alpha מצטברת {data.alpha > 0 ? "+" : ""}{data.alpha}%
+              {t("Cumulative alpha", "Alpha מצטברת")} {data.alpha > 0 ? "+" : ""}{data.alpha}%
             </div>
           </div>
         </div>
@@ -186,7 +187,7 @@ const PerformanceComparisonChart: React.FC<Props> = ({ isHe = false }) => {
               wrapperStyle={{ fontSize: 12, paddingTop: 12 }}
               formatter={(value) => (
                 <span style={{ color: value === "AI" ? aiColor : spyColor }}>
-                  {value === "AI" ? (isHe ? "המלצות AI" : "AI Recommendations") : "S&P 500"}
+                  {value === "AI" ? (t("AI Recommendations", "המלצות AI")) : "S&P 500"}
                 </span>
               )}
             />

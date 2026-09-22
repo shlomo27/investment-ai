@@ -1,4 +1,5 @@
 import React from "react";
+import { useT } from "../../i18n/t";
 
 interface Props {
   symbol: string;
@@ -53,37 +54,38 @@ const AgentDecisionTree: React.FC<Props> = ({
   hasTechnical,
   isHe = false,
 }) => {
+  const t = useT();
   return (
     <div className="bg-gray-800/50 rounded-xl p-4">
       <p className="text-xs text-gray-400 mb-3">
-        {isHe ? `צינור ניתוח AI עבור ${symbol}` : `AI Analysis Pipeline for ${symbol}`}
+        {t("AI Analysis Pipeline for {symbol}", "צינור ניתוח AI עבור {symbol}", { symbol })}
       </p>
       <div className="flex items-stretch gap-1">
         <Stage
           icon="📦"
-          label={isHe ? "איסוף נתונים" : "Data Fetcher"}
-          sublabel={isHe ? "איסוף נתונים" : "Data Collection"}
+          label={t("Data Fetcher", "איסוף נתונים")}
+          sublabel={t("Data Collection", "איסוף נתונים")}
           status="complete"
         />
         <Arrow active={hasFundamental} />
         <Stage
           icon="🔬"
-          label={isHe ? "אנליסט" : "Fundamental"}
-          sublabel={isHe ? "ניתוח בסיסי" : "Analysis"}
+          label={t("Fundamental", "אנליסט")}
+          sublabel={t("Analysis", "ניתוח בסיסי")}
           status={hasFundamental ? "complete" : "pending"}
         />
         <Arrow active={hasSenior} />
         <Stage
           icon="👔"
-          label={isHe ? "הבכיר" : "Senior"}
-          sublabel={isHe ? "ועדת בכירים" : "Committee"}
+          label={t("Senior", "הבכיר")}
+          sublabel={t("Committee", "ועדת בכירים")}
           status={hasSenior ? "complete" : "pending"}
         />
         <Arrow active={hasTechnical} />
         <Stage
           icon="📈"
-          label={isHe ? "טכני" : "Technical"}
-          sublabel={isHe ? "עם דרישה" : "On-demand"}
+          label={t("Technical", "טכני")}
+          sublabel={t("On-demand", "עם דרישה")}
           status={hasTechnical ? "complete" : "skipped"}
         />
       </div>

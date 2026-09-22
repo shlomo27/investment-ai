@@ -213,7 +213,7 @@ async def register(
         hashed_password=get_password_hash(request.password),
         full_name=request.full_name.strip(),
         phone=request.phone,
-        preferred_language=request.preferred_language,
+        preferred_language=normalize(request.preferred_language),
         risk_profile=RiskProfile.PASSIVE,
         risk_score=50,
         cash_balance=0.0,
@@ -452,7 +452,11 @@ async def update_profile(
     if request.risk_score is not None:
         current_user.risk_score = request.risk_score
     if request.preferred_language is not None:
-        current_user.preferred_language = request.preferred_language
+        # Normalised, not stored as sent. The column is a plain string, so an
+        # unrecognised tag would be written through and then read back by
+        # every screen and by the analysis translator, which would find no
+        # such language and quietly serve English forever.
+        current_user.preferred_language = normalize(request.preferred_language)
     if request.notification_email is not None:
         current_user.notification_email = request.notification_email
     if request.notification_sms is not None:
