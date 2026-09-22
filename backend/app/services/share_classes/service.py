@@ -5,7 +5,7 @@ maps every ticker it regulates to the issuer that files for it. One request
 covers the whole universe, so this is a periodic backfill rather than a
 per-stock lookup.
 """
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 import structlog
 from sqlalchemy import select
@@ -126,6 +126,57 @@ async def siblings_for(db: AsyncSession, symbol: str) -> List[dict]:
         }
         for c in matched
     ]
+
+
+async def siblings_for_many(
+    db: AsyncSession, assets: Sequence[Asset]
+) -> Dict[str, List[dict]]:
+    """siblings_for over a whole page of symbols, in one extra query.
+
+    The per-symbol version costs two round-trips each. A feed of a hundred
+    recommendations would await two hundred of them one after another,
+    against a client timeout — the exact shape that returned an empty feed
+    once before. Here the candidates for every CIK on the page are fetched
+    together and the matching is done in memory, where it is pure logic.
+
+    Symbols with no siblings are absent rather than mapped to an empty list,
+    so the caller's `.get(symbol, [])` stays the single place that decides
+    what "nothing to say" looks like.
+    """
+    ciks = {a.cik for a in assets if a.cik}
+    if not ciks:
+        return {}
+
+    rows = (
+        await db.execute(select(Asset).where(Asset.cik.in_(ciks)))
+    ).scalars().all()
+    by_cik: Dict[str, List[Asset]] = {}
+    for row in rows:
+        by_cik.setdefault(row.cik, []).append(row)
+
+    out: Dict[str, List[dict]] = {}
+    for asset in assets:
+        if not asset.cik:
+            continue
+        base = _as_listing(asset)
+        matched = [
+            _as_listing(c)
+            for c in by_cik.get(asset.cik, [])
+            if c.symbol != asset.symbol and equivalent(base, _as_listing(c))
+        ]
+        if not matched:
+            continue
+        primary = choose_primary([base] + matched)
+        out[asset.symbol] = [
+            {
+                "symbol": c.symbol,
+                "name": c.name,
+                "last_price": c.last_price,
+                "is_primary": bool(primary and primary.symbol == c.symbol),
+            }
+            for c in matched
+        ]
+    return out
 
 
 async def primary_symbol_for(db: AsyncSession, symbol: str) -> Optional[str]:

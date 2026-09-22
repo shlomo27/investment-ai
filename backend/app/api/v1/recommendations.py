@@ -17,7 +17,7 @@ from app.core.security import get_current_active_user
 from app.core.entitlements import entitlements_for
 from app.core.languages import SOURCE_LANGUAGE, normalize
 from app.core.background import detach
-from app.services.share_classes.service import siblings_for
+from app.services.share_classes.service import siblings_for, siblings_for_many
 from app.services.translation.service import (
     cached_translations,
     translate_texts,
@@ -461,9 +461,7 @@ async def get_recommendations(
             # to a bare task and the collector can drop it mid-run.
             detach(warm_translations(warm_jobs, target_lang))
 
-    siblings_by_symbol = {
-        rec.symbol: await siblings_for(db, rec.symbol) for rec in recommendations
-    }
+    siblings_by_symbol = await siblings_for_many(db, list(assets.values()))
 
     response = []
     for rec in recommendations:
