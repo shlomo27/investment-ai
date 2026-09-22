@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from "react";
+import { useT, useDir } from "../i18n/t";
+import type { TFunction } from "../i18n/t";
 import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import {
@@ -88,21 +90,21 @@ const SORTERS: Record<SortKey, (a: Recommendation, b: Recommendation) => number>
   symbol: (a, b) => a.symbol.localeCompare(b.symbol),
 };
 
-const sortOptions = (isHe: boolean): SortOption<SortKey>[] => [
-  { key: "rr", label: isHe ? "סיכוי מול סיכון" : "Risk / reward",
-    hint: isHe ? "הרווח הפוטנציאלי חלקי ההפסד הפוטנציאלי" : "Potential gain divided by potential loss" },
-  { key: "confidence", label: isHe ? "רמת ביטחון" : "Confidence",
-    hint: isHe ? "כמה המערכת בטוחה בניתוח" : "How sure the analysis is" },
-  { key: "upside", label: isHe ? "תשואה צפויה" : "Expected return",
-    hint: isHe ? "המרחק למחיר היעד, באחוזים" : "Distance to the target price, in percent" },
-  { key: "risk_low", label: isHe ? "סיכון — נמוך קודם" : "Risk — lowest first",
-    hint: isHe ? "לפי תנודתיות (בטא). ללא נתון — בסוף" : "By volatility (beta). Unmeasured last" },
-  { key: "risk_high", label: isHe ? "סיכון — גבוה קודם" : "Risk — highest first",
-    hint: isHe ? "המניות התנודתיות ביותר בראש" : "Most volatile at the top" },
-  { key: "newest", label: isHe ? "הכי חדש" : "Newest",
-    hint: isHe ? "לפי מועד ההמלצה" : "By when the recommendation was made" },
-  { key: "symbol", label: isHe ? "לפי סימול" : "By symbol",
-    hint: isHe ? "סדר אלפביתי" : "Alphabetical" },
+const sortOptions = (t: TFunction): SortOption<SortKey>[] => [
+  { key: "rr", label: t("Risk / reward", "סיכוי מול סיכון"),
+    hint: t("Potential gain divided by potential loss", "הרווח הפוטנציאלי חלקי ההפסד הפוטנציאלי") },
+  { key: "confidence", label: t("Confidence", "רמת ביטחון"),
+    hint: t("How sure the analysis is", "כמה המערכת בטוחה בניתוח") },
+  { key: "upside", label: t("Expected return", "תשואה צפויה"),
+    hint: t("Distance to the target price, in percent", "המרחק למחיר היעד, באחוזים") },
+  { key: "risk_low", label: t("Risk — lowest first", "סיכון — נמוך קודם"),
+    hint: t("By volatility (beta). Unmeasured last", "לפי תנודתיות (בטא). ללא נתון — בסוף") },
+  { key: "risk_high", label: t("Risk — highest first", "סיכון — גבוה קודם"),
+    hint: t("Most volatile at the top", "המניות התנודתיות ביותר בראש") },
+  { key: "newest", label: t("Newest", "הכי חדש"),
+    hint: t("By when the recommendation was made", "לפי מועד ההמלצה") },
+  { key: "symbol", label: t("By symbol", "לפי סימול"),
+    hint: t("Alphabetical", "סדר אלפביתי") },
 ];
 
 const SORT_SHORT: Record<SortKey, { he: string; en: string }> = {
@@ -116,6 +118,8 @@ const SORT_SHORT: Record<SortKey, { he: string; en: string }> = {
 };
 
 const Recommendations: React.FC = () => {
+  const t = useT();
+  const dir = useDir();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((s) => s.auth);
   const { notifications, recommendations, isLoading, hasMoreInbox } = useAppSelector(
@@ -305,19 +309,19 @@ const Recommendations: React.FC = () => {
   const shortCount = topSells.length;
 
   const getTriggerBadge = (triggerType?: string) => {
-    if (triggerType === "PRICE_ALERT") return { label: isHe ? "מחיר" : "Price", cls: "bg-orange-900/40 text-orange-300" };
-    if (triggerType === "NEWS_ALERT") return { label: isHe ? "חדשות" : "News", cls: "bg-purple-900/40 text-purple-300" };
-    if (triggerType === "EARNINGS") return { label: isHe ? "דוח" : "Earnings", cls: "bg-blue-900/40 text-blue-300" };
+    if (triggerType === "PRICE_ALERT") return { label: t("Price", "מחיר"), cls: "bg-orange-900/40 text-orange-300" };
+    if (triggerType === "NEWS_ALERT") return { label: t("News", "חדשות"), cls: "bg-purple-900/40 text-purple-300" };
+    if (triggerType === "EARNINGS") return { label: t("Earnings", "דוח"), cls: "bg-blue-900/40 text-blue-300" };
     return null;
   };
 
   return (
-    <div dir={isHe ? "rtl" : "ltr"} className="space-y-5">
+    <div dir={dir} className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{isHe ? "סיגנלים והמלצות AI" : "AI Signals & Recommendations"}</h1>
+        <h1 className="text-2xl font-bold">{t("AI Signals & Recommendations", "סיגנלים והמלצות AI")}</h1>
         {user?.is_admin && (
           <Link to="/fund" className="text-xs text-gray-400 hover:text-gray-200">
-            {isHe ? "לוח ניהול ←" : "Dashboard →"}
+            {t("Dashboard →", "לוח ניהול ←")}
           </Link>
         )}
       </div>
@@ -328,7 +332,7 @@ const Recommendations: React.FC = () => {
           onClick={() => setView("signals")}
           className={`shrink-0 whitespace-nowrap px-3 md:px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "signals" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
         >
-          {isHe ? "סיגנלים AI" : "AI Signals"}
+          {t("AI Signals", "סיגנלים AI")}
           {topPicks.length > 0 && (
             <span className="ml-2 bg-gray-700 text-gray-300 text-xs rounded-full px-1.5 py-0.5">
               {topPicks.length}
@@ -339,7 +343,7 @@ const Recommendations: React.FC = () => {
           onClick={() => setView("inbox")}
           className={`shrink-0 whitespace-nowrap px-3 md:px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "inbox" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
         >
-          {isHe ? "תיבת דואר" : "Inbox"}
+          {t("Inbox", "תיבת דואר")}
           {unreadCount > 0 && (
             <span className="ml-2 bg-red-500 text-xs rounded-full px-1.5 py-0.5">{unreadCount}</span>
           )}
@@ -348,7 +352,7 @@ const Recommendations: React.FC = () => {
           onClick={() => setView("scanlog")}
           className={`shrink-0 whitespace-nowrap px-3 md:px-5 py-2 rounded-lg text-sm font-medium transition-colors ${view === "scanlog" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
         >
-          {isHe ? "יומן סריקות" : "Scan Log"}
+          {t("Scan Log", "יומן סריקות")}
         </button>
       </div>
 
@@ -364,9 +368,7 @@ const Recommendations: React.FC = () => {
       {view === "scanlog" && !isLoading && (
         <div className="space-y-4">
           <p className="text-sm text-gray-400">
-            {isHe
-              ? "כל ניתוח שהמערכת הריצה ב-7 הימים האחרונים — כולל מניות שנבדקו ונדחו והנימוק של ועדת ההשקעות."
-              : "Every analysis the system ran in the last 7 days — including stocks that were reviewed and rejected, with the committee's reasoning."}
+            {t("Every analysis the system ran in the last 7 days — including stocks that were reviewed and rejected, with the committee's reasoning.", "כל ניתוח שהמערכת הריצה ב-7 הימים האחרונים — כולל מניות שנבדקו ונדחו והנימוק של ועדת ההשקעות.")}
           </p>
 
           {scanLogLoading && (
@@ -409,19 +411,19 @@ const Recommendations: React.FC = () => {
                 <div className="bg-gray-900 rounded-xl border border-gray-800 p-3 text-xs">
                   <div className="flex items-center gap-3 flex-wrap text-gray-400">
                     <span className="text-gray-300">
-                      {isHe ? "פיזור הביטחון" : "Confidence spread"}
+                      {t("Confidence spread", "פיזור הביטחון")}
                     </span>
                     <span dir="ltr">
                       {scanLog.confidence_stats.min}%–{scanLog.confidence_stats.max}%
                     </span>
                     <span>
-                      {isHe ? "חציון" : "median"} {scanLog.confidence_stats.median}%
+                      {t("median", "חציון")} {scanLog.confidence_stats.median}%
                     </span>
                     <span>
-                      {isHe ? "סטיית תקן" : "stdev"} {scanLog.confidence_stats.stdev}
+                      {t("stdev", "סטיית תקן")} {scanLog.confidence_stats.stdev}
                     </span>
                     <span className="text-gray-600">
-                      ({scanLog.confidence_stats.count} {isHe ? "המלצות" : "recs"})
+                      ({scanLog.confidence_stats.count} {t("recs", "המלצות")})
                     </span>
                   </div>
                   {scanLog.confidence_stats.spread < 20 && (
@@ -437,18 +439,18 @@ const Recommendations: React.FC = () => {
               {scanLog.items.length === 0 ? (
                 <div className="bg-gray-900 rounded-2xl p-12 border border-gray-800 text-center text-gray-500">
                   <p className="text-4xl mb-3">🔍</p>
-                  <p>{isHe ? "לא רצו ניתוחים בתקופה זו" : "No analyses in this period"}</p>
+                  <p>{t("No analyses in this period", "לא רצו ניתוחים בתקופה זו")}</p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {scanLog.items.map((item) => {
                     const badge =
-                      item.bucket === "approved_buy" ? { txt: isHe ? "אושרה — קנייה" : "BUY", cls: "bg-green-900/40 text-green-300" } :
-                      item.bucket === "approved_sell" ? { txt: isHe ? "אושרה — מכירה" : "SELL", cls: "bg-red-900/40 text-red-300" } :
-                      item.bucket === "hold" ? { txt: isHe ? "החזק" : "HOLD", cls: "bg-yellow-900/30 text-yellow-300" } :
-                      item.bucket === "superseded" ? { txt: isHe ? "הוחלפה" : "Superseded", cls: "bg-gray-800 text-gray-500" } :
-                      item.bucket === "not_analyzed" ? { txt: isHe ? "לא נותחה" : "Not analysed", cls: "bg-orange-950/60 text-orange-300 border border-orange-800/50" } :
-                      { txt: isHe ? "נדחתה" : "Rejected", cls: "bg-gray-800 text-gray-400 border border-gray-700" };
+                      item.bucket === "approved_buy" ? { txt: t("BUY", "אושרה — קנייה"), cls: "bg-green-900/40 text-green-300" } :
+                      item.bucket === "approved_sell" ? { txt: t("SELL", "אושרה — מכירה"), cls: "bg-red-900/40 text-red-300" } :
+                      item.bucket === "hold" ? { txt: t("HOLD", "החזק"), cls: "bg-yellow-900/30 text-yellow-300" } :
+                      item.bucket === "superseded" ? { txt: t("Superseded", "הוחלפה"), cls: "bg-gray-800 text-gray-500" } :
+                      item.bucket === "not_analyzed" ? { txt: t("Not analysed", "לא נותחה"), cls: "bg-orange-950/60 text-orange-300 border border-orange-800/50" } :
+                      { txt: t("Rejected", "נדחתה"), cls: "bg-gray-800 text-gray-400 border border-gray-700" };
                     const canOpenReport = item.bucket !== "rejected" && item.bucket !== "not_analyzed";
                     return (
                       <div key={item.id} className="bg-gray-900 rounded-xl border border-gray-800 px-4 py-3">
@@ -460,14 +462,14 @@ const Recommendations: React.FC = () => {
                           </span>
                           <div className="flex-1" />
                           <span className="text-xs text-gray-600">
-                            {item.created_at ? new Date(item.created_at).toLocaleDateString(isHe ? "he-IL" : "en-US") : ""}
+                            {item.created_at ? new Date(item.created_at).toLocaleDateString(t("en-US", "he-IL")) : ""}
                           </span>
                           {item.reason && (
                             <button
                               onClick={() => setExpandedLog(expandedLog === item.id ? null : item.id)}
                               className="text-xs text-gray-400 hover:text-white border border-gray-700 rounded-lg px-2 py-1"
                             >
-                              {expandedLog === item.id ? (isHe ? "הסתר" : "Hide") : (isHe ? "נימוק" : "Why")}
+                              {expandedLog === item.id ? (t("Hide", "הסתר")) : (t("Why", "נימוק"))}
                             </button>
                           )}
                           {canOpenReport && (
@@ -475,7 +477,7 @@ const Recommendations: React.FC = () => {
                               to={`/research/${item.id}`}
                               className="text-xs text-yellow-400 hover:text-yellow-300 border border-yellow-800/50 rounded-lg px-2 py-1"
                             >
-                              {isHe ? "דוח" : "Report"}
+                              {t("Report", "דוח")}
                             </Link>
                           )}
                         </div>
@@ -501,10 +503,10 @@ const Recommendations: React.FC = () => {
               few weeks away the newest page buries everything else. */}
           <div className="flex items-center gap-2 flex-wrap">
             {([
-              ["", isHe ? "הכל" : "All"],
-              ["RECOMMENDATION", isHe ? "המלצות" : "Recommendations"],
-              ["ALERT", isHe ? "התרעות" : "Alerts"],
-              ["SYSTEM", isHe ? "מערכת" : "System"],
+              ["", t("All", "הכל")],
+              ["RECOMMENDATION", t("Recommendations", "המלצות")],
+              ["ALERT", t("Alerts", "התרעות")],
+              ["SYSTEM", t("System", "מערכת")],
             ] as [string, string][]).map(([value, label]) => (
               <button
                 key={value || "all"}
@@ -521,16 +523,16 @@ const Recommendations: React.FC = () => {
             <button
               onClick={handleClearRead}
               className="text-xs px-3 py-1.5 rounded-lg bg-gray-800 text-gray-400 hover:text-red-300 ms-auto"
-              title={isHe ? "מוחק רק הודעות שכבר נקראו — הודעות שלא נפתחו נשארות" : "Deletes only messages already read — unopened ones stay"}
+              title={t("Deletes only messages already read — unopened ones stay", "מוחק רק הודעות שכבר נקראו — הודעות שלא נפתחו נשארות")}
             >
-              🗑 {isHe ? "נקה שנקראו" : "Clear read"}
+              🗑 {t("Clear read", "נקה שנקראו")}
             </button>
           </div>
 
           {notifications.length === 0 ? (
             <div className="bg-gray-900 rounded-2xl p-12 border border-gray-800 text-center text-gray-500">
               <p className="text-4xl mb-3">📬</p>
-              <p>{isHe ? "תיבת הדואר ריקה" : "Inbox is empty"}</p>
+              <p>{t("Inbox is empty", "תיבת הדואר ריקה")}</p>
             </div>
           ) : (
             notifications.map((notif) => {
@@ -575,7 +577,7 @@ const Recommendations: React.FC = () => {
                       </p>
                       {notif.internal_detail?.confidence_score && (
                         <p className="text-xs text-gray-500 mt-1">
-                          {isHe ? "ביטחון:" : "Confidence:"}{" "}
+                          {t("Confidence:", "ביטחון:")}{" "}
                           {notif.internal_detail.confidence_score.toFixed(0)}%
                         </p>
                       )}
@@ -593,8 +595,8 @@ const Recommendations: React.FC = () => {
                                 <p className="text-gray-300">
                                   <span className="text-gray-500 font-medium">
                                     {notif.internal_detail.i_hold
-                                      ? (isHe ? "אתה מחזיק את המניה: " : "You hold this stock: ")
-                                      : (isHe ? "אתה עוקב אחרי המניה: " : "You follow this stock: ")}
+                                      ? (t("You hold this stock: ", "אתה מחזיק את המניה: "))
+                                      : (t("You follow this stock: ", "אתה עוקב אחרי המניה: "))}
                                   </span>
                                   {notif.internal_detail.guidance_for_me}
                                 </p>
@@ -602,11 +604,11 @@ const Recommendations: React.FC = () => {
                                 <>
                                   {/* Alerts sent before per-recipient guidance existed. */}
                                   <p className="text-gray-300">
-                                    <span className="text-gray-500 font-medium">{isHe ? "אם אתה מחזיק: " : "If you hold: "}</span>
+                                    <span className="text-gray-500 font-medium">{t("If you hold: ", "אם אתה מחזיק: ")}</span>
                                     {notif.internal_detail.guidance.holder}
                                   </p>
                                   <p className="text-gray-300">
-                                    <span className="text-gray-500 font-medium">{isHe ? "אם אתה עוקב בלבד: " : "If you only follow: "}</span>
+                                    <span className="text-gray-500 font-medium">{t("If you only follow: ", "אם אתה עוקב בלבד: ")}</span>
                                     {notif.internal_detail.guidance.watcher}
                                   </p>
                                 </>
@@ -615,17 +617,17 @@ const Recommendations: React.FC = () => {
                           )}
                           {notif.internal_detail.news_summary && (
                             <p>
-                              <span className="text-gray-500 font-medium">{isHe ? "סיכום החדשות: " : "News summary: "}</span>
+                              <span className="text-gray-500 font-medium">{t("News summary: ", "סיכום החדשות: ")}</span>
                               {notif.internal_detail.news_summary}
                             </p>
                           )}
                           {(notif.internal_detail.signal || notif.internal_detail.ta_signal) && (
                             <p>
-                              <span className="text-gray-500 font-medium">{isHe ? "מצב טכני: " : "Technical: "}</span>
+                              <span className="text-gray-500 font-medium">{t("Technical: ", "מצב טכני: ")}</span>
                               {notif.internal_detail.signal || notif.internal_detail.ta_signal}
-                              {notif.internal_detail.previous_signal ? ` (${isHe ? "קודם" : "prev"}: ${notif.internal_detail.previous_signal})` : ""}
+                              {notif.internal_detail.previous_signal ? ` (${t("prev", "קודם")}: ${notif.internal_detail.previous_signal})` : ""}
                               {(notif.internal_detail.technical_score ?? notif.internal_detail.ta_score) != null
-                                ? ` · ${isHe ? "ציון" : "score"} ${Math.round(notif.internal_detail.technical_score ?? notif.internal_detail.ta_score)}/100`
+                                ? ` · ${t("score", "ציון")} ${Math.round(notif.internal_detail.technical_score ?? notif.internal_detail.ta_score)}/100`
                                 : ""}
                               {notif.internal_detail.current_price ? ` · $${Number(notif.internal_detail.current_price).toFixed(2)}` : ""}
                             </p>
@@ -638,21 +640,21 @@ const Recommendations: React.FC = () => {
                           {notif.internal_detail.insider?.filings > 0 && (
                             <div>
                               <p>
-                                <span className="text-gray-500 font-medium">{isHe ? "מסחר פנימי: " : "Insider activity: "}</span>
+                                <span className="text-gray-500 font-medium">{t("Insider activity: ", "מסחר פנימי: ")}</span>
                                 {isHe
                                   ? `${notif.internal_detail.insider.filings} דיווחים ב-${notif.internal_detail.insider.months} חודשים · `
                                   : `${notif.internal_detail.insider.filings} filings over ${notif.internal_detail.insider.months} months · `}
                                 <span className={notif.internal_detail.insider.net_shares >= 0 ? "text-green-400" : "text-red-400"}>
-                                  {isHe ? "נטו " : "net "}
+                                  {t("net ", "נטו ")}
                                   {notif.internal_detail.insider.net_shares >= 0 ? "+" : ""}
                                   {Number(notif.internal_detail.insider.net_shares).toLocaleString("en")}
-                                  {isHe ? " מניות" : " shares"}
+                                  {t(" shares", " מניות")}
                                 </span>
                               </p>
                               {(notif.internal_detail.insider.largest || []).map((t: any, i: number) => (
                                 <p key={i} className="text-gray-500 pr-3">
-                                  {t.name} · {t.change < 0 ? (isHe ? "מכר" : "sold") : (isHe ? "קנה" : "bought")}{" "}
-                                  {Math.abs(t.change).toLocaleString("en")}{isHe ? " מניות" : " shares"}
+                                  {t.name} · {t.change < 0 ? (t("sold", "מכר")) : (t("bought", "קנה"))}{" "}
+                                  {Math.abs(t.change).toLocaleString("en")}{t(" shares", " מניות")}
                                   {t.pct_of_holding != null ? (isHe ? ` (${t.pct_of_holding}% מהחזקתו)` : ` (${t.pct_of_holding}% of holding)`) : ""}
                                   {t.price ? ` · $${Number(t.price).toFixed(2)}` : ""}
                                   {t.date ? ` · ${t.date}` : ""}
@@ -662,26 +664,26 @@ const Recommendations: React.FC = () => {
                           )}
                           {notif.internal_detail.x_buzz_posts > 0 && (
                             <p>
-                              <span className="text-gray-500 font-medium">{isHe ? "רשת X: " : "X buzz: "}</span>
-                              {notif.internal_detail.x_buzz_posts} {isHe ? "פוסטים" : "posts"} ·{" "}
+                              <span className="text-gray-500 font-medium">{t("X buzz: ", "רשת X: ")}</span>
+                              {notif.internal_detail.x_buzz_posts} {t("posts", "פוסטים")} ·{" "}
                               {/* 🔥 in the title means positive buzz, but next to
                                   "negative news" it reads as intensity and made an
                                   alert look worse than it was. Name the direction. */}
                               {Number(notif.internal_detail.x_buzz_score) > 0
-                                ? (isHe ? "סנטימנט חיובי" : "positive sentiment")
-                                : (isHe ? "סנטימנט שלילי" : "negative sentiment")}{" "}
+                                ? (t("positive sentiment", "סנטימנט חיובי"))
+                                : (t("negative sentiment", "סנטימנט שלילי"))}{" "}
                               ({Number(notif.internal_detail.x_buzz_score).toFixed(2)})
                             </p>
                           )}
                           {notif.internal_detail.senior_notes && (
                             <p>
-                              <span className="text-gray-500 font-medium">{isHe ? "הערות הוועדה: " : "Committee: "}</span>
+                              <span className="text-gray-500 font-medium">{t("Committee: ", "הערות הוועדה: ")}</span>
                               {notif.internal_detail.senior_notes}
                             </p>
                           )}
                           {Array.isArray(notif.internal_detail.articles) && notif.internal_detail.articles.length > 0 && (
                             <div>
-                              <p className="text-gray-500 font-medium mb-1">{isHe ? "כתבות:" : "Articles:"}</p>
+                              <p className="text-gray-500 font-medium mb-1">{t("Articles:", "כתבות:")}</p>
                               <ul className="space-y-1">
                                 {notif.internal_detail.articles.map((a: any, i: number) => (
                                   <li key={i}>
@@ -710,7 +712,7 @@ const Recommendations: React.FC = () => {
                     <div className="flex flex-col items-end gap-2 flex-shrink-0">
                       <div className="flex items-center gap-2">
                         <p className="text-xs text-gray-500">
-                          {new Date(notif.sent_at).toLocaleString(isHe ? "he-IL" : "en-US")}
+                          {new Date(notif.sent_at).toLocaleString(t("en-US", "he-IL"))}
                         </p>
                         <button
                           onClick={(e) => {
@@ -718,8 +720,8 @@ const Recommendations: React.FC = () => {
                             handleDeleteNotification(notif.id);
                           }}
                           className="text-xs text-gray-600 hover:text-red-400 px-1"
-                          title={isHe ? "מחק הודעה" : "Delete message"}
-                          aria-label={isHe ? "מחק הודעה" : "Delete message"}
+                          title={t("Delete message", "מחק הודעה")}
+                          aria-label={t("Delete message", "מחק הודעה")}
                         >
                           🗑
                         </button>
@@ -730,13 +732,11 @@ const Recommendations: React.FC = () => {
                       {recId && notif.recommendation_live === false && (
                         <span
                           className="text-xs px-2 py-0.5 rounded-lg bg-gray-800 text-gray-400 border border-gray-700"
-                          title={isHe
-                            ? "ההמלצה הוחלפה בניתוח חדש יותר או בוטלה — לכן היא כבר לא בפיד"
-                            : "Replaced by a newer analysis or withdrawn — which is why it is no longer in the feed"}
+                          title={t("Replaced by a newer analysis or withdrawn — which is why it is no longer in the feed", "ההמלצה הוחלפה בניתוח חדש יותר או בוטלה — לכן היא כבר לא בפיד")}
                         >
-                          {isHe ? "לא בפיד יותר" : "No longer in feed"}
+                          {t("No longer in feed", "לא בפיד יותר")}
                           {notif.recommendation_current_type
-                            ? ` · ${isHe ? "כעת" : "now"} ${notif.recommendation_current_type}`
+                            ? ` · ${t("now", "כעת")} ${notif.recommendation_current_type}`
                             : ""}
                         </span>
                       )}
@@ -746,7 +746,7 @@ const Recommendations: React.FC = () => {
                           onClick={(e) => e.stopPropagation()}
                           className="text-xs text-blue-400 hover:text-blue-300 px-2 py-1 border border-blue-800 rounded-lg"
                         >
-                          {isHe ? "דוח מחקר →" : "Research →"}
+                          {t("Research →", "דוח מחקר →")}
                         </Link>
                       )}
                     </div>
@@ -763,8 +763,8 @@ const Recommendations: React.FC = () => {
               className="w-full py-3 rounded-2xl bg-gray-900 border border-gray-800 text-sm text-blue-400 hover:text-blue-300 hover:border-gray-700 disabled:text-gray-600"
             >
               {loadingMore
-                ? (isHe ? "טוען..." : "Loading...")
-                : (isHe ? "טען הודעות ישנות יותר" : "Load older messages")}
+                ? (t("Loading...", "טוען..."))
+                : (t("Load older messages", "טען הודעות ישנות יותר"))}
             </button>
           )}
         </div>
@@ -794,13 +794,13 @@ const Recommendations: React.FC = () => {
                     : null,
                 ]
                   .filter(Boolean)
-                  .join(isHe ? " · " : " · ")}
+                  .join(t(" · ", " · "))}
               </p>
               <Link
                 to="/settings"
                 className="inline-block mt-2 text-xs text-amber-300 hover:text-amber-200 underline"
               >
-                {isHe ? "שנה בהגדרות" : "Change in settings"}
+                {t("Change in settings", "שנה בהגדרות")}
               </Link>
             </div>
           )}
@@ -823,14 +823,14 @@ const Recommendations: React.FC = () => {
                     : "bg-gray-900 text-gray-400 border-gray-800 hover:border-gray-600"
                 }`}
               >
-                {f === "LONG" ? `LONG (${longCount})` : f === "SHORT" ? `SHORT (${shortCount})` : `${isHe ? "הכל" : "All"} (${topPicks.length})`}
+                {f === "LONG" ? `LONG (${longCount})` : f === "SHORT" ? `SHORT (${shortCount})` : `${t("All", "הכל")} (${topPicks.length})`}
               </button>
             ))}
             <div className="hidden md:block flex-1" />
             <input
               value={symbolQuery}
               onChange={(e) => setSymbolQuery(e.target.value)}
-              placeholder={isHe ? "חפש סימול…" : "Search symbol…"}
+              placeholder={t("Search symbol…", "חפש סימול…")}
               // min-w keeps the field usable: with only min-w-0 it shrank to about
               // 60px beside the longer sort label, showing "חפש" and nothing
               // else. Below that width the row wraps it onto its own line
@@ -838,7 +838,7 @@ const Recommendations: React.FC = () => {
               className="flex-1 min-w-[8rem] md:flex-none md:w-36 px-3 py-1.5 rounded-lg text-xs bg-gray-900 text-gray-200 border border-gray-800 placeholder-gray-600 focus:border-blue-600 focus:outline-none"
             />
             <SortMenu
-              options={sortOptions(isHe)}
+              options={sortOptions(t)}
               value={sortBy}
               onChange={setSortBy}
               isHe={isHe}
@@ -853,15 +853,13 @@ const Recommendations: React.FC = () => {
                 <>
                   <p>{isHe ? `אין המלצה פעילה עבור "${symbolQuery}"` : `No live recommendation for "${symbolQuery}"`}</p>
                   <p className="text-sm mt-1">
-                    {isHe
-                      ? "בדוק ביומן סריקה — ייתכן שהניתוח נדחה או הוחלף"
-                      : "Check the scan log — the analysis may have been rejected or superseded"}
+                    {t("Check the scan log — the analysis may have been rejected or superseded", "בדוק ביומן סריקה — ייתכן שהניתוח נדחה או הוחלף")}
                   </p>
                 </>
               ) : (
                 <>
-                  <p>{isHe ? "אין סיגנלים בפילטר זה" : "No signals for this filter"}</p>
-                  <p className="text-sm mt-1">{isHe ? "הסוכנים סורקים את השוק" : "Agents are scanning markets"}</p>
+                  <p>{t("No signals for this filter", "אין סיגנלים בפילטר זה")}</p>
+                  <p className="text-sm mt-1">{t("Agents are scanning markets", "הסוכנים סורקים את השוק")}</p>
                 </>
               )}
             </div>

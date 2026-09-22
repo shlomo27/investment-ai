@@ -1,9 +1,11 @@
 import React from "react";
+import { useT } from "../../i18n/t";
 import { Link, useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../../store";
 import { logoutUser } from "../../store/slices/authSlice";
 
 const Navbar: React.FC = () => {
+  const t = useT();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { user } = useAppSelector((state) => state.auth);
@@ -28,7 +30,7 @@ const Navbar: React.FC = () => {
         <h2 className="font-semibold text-sm text-gray-300 truncate">
           <span className="md:hidden">Investment AI</span>
           <span className="hidden md:inline">
-            {isHe ? "מערכת ייעוץ השקעות AI" : "Investment AI Platform"}
+            {t("Investment AI Platform", "מערכת ייעוץ השקעות AI")}
           </span>
         </h2>
       </div>
@@ -62,7 +64,7 @@ const Navbar: React.FC = () => {
           onClick={handleLogout}
           className="hidden md:block text-gray-400 hover:text-white text-sm border border-gray-700 rounded-lg px-3 py-1.5"
         >
-          {isHe ? "יציאה" : "Logout"}
+          {t("Logout", "יציאה")}
         </button>
       </div>
     </header>

@@ -14,6 +14,7 @@
  * much of it to hold.
  */
 import React from "react";
+import { useT } from "../../i18n/t";
 import { Recommendation } from "../../types";
 
 type Props = { rec: Recommendation; isHe: boolean };
@@ -27,6 +28,7 @@ const ACTION: Record<string, { he: string; en: string; cls: string }> = {
 };
 
 const BottomLine: React.FC<Props> = ({ rec, isHe }) => {
+  const t = useT();
   const action = ACTION[rec.recommendation_type] ?? {
     he: rec.recommendation_type,
     en: rec.recommendation_type,
@@ -48,7 +50,7 @@ const BottomLine: React.FC<Props> = ({ rec, isHe }) => {
       <div className="flex items-baseline justify-between gap-3 flex-wrap">
         <div className="flex items-baseline gap-2">
           <span className="text-[11px] text-gray-500">
-            {isHe ? "השורה התחתונה" : "Bottom line"}
+            {t("Bottom line", "השורה התחתונה")}
           </span>
           <span className={`text-lg font-bold ${action.cls}`}>
             {isHe ? action.he : action.en}
@@ -57,7 +59,7 @@ const BottomLine: React.FC<Props> = ({ rec, isHe }) => {
         {/* R/R is the one headline figure the hero card does not carry. */}
         {rr && (
           <span className="text-xs text-gray-500">
-            {isHe ? "סיכוי מול סיכון" : "Risk / reward"}{" "}
+            {t("Risk / reward", "סיכוי מול סיכון")}{" "}
             <span
               className={`font-semibold font-mono ${
                 rr >= 2 ? "text-green-400" : "text-gray-300"
@@ -77,7 +79,7 @@ const BottomLine: React.FC<Props> = ({ rec, isHe }) => {
           committee saying how much of this to hold, not whether to. */}
       {fa?.allocation_recommendation && (
         <p className="text-xs text-gray-500">
-          {isHe ? "הקצאה מומלצת: " : "Suggested allocation: "}
+          {t("Suggested allocation: ", "הקצאה מומלצת: ")}
           <span className="text-gray-300">
             {fa.allocation_recommendation}
             {fa.suggested_weight_range ? ` · ${fa.suggested_weight_range}` : ""}

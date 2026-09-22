@@ -14,6 +14,7 @@
  * Hidden at `md` and up, where the sidebar takes over.
  */
 import React, { useState } from "react";
+import { useT, useDir } from "../../i18n/t";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAppSelector, useAppDispatch } from "../../store";
 import { logoutUser } from "../../store/slices/authSlice";
@@ -34,6 +35,8 @@ const MORE: Tab[] = [
 ];
 
 const BottomNav: React.FC = () => {
+  const t = useT();
+  const dir = useDir();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { user } = useAppSelector((s) => s.auth);
@@ -62,24 +65,24 @@ const BottomNav: React.FC = () => {
           onClick={() => setMoreOpen(false)}
         >
           <div
-            dir={isHe ? "rtl" : "ltr"}
+            dir={dir}
             className="absolute bottom-0 inset-x-0 bg-gray-900 border-t border-gray-800 rounded-t-2xl p-3"
             // Clears the home indicator, plus room for the bar itself.
             style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 5rem)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="w-10 h-1 bg-gray-700 rounded-full mx-auto mb-3" />
-            {more.map((t) => (
+            {more.map((tab) => (
               <button
-                key={t.to}
+                key={tab.to}
                 onClick={() => {
                   setMoreOpen(false);
-                  navigate(t.to);
+                  navigate(tab.to);
                 }}
                 className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-gray-300 hover:bg-gray-800 text-start"
               >
-                <span className="text-lg w-6 text-center">{t.icon}</span>
-                <span className="text-sm">{isHe ? t.he : t.en}</span>
+                <span className="text-lg w-6 text-center">{tab.icon}</span>
+                <span className="text-sm">{t(tab.en, tab.he)}</span>
               </button>
             ))}
             <div className="border-t border-gray-800 my-2" />
@@ -88,7 +91,7 @@ const BottomNav: React.FC = () => {
               className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-red-400 hover:bg-gray-800 text-start"
             >
               <span className="text-lg w-6 text-center">⏻</span>
-              <span className="text-sm">{isHe ? "יציאה" : "Log out"}</span>
+              <span className="text-sm">{t("Log out", "יציאה")}</span>
             </button>
           </div>
         </div>
@@ -96,16 +99,16 @@ const BottomNav: React.FC = () => {
 
       {/* ── Tab bar ── */}
       <nav
-        dir={isHe ? "rtl" : "ltr"}
+        dir={dir}
         className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-gray-900/95 backdrop-blur border-t border-gray-800 flex"
         // Without this the bar sits under the iPhone home indicator and the
         // last tab is unreachable.
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        {TABS.map((t) => (
+        {TABS.map((tab) => (
           <NavLink
-            key={t.to}
-            to={t.to}
+            key={tab.to}
+            to={tab.to}
             onClick={() => setMoreOpen(false)}
             className={({ isActive }) =>
               `flex-1 flex flex-col items-center justify-center gap-0.5 py-2 min-h-[3.25rem] relative ${
@@ -113,9 +116,9 @@ const BottomNav: React.FC = () => {
               }`
             }
           >
-            <span className="text-lg leading-none">{t.icon}</span>
-            <span className="text-[10px] leading-none">{isHe ? t.he : t.en}</span>
-            {t.to === "/recommendations" && unreadCount > 0 && (
+            <span className="text-lg leading-none">{tab.icon}</span>
+            <span className="text-[10px] leading-none">{t(tab.en, tab.he)}</span>
+            {tab.to === "/recommendations" && unreadCount > 0 && (
               <span className="absolute top-1 end-[22%] bg-red-500 text-white text-[9px] rounded-full min-w-[15px] h-[15px] px-1 flex items-center justify-center">
                 {unreadCount > 9 ? "9+" : unreadCount}
               </span>
@@ -130,7 +133,7 @@ const BottomNav: React.FC = () => {
           }`}
         >
           <span className="text-lg leading-none">☰</span>
-          <span className="text-[10px] leading-none">{isHe ? "עוד" : "More"}</span>
+          <span className="text-[10px] leading-none">{t("More", "עוד")}</span>
         </button>
       </nav>
     </>

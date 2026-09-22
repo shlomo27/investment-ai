@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useT, useDir } from "../i18n/t";
 import { useAppSelector } from "../store";
 import { watchlistApi, marketApi } from "../api/client";
 import { WatchlistItem, TechnicalAnalysis } from "../types";
@@ -8,6 +9,8 @@ import { fetchCurrentUser } from "../store/slices/authSlice";
 import { useAppDispatch } from "../store";
 
 const Watchlist: React.FC = () => {
+  const t = useT();
+  const dir = useDir();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
   const isHe = user?.preferred_language === "he";
@@ -79,12 +82,12 @@ const Watchlist: React.FC = () => {
         return;
       }
       const detail = e.response?.data?.detail;
-      alert(typeof detail === "string" ? detail : isHe ? "ההוספה נכשלה" : "Failed to add");
+      alert(typeof detail === "string" ? detail : t("Failed to add", "ההוספה נכשלה"));
     }
   };
 
   const handleRemove = async (id: number) => {
-    if (!window.confirm(isHe ? "להסיר מרשימת המעקב?" : "Remove from watchlist?")) return;
+    if (!window.confirm(t("Remove from watchlist?", "להסיר מרשימת המעקב?"))) return;
     try {
       await watchlistApi.removeFromWatchlist(id);
       setItems(items.filter((i) => i.id !== id));
@@ -144,7 +147,7 @@ const Watchlist: React.FC = () => {
   };
 
   return (
-    <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
+    <div dir={dir} className="space-y-6">
       {paywallOpen && (
         <Paywall
           isHe={isHe}
@@ -160,7 +163,7 @@ const Watchlist: React.FC = () => {
         />
       )}
 
-      <h1 className="text-2xl font-bold">{isHe ? "רשימת מעקב" : "Watchlist"}</h1>
+      <h1 className="text-2xl font-bold">{t("Watchlist", "רשימת מעקב")}</h1>
 
       {/* Search & Add */}
       <div className="relative">
@@ -171,7 +174,7 @@ const Watchlist: React.FC = () => {
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
               className="w-full bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500"
-              placeholder={isHe ? "חפש מניה (AAPL, MSFT, NVDA...)" : "Search stock (AAPL, MSFT, NVDA...)"}
+              placeholder={t("Search stock (AAPL, MSFT, NVDA...)", "חפש מניה (AAPL, MSFT, NVDA...)")}
             />
             {searchLoading && (
               <div className="absolute right-3 top-3">
@@ -210,8 +213,8 @@ const Watchlist: React.FC = () => {
       ) : items.length === 0 ? (
         <div className="bg-gray-900 rounded-2xl p-12 border border-gray-800 text-center text-gray-500">
           <p className="text-4xl mb-3">👁</p>
-          <p>{isHe ? "רשימת המעקב ריקה" : "Watchlist is empty"}</p>
-          <p className="text-sm mt-1">{isHe ? "חפש מניות להוסיף" : "Search stocks to add"}</p>
+          <p>{t("Watchlist is empty", "רשימת המעקב ריקה")}</p>
+          <p className="text-sm mt-1">{t("Search stocks to add", "חפש מניות להוסיף")}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -252,7 +255,7 @@ const Watchlist: React.FC = () => {
                           setAlertBelow(item.alert_price_below ? String(item.alert_price_below) : "");
                         }}
                         className="text-xs bg-yellow-600/20 border border-yellow-600/50 text-yellow-400 px-3 py-1.5 rounded-lg hover:bg-yellow-600/30"
-                        title={isHe ? "הגדר התראת מחיר" : "Set price alert"}
+                        title={t("Set price alert", "הגדר התראת מחיר")}
                       >
                         🔔
                       </button>
@@ -262,8 +265,8 @@ const Watchlist: React.FC = () => {
                         className="text-xs bg-blue-600/20 border border-blue-600/50 text-blue-400 px-3 py-1.5 rounded-lg hover:bg-blue-600/30 disabled:opacity-50"
                       >
                         {technicalLoading === item.id
-                          ? (isHe ? "מנתח..." : "Analyzing...")
-                          : (isHe ? "ניתוח טכני" : "Technical")}
+                          ? (t("Analyzing...", "מנתח..."))
+                          : (t("Technical", "ניתוח טכני"))}
                       </button>
                       <button
                         onClick={() => tech && setExpandedItem(isExpanded ? null : item.id)}
@@ -286,11 +289,11 @@ const Watchlist: React.FC = () => {
                 {alertEditing === item.id && (
                   <div className="border-t border-gray-800 p-4 bg-yellow-900/10">
                     <p className="text-xs font-medium text-yellow-400 mb-3">
-                      🔔 {isHe ? "התראת מחיר" : "Price Alert"}
+                      🔔 {t("Price Alert", "התראת מחיר")}
                     </p>
                     <div className="flex gap-3 items-end flex-wrap">
                       <div>
-                        <label className="text-xs text-gray-400 block mb-1">{isHe ? "התראה מעל" : "Alert above"}</label>
+                        <label className="text-xs text-gray-400 block mb-1">{t("Alert above", "התראה מעל")}</label>
                         <input
                           type="number"
                           value={alertAbove}
@@ -300,7 +303,7 @@ const Watchlist: React.FC = () => {
                         />
                       </div>
                       <div>
-                        <label className="text-xs text-gray-400 block mb-1">{isHe ? "התראה מתחת" : "Alert below"}</label>
+                        <label className="text-xs text-gray-400 block mb-1">{t("Alert below", "התראה מתחת")}</label>
                         <input
                           type="number"
                           value={alertBelow}
@@ -314,18 +317,18 @@ const Watchlist: React.FC = () => {
                         disabled={alertSaving}
                         className="text-xs bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
                       >
-                        {alertSaving ? (isHe ? "שומר..." : "Saving...") : (isHe ? "שמור" : "Save")}
+                        {alertSaving ? (t("Saving...", "שומר...")) : (t("Save", "שמור"))}
                       </button>
                       <button
                         onClick={() => setAlertEditing(null)}
                         className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1.5"
                       >
-                        {isHe ? "ביטול" : "Cancel"}
+                        {t("Cancel", "ביטול")}
                       </button>
                     </div>
                     {(item.alert_price_above || item.alert_price_below) && (
                       <p className="text-xs text-gray-500 mt-2">
-                        {isHe ? "התראות פעילות: " : "Active alerts: "}
+                        {t("Active alerts: ", "התראות פעילות: ")}
                         {item.alert_price_above ? `▲$${item.alert_price_above}` : ""}
                         {item.alert_price_above && item.alert_price_below ? " / " : ""}
                         {item.alert_price_below ? `▼$${item.alert_price_below}` : ""}
@@ -354,7 +357,7 @@ const Watchlist: React.FC = () => {
 
                     <div className="space-y-2">
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-400">{isHe ? "ציון טכני" : "Technical Score"}</span>
+                        <span className="text-gray-400">{t("Technical Score", "ציון טכני")}</span>
                         <span className="font-bold">{tech.technical_score}/100</span>
                       </div>
                       {tech.signal_reasoning && (
@@ -362,13 +365,13 @@ const Watchlist: React.FC = () => {
                       )}
                       {tech.support_levels?.length > 0 && (
                         <div className="text-xs text-gray-400">
-                          <span>{isHe ? "תמיכה: " : "Support: "}</span>
+                          <span>{t("Support: ", "תמיכה: ")}</span>
                           {tech.support_levels.map((s) => `${cur(item.symbol)}${s.toFixed(2)}`).join(", ")}
                         </div>
                       )}
                       {tech.resistance_levels?.length > 0 && (
                         <div className="text-xs text-gray-400">
-                          <span>{isHe ? "התנגדות: " : "Resistance: "}</span>
+                          <span>{t("Resistance: ", "התנגדות: ")}</span>
                           {tech.resistance_levels.map((r) => `${cur(item.symbol)}${r.toFixed(2)}`).join(", ")}
                         </div>
                       )}

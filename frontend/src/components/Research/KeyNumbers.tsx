@@ -19,6 +19,7 @@
  * nothing when unsure. The full text stays one tap below, always.
  */
 import React from "react";
+import { useT } from "../../i18n/t";
 
 export type Row = { label: string; value: string; hint?: string };
 
@@ -82,6 +83,7 @@ const Table: React.FC<{ rows: Row[] }> = ({ rows }) => (
 );
 
 const KeyNumbers: React.FC<Props> = ({ isHe, structured, extracted }) => {
+  const t = useT();
   if (structured.length === 0 && extracted.length === 0) return null;
 
   return (
@@ -93,9 +95,7 @@ const KeyNumbers: React.FC<Props> = ({ isHe, structured, extracted }) => {
           <p className="text-[11px] text-gray-600 mb-1">
             {/* Says where these came from. They are read from prose, not
                 computed, and the reader is entitled to know the difference. */}
-            {isHe
-              ? "יחסים שזוהו בהערות הוועדה — הנוסח המלא למטה"
-              : "Ratios read from the committee notes — full text below"}
+            {t("Ratios read from the committee notes — full text below", "יחסים שזוהו בהערות הוועדה — הנוסח המלא למטה")}
           </p>
           <Table rows={extracted} />
         </div>

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useT } from "../../i18n/t";
 import { useNavigate } from "react-router-dom";
 import { watchlistApi } from "../../api/client";
 import { Recommendation, RecommendationType, OrderType, TechnicalAnalysis } from "../../types";
@@ -30,6 +31,7 @@ const RecommendationCard: React.FC<Props> = ({
   suggestedPct,
   approvedAt,
 }) => {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
   const [following, setFollowing] = useState(false);
   const [followMsg, setFollowMsg] = useState(false);
@@ -83,7 +85,7 @@ const RecommendationCard: React.FC<Props> = ({
               const sig = (tech?.timing_signal || rec.technical_analysis?.timing_signal || "").toUpperCase();
               if (!sig) return null;
               if (sig === "BUY_NOW" || sig === "STRONG_BUY") {
-                return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-green-900/50 text-green-300 border border-green-600/50">🟢 {isHe ? "נקודת כניסה טובה" : "Good entry"}</span>;
+                return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-green-900/50 text-green-300 border border-green-600/50">🟢 {t("Good entry", "נקודת כניסה טובה")}</span>;
               }
               // WAIT and SELL are NOT the same state and must not share a
               // badge. WAIT means the technical has not confirmed entry yet.
@@ -94,10 +96,10 @@ const RecommendationCard: React.FC<Props> = ({
               // the worst kind of disagreement: two opposite actions, both
               // from the same system, about the same stock, minutes apart.
               if (sig === "SELL_NOW" || sig === "STRONG_SELL") {
-                return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-300 border border-red-600/50">🔴 {isHe ? "הסיגנל הטכני התהפך לשלילי" : "Technical turned negative"}</span>;
+                return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-300 border border-red-600/50">🔴 {t("Technical turned negative", "הסיגנל הטכני התהפך לשלילי")}</span>;
               }
               if (sig === "WAIT") {
-                return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300 border border-yellow-700/40">🟡 {isHe ? "הזדמנות — המתן לייצוב" : "Wait for stabilization"}</span>;
+                return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300 border border-yellow-700/40">🟡 {t("Wait for stabilization", "הזדמנות — המתן לייצוב")}</span>;
               }
               return null;
             })()}
@@ -113,21 +115,21 @@ const RecommendationCard: React.FC<Props> = ({
               const band =
                 beta === null ? null :
                 beta < 0.8 ? {
-                  label: isHe ? "תנודתיות נמוכה" : "Low volatility",
+                  label: t("Low volatility", "תנודתיות נמוכה"),
                   cls: "bg-green-950/60 text-green-300 border-green-800/50",
                   icon: "🛡️",
                 } :
                 beta < 1.3 ? {
-                  label: isHe ? "תנודתיות רגילה" : "Market-like volatility",
+                  label: t("Market-like volatility", "תנודתיות רגילה"),
                   cls: "bg-gray-800/80 text-gray-300 border-gray-700",
                   icon: "〰️",
                 } :
                 beta < 1.8 ? {
-                  label: isHe ? "תנודתיות גבוהה" : "High volatility",
+                  label: t("High volatility", "תנודתיות גבוהה"),
                   cls: "bg-orange-950/60 text-orange-300 border-orange-800/50",
                   icon: "⚡",
                 } : {
-                  label: isHe ? "תנודתיות גבוהה מאוד" : "Very high volatility",
+                  label: t("Very high volatility", "תנודתיות גבוהה מאוד"),
                   cls: "bg-red-950/60 text-red-300 border-red-800/50",
                   icon: "⚡",
                 };
@@ -139,8 +141,8 @@ const RecommendationCard: React.FC<Props> = ({
                 <>
                   {isSell && (
                     <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-red-950/60 text-red-300 border border-red-800/50"
-                          title={isHe ? "הימור על ירידת מחיר — הפסד אפשרי בלתי מוגבל" : "Betting on a decline — unlimited downside"}>
-                      📉 {isHe ? "פוזיציית שורט" : "Short position"}
+                          title={t("Betting on a decline — unlimited downside", "הימור על ירידת מחיר — הפסד אפשרי בלתי מוגבל")}>
+                      📉 {t("Short position", "פוזיציית שורט")}
                     </span>
                   )}
                   {band && (
@@ -162,10 +164,10 @@ const RecommendationCard: React.FC<Props> = ({
               // retiring it at 45. The badge says which of those states this
               // card is in, so "old" no longer reads as "broken".
               if (ageDays < 7) {
-                return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-green-900/40 text-green-300 border border-green-700/40">🟢 {isHe ? "עדכנית" : "Fresh"}</span>;
+                return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-green-900/40 text-green-300 border border-green-700/40">🟢 {t("Fresh", "עדכנית")}</span>;
               } else if (ageDays <= 30) {
                 return <span className="inline-block mt-1 text-xs px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-300 border border-yellow-700/40"
-                             title={isHe ? "בתוך מחזור הריענון — הניתוח נבדק מחדש עד 30 יום" : "Within the refresh cycle — re-analysed within 30 days"}>🟡 {isHe ? `${ageDays} ימים` : `${ageDays} days`}</span>;
+                             title={t("Within the refresh cycle — re-analysed within 30 days", "בתוך מחזור הריענון — הניתוח נבדק מחדש עד 30 יום")}>🟡 {isHe ? `${ageDays} ימים` : `${ageDays} days`}</span>;
               } else {
                 // Say what the reader should do, not what the system is doing.
                 // "Awaiting re-check" is internal state: it tells someone
@@ -182,7 +184,7 @@ const RecommendationCard: React.FC<Props> = ({
             <div className="text-2xl font-bold mb-1">
               {rec.confidence_score.toFixed(0)}%
             </div>
-            <p className="text-xs text-gray-400">{isHe ? "ביטחון" : "Confidence"}</p>
+            <p className="text-xs text-gray-400">{t("Confidence", "ביטחון")}</p>
             {(() => {
               const alloc = (rec.fundamental_analysis as any)?.allocation_recommendation;
               if (!alloc || alloc === "NONE") return null;
@@ -208,17 +210,17 @@ const RecommendationCard: React.FC<Props> = ({
                 approval — not a live quote. Labelling it "current" told a
                 reader looking at a two-week-old card that the stock trades
                 there today, and the target percentage is measured from it. */}
-            <p className="text-xs text-gray-400" title={isHe ? "המחיר שעליו נכתב הניתוח, לא מחיר השוק כרגע" : "The price the analysis was written against, not a live quote"}>
-              {isHe ? "מחיר בעת ההמלצה" : "Price at recommendation"}
+            <p className="text-xs text-gray-400" title={t("The price the analysis was written against, not a live quote", "המחיר שעליו נכתב הניתוח, לא מחיר השוק כרגע")}>
+              {t("Price at recommendation", "מחיר בעת ההמלצה")}
             </p>
             <p className="font-bold">{fmt(rec.current_price_at_recommendation)}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-400">{isHe ? "יעד מחיר" : "Target"}</p>
+            <p className="text-xs text-gray-400">{t("Target", "יעד מחיר")}</p>
             <p className="font-bold text-green-400">{fmt(rec.target_price)}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-400">{isHe ? "סטופ לוס" : "Stop Loss"}</p>
+            <p className="text-xs text-gray-400">{t("Stop Loss", "סטופ לוס")}</p>
             <p className="font-bold text-red-400">{fmt(rec.stop_loss)}</p>
           </div>
           <div>
@@ -234,7 +236,7 @@ const RecommendationCard: React.FC<Props> = ({
               if (!entry || !target || !stop) {
                 return (
                   <>
-                    <p className="text-xs text-gray-400">{isHe ? "סיכוי מול סיכון" : "Risk / reward"}</p>
+                    <p className="text-xs text-gray-400">{t("Risk / reward", "סיכוי מול סיכון")}</p>
                     <p className="font-bold text-gray-600">—</p>
                   </>
                 );
@@ -257,7 +259,7 @@ const RecommendationCard: React.FC<Props> = ({
                       ? `מסכנים ${downPct.toFixed(1)}% כדי להרוויח ${upPct.toFixed(1)}%`
                       : `Risking ${downPct.toFixed(1)}% to make ${upPct.toFixed(1)}%`}
                   >
-                    {isHe ? "סיכוי מול סיכון" : "Risk / reward"}
+                    {t("Risk / reward", "סיכוי מול סיכון")}
                   </p>
                   <p className={`font-bold ${tone}`} dir="ltr">
                     {ratio === null ? "—" : `1 : ${ratio.toFixed(1)}`}
@@ -283,25 +285,25 @@ const RecommendationCard: React.FC<Props> = ({
           {rec.fundamental_analysis && (
             <div>
               <h4 className="text-sm font-bold mb-2 text-blue-400">
-                {isHe ? "ניתוח בסיסי" : "Fundamental Analysis"}
+                {t("Fundamental Analysis", "ניתוח בסיסי")}
               </h4>
               <div className="grid grid-cols-2 gap-3">
                 {rec.fundamental_analysis.bull_case && (
                   <div className="bg-green-900/20 rounded-xl p-3">
-                    <p className="text-xs text-green-400 font-medium mb-1">{isHe ? "תרחיש חיובי" : "Bull Case"}</p>
+                    <p className="text-xs text-green-400 font-medium mb-1">{t("Bull Case", "תרחיש חיובי")}</p>
                     <p className="text-xs text-gray-300">{rec.fundamental_analysis.bull_case}</p>
                   </div>
                 )}
                 {rec.fundamental_analysis.bear_case && (
                   <div className="bg-red-900/20 rounded-xl p-3">
-                    <p className="text-xs text-red-400 font-medium mb-1">{isHe ? "תרחיש שלילי" : "Bear Case"}</p>
+                    <p className="text-xs text-red-400 font-medium mb-1">{t("Bear Case", "תרחיש שלילי")}</p>
                     <p className="text-xs text-gray-300">{rec.fundamental_analysis.bear_case}</p>
                   </div>
                 )}
               </div>
               {rec.fundamental_analysis.risk_factors?.length > 0 && (
                 <div className="mt-3">
-                  <p className="text-xs text-gray-400 mb-1">{isHe ? "גורמי סיכון" : "Risk Factors"}</p>
+                  <p className="text-xs text-gray-400 mb-1">{t("Risk Factors", "גורמי סיכון")}</p>
                   <ul className="space-y-1">
                     {rec.fundamental_analysis.risk_factors.map((r, i) => (
                       <li key={i} className="text-xs text-gray-300 flex items-start gap-1">
@@ -318,21 +320,21 @@ const RecommendationCard: React.FC<Props> = ({
           {rec.sentiment_data && (
             <div>
               <h4 className="text-sm font-bold mb-2 text-purple-400">
-                {isHe ? "סנטימנט חברתי" : "Social Sentiment"}
+                {t("Social Sentiment", "סנטימנט חברתי")}
               </h4>
               <div className="flex items-center gap-4">
                 <div>
-                  <p className="text-xs text-gray-400">{isHe ? "ציון" : "Score"}</p>
+                  <p className="text-xs text-gray-400">{t("Score", "ציון")}</p>
                   <p className={`font-bold ${rec.sentiment_data.score > 0 ? "text-green-400" : rec.sentiment_data.score < 0 ? "text-red-400" : "text-gray-400"}`}>
                     {rec.sentiment_data.score > 0 ? "+" : ""}{rec.sentiment_data.score.toFixed(2)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400">{isHe ? "אזכורים" : "Mentions"}</p>
+                  <p className="text-xs text-gray-400">{t("Mentions", "אזכורים")}</p>
                   <p className="font-bold">{rec.sentiment_data.mentions.toLocaleString()}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400">{isHe ? "טרנד" : "Trending"}</p>
+                  <p className="text-xs text-gray-400">{t("Trending", "טרנד")}</p>
                   <p className={`font-bold ${rec.sentiment_data.trending ? "text-green-400" : "text-gray-400"}`}>
                     {rec.sentiment_data.trending ? "✓" : "—"}
                   </p>
@@ -345,7 +347,7 @@ const RecommendationCard: React.FC<Props> = ({
           {rec.senior_notes && (
             <div>
               <h4 className="text-sm font-bold mb-2 text-yellow-400">
-                {isHe ? "ועדת בכירים" : "Senior Committee"}
+                {t("Senior Committee", "ועדת בכירים")}
               </h4>
               <p className="text-xs text-gray-300">{rec.senior_notes}</p>
             </div>
@@ -355,7 +357,7 @@ const RecommendationCard: React.FC<Props> = ({
           {(tech || rec.technical_analysis) && (
             <div>
               <h4 className="text-sm font-bold mb-2 text-cyan-400">
-                {isHe ? "ניתוח טכני" : "Technical Analysis"}
+                {t("Technical Analysis", "ניתוח טכני")}
               </h4>
               {(() => {
                 const t = tech || rec.technical_analysis;
@@ -386,19 +388,19 @@ const RecommendationCard: React.FC<Props> = ({
           onClick={() => setExpanded(!expanded)}
           className="text-xs text-gray-400 hover:text-white border border-gray-700 rounded-lg px-3 py-1.5"
         >
-          {expanded ? (isHe ? "הסתר" : "Collapse") : (isHe ? "פרטים" : "Details")}
+          {expanded ? (t("Collapse", "הסתר")) : (t("Details", "פרטים"))}
         </button>
         <button
           onClick={() => navigate(`/technical/${rec.id}`)}
           className="text-xs bg-cyan-900/20 border border-cyan-700/50 text-cyan-400 rounded-lg px-3 py-1.5 hover:bg-cyan-900/40"
         >
-          {isHe ? "ניתוח טכני" : "Technical"}
+          {t("Technical", "ניתוח טכני")}
         </button>
         <button
           onClick={() => navigate(`/research/${rec.id}`)}
           className="text-xs bg-yellow-900/20 border border-yellow-700/50 text-yellow-400 rounded-lg px-3 py-1.5 hover:bg-yellow-900/40"
         >
-          {isHe ? "מחקר מלא" : "Research"}
+          {t("Research", "מחקר מלא")}
         </button>
         <div className="flex-1" />
         {(() => {
@@ -407,15 +409,15 @@ const RecommendationCard: React.FC<Props> = ({
           const positive = sig === "BUY_NOW" || sig === "STRONG_BUY";
           if (positive) return null;  // already a good entry — no need to wait
           return followMsg ? (
-            <span className="text-xs text-green-400 px-2">{isHe ? "✓ במעקב — נודיע בכניסה" : "✓ Following"}</span>
+            <span className="text-xs text-green-400 px-2">{t("✓ Following", "✓ במעקב — נודיע בכניסה")}</span>
           ) : (
             <button
               onClick={handleFollowForEntry}
               disabled={following}
               className="text-xs bg-blue-900/20 border border-blue-700/50 text-blue-300 rounded-lg px-3 py-1.5 hover:bg-blue-900/40 disabled:opacity-60"
-              title={isHe ? "נודיע לך כשהניתוח הטכני יאשר נקודת כניסה" : "We'll alert you when the technical confirms an entry point"}
+              title={t("We'll alert you when the technical confirms an entry point", "נודיע לך כשהניתוח הטכני יאשר נקודת כניסה")}
             >
-              {following ? "..." : (isHe ? "👁 עקוב לנקודת כניסה" : "👁 Follow for entry")}
+              {following ? "..." : (t("👁 Follow for entry", "👁 עקוב לנקודת כניסה"))}
             </button>
           );
         })()}
@@ -424,7 +426,7 @@ const RecommendationCard: React.FC<Props> = ({
             onClick={onBuy}
             className="bg-green-600 hover:bg-green-700 text-white rounded-lg px-4 py-1.5 text-sm font-medium"
           >
-            {isHe ? "מחזיק? הוסף לתיק" : "Add to Portfolio"}
+            {t("Add to Portfolio", "מחזיק? הוסף לתיק")}
           </button>
         ) : null}
         {isSell && (
@@ -432,7 +434,7 @@ const RecommendationCard: React.FC<Props> = ({
             onClick={onSell}
             className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-1.5 text-sm font-medium"
           >
-            {isHe ? "מכור" : "Sell"}
+            {t("Sell", "מכור")}
           </button>
         )}
         <button

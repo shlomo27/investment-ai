@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useT, useDir } from "../i18n/t";
 import { useAppDispatch, useAppSelector } from "../store";
 import { updateUserProfile, fetchCurrentUser } from "../store/slices/authSlice";
 import { authApi } from "../api/client";
@@ -16,6 +17,8 @@ const PROFILE_META: Record<RiskProfile, { he: string; en: string; color: string 
 };
 
 const Settings: React.FC = () => {
+  const t = useT();
+  const dir = useDir();
   const dispatch = useAppDispatch();
   const { user, isLoading } = useAppSelector((s) => s.auth);
   const isHe = user?.preferred_language === "he";
@@ -139,7 +142,7 @@ const Settings: React.FC = () => {
       setTwoFASecret(res.secret);
       setTwoFAStep("setup");
     } catch {
-      setTwoFAError(isHe ? "שגיאה בהגדרת 2FA" : "Failed to setup 2FA");
+      setTwoFAError(t("Failed to setup 2FA", "שגיאה בהגדרת 2FA"));
     } finally {
       setTwoFALoading(false);
     }
@@ -156,7 +159,7 @@ const Settings: React.FC = () => {
       setTwoFACode("");
       setTwoFAQR(null);
     } catch {
-      setTwoFAError(isHe ? "קוד שגוי, נסה שוב" : "Invalid code, please try again");
+      setTwoFAError(t("Invalid code, please try again", "קוד שגוי, נסה שוב"));
     } finally {
       setTwoFALoading(false);
     }
@@ -172,7 +175,7 @@ const Settings: React.FC = () => {
       setTwoFAStep("idle");
       setTwoFACode("");
     } catch {
-      setTwoFAError(isHe ? "קוד שגוי, נסה שוב" : "Invalid code, please try again");
+      setTwoFAError(t("Invalid code, please try again", "קוד שגוי, נסה שוב"));
     } finally {
       setTwoFALoading(false);
     }
@@ -202,14 +205,14 @@ const Settings: React.FC = () => {
       const detail = e?.response?.data?.detail;
       setDelError(
         detail ||
-          (isHe ? "מחיקת החשבון נכשלה" : "Could not delete the account")
+          (t("Could not delete the account", "מחיקת החשבון נכשלה"))
       );
       setDelLoading(false);
     }
   };
 
   return (
-    <div dir={isHe ? "rtl" : "ltr"} className="space-y-6 max-w-xl">
+    <div dir={dir} className="space-y-6 max-w-xl">
       {paywallOpen && (
         <Paywall
           isHe={isHe}
@@ -223,23 +226,23 @@ const Settings: React.FC = () => {
         />
       )}
 
-      <h1 className="text-2xl font-bold">{isHe ? "הגדרות" : "Settings"}</h1>
+      <h1 className="text-2xl font-bold">{t("Settings", "הגדרות")}</h1>
 
       {saved && (
         <div className="bg-green-900/30 border border-green-700/40 rounded-xl px-4 py-3 text-sm text-green-300">
-          {isHe ? "✓ ההגדרות נשמרו בהצלחה" : "✓ Settings saved successfully"}
+          {t("✓ Settings saved successfully", "✓ ההגדרות נשמרו בהצלחה")}
         </div>
       )}
 
       {/* ── Profile ─────────────────────────────────────────────────────── */}
       <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800 space-y-4">
         <h2 className="font-semibold text-sm text-gray-400 uppercase tracking-wider">
-          {isHe ? "פרופיל אישי" : "Profile"}
+          {t("Profile", "פרופיל אישי")}
         </h2>
 
         <div className="space-y-3">
           <div>
-            <label className="text-xs text-gray-500 block mb-1">{isHe ? "שם מלא" : "Full Name"}</label>
+            <label className="text-xs text-gray-500 block mb-1">{t("Full Name", "שם מלא")}</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -247,7 +250,7 @@ const Settings: React.FC = () => {
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">{isHe ? "טלפון" : "Phone"}</label>
+            <label className="text-xs text-gray-500 block mb-1">{t("Phone", "טלפון")}</label>
             <input
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
@@ -256,24 +259,24 @@ const Settings: React.FC = () => {
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">{isHe ? "אימייל" : "Email"}</label>
+            <label className="text-xs text-gray-500 block mb-1">{t("Email", "אימייל")}</label>
             <p className="text-sm text-gray-400 px-4 py-2.5 bg-gray-800/50 rounded-xl border border-gray-700/50">{user?.email}</p>
           </div>
         </div>
 
         {profileMeta && (
           <div className="flex items-center gap-3 bg-gray-800/50 rounded-xl px-4 py-3">
-            <span className="text-xs text-gray-500">{isHe ? "פרופיל סיכון:" : "Risk profile:"}</span>
+            <span className="text-xs text-gray-500">{t("Risk profile:", "פרופיל סיכון:")}</span>
             <span className={`text-sm font-bold ${profileMeta.color}`}>
               {isHe ? profileMeta.he : profileMeta.en}
             </span>
-            <span className="text-xs text-gray-600 mr-auto">{isHe ? "(הוגדר בהרשמה)" : "(set during onboarding)"}</span>
+            <span className="text-xs text-gray-600 mr-auto">{t("(set during onboarding)", "(הוגדר בהרשמה)")}</span>
           </div>
         )}
 
         {/* Age Group */}
         <div>
-          <label className="text-xs text-gray-500 block mb-2">{isHe ? "קבוצת גיל" : "Age Group"}</label>
+          <label className="text-xs text-gray-500 block mb-2">{t("Age Group", "קבוצת גיל")}</label>
           <div className="flex gap-2 flex-wrap">
             {AGE_GROUPS.map(a => (
               <button key={a} onClick={() => setAgeGroup(a)} className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
@@ -285,7 +288,7 @@ const Settings: React.FC = () => {
 
         {/* Investment Horizon */}
         <div>
-          <label className="text-xs text-gray-500 block mb-2">{isHe ? "אופק השקעה" : "Investment Horizon"}</label>
+          <label className="text-xs text-gray-500 block mb-2">{t("Investment Horizon", "אופק השקעה")}</label>
           <div className="flex gap-2 flex-wrap">
             {HORIZONS.map(h => (
               <button key={h.months} onClick={() => setHorizonMonths(h.months)} className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
@@ -299,12 +302,10 @@ const Settings: React.FC = () => {
       {/* ── Language ────────────────────────────────────────────────────── */}
       <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800 space-y-3">
         <h2 className="font-semibold text-sm text-gray-400 uppercase tracking-wider">
-          {isHe ? "שפה" : "Language"}
+          {t("Language", "שפה")}
         </h2>
         <p className="text-xs text-gray-500 leading-relaxed">
-          {isHe
-            ? "משנה את הממשק ואת הניתוחים. ברירת המחדל נקבעת לפי שפת המכשיר."
-            : "Changes both the interface and the analyses. Defaults to your device language."}
+          {t("Changes both the interface and the analyses. Defaults to your device language.", "משנה את הממשק ואת הניתוחים. ברירת המחדל נקבעת לפי שפת המכשיר.")}
         </p>
         {/* Every language in one list. A grid rather than a row of buttons:
             ten options do not fit on a phone in a single line, and each one
@@ -333,16 +334,14 @@ const Settings: React.FC = () => {
           ))}
         </div>
         <p className="text-[11px] text-gray-600 leading-relaxed">
-          {isHe
-            ? "הניתוחים נכתבים באנגלית ומתורגמים. תרגום עשוי לקחת רגע בפעם הראשונה עבור כל ניתוח."
-            : "Analyses are written in English and translated. The first read of an analysis in a new language can take a moment."}
+          {t("Analyses are written in English and translated. The first read of an analysis in a new language can take a moment.", "הניתוחים נכתבים באנגלית ומתורגמים. תרגום עשוי לקחת רגע בפעם הראשונה עבור כל ניתוח.")}
         </p>
       </div>
 
       {/* ── Notifications ───────────────────────────────────────────────── */}
       <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800 space-y-3">
         <h2 className="font-semibold text-sm text-gray-400 uppercase tracking-wider">
-          {isHe ? "התרעות" : "Notifications"}
+          {t("Notifications", "התרעות")}
         </h2>
 
         {[
@@ -367,7 +366,7 @@ const Settings: React.FC = () => {
         {/* Alert frequency */}
         <div className="pt-2 border-t border-gray-800">
           <label className="text-xs text-gray-500 block mb-2">
-            {isHe ? "תדירות התרעות חיצוניות (Push/SMS/אימייל)" : "External alert frequency (Push/SMS/Email)"}
+            {t("External alert frequency (Push/SMS/Email)", "תדירות התרעות חיצוניות (Push/SMS/אימייל)")}
           </label>
           <div className="flex gap-2">
             {([
@@ -387,9 +386,7 @@ const Settings: React.FC = () => {
             ))}
           </div>
           <p className="text-xs text-gray-600 mt-2">
-            {isHe
-              ? "תיבת הדואר באפליקציה תמיד מתעדכנת בזמן אמת — ההגדרה משפיעה רק על הודעות חיצוניות."
-              : "The in-app inbox always updates in real time — this only affects external messages."}
+            {t("The in-app inbox always updates in real time — this only affects external messages.", "תיבת הדואר באפליקציה תמיד מתעדכנת בזמן אמת — ההגדרה משפיעה רק על הודעות חיצוניות.")}
           </p>
         </div>
 
@@ -400,10 +397,10 @@ const Settings: React.FC = () => {
             disabled={pushStatus === "requesting"}
             className="w-full mt-1 border border-blue-700/50 text-blue-400 hover:bg-blue-900/20 text-sm py-2.5 rounded-xl transition-colors"
           >
-            {pushStatus === "requesting" ? (isHe ? "מבקש הרשאה..." : "Requesting permission...")
-             : pushStatus === "denied"    ? (isHe ? "ההרשאה נדחתה — אפשר בהגדרות הדפדפן" : "Permission denied — enable in browser settings")
-             : pushStatus === "done"      ? (isHe ? "✓ Push הופעל!" : "✓ Push enabled!")
-             : (isHe ? "🔔 הפעל התרעות Push" : "🔔 Enable Push Notifications")}
+            {pushStatus === "requesting" ? (t("Requesting permission...", "מבקש הרשאה..."))
+             : pushStatus === "denied"    ? (t("Permission denied — enable in browser settings", "ההרשאה נדחתה — אפשר בהגדרות הדפדפן"))
+             : pushStatus === "done"      ? (t("✓ Push enabled!", "✓ Push הופעל!"))
+             : (t("🔔 Enable Push Notifications", "🔔 הפעל התרעות Push"))}
           </button>
         )}
 
@@ -414,12 +411,12 @@ const Settings: React.FC = () => {
               <span>✈️</span>
               <div>
                 <span className="text-sm text-gray-300 block">
-                  {isHe ? "טלגרם אישי" : "Personal Telegram"}
+                  {t("Personal Telegram", "טלגרם אישי")}
                 </span>
                 <span className="text-xs text-gray-500">
                   {tgLinked
-                    ? (isHe ? "מחובר — התרעות אישיות נשלחות לצ'אט הפרטי שלך" : "Linked — personal alerts go to your private chat")
-                    : (isHe ? "התרעות אישיות על התיק שלך, ישירות לטלגרם" : "Personal portfolio alerts, straight to Telegram")}
+                    ? (t("Linked — personal alerts go to your private chat", "מחובר — התרעות אישיות נשלחות לצ'אט הפרטי שלך"))
+                    : (t("Personal portfolio alerts, straight to Telegram", "התרעות אישיות על התיק שלך, ישירות לטלגרם"))}
                 </span>
               </div>
             </div>
@@ -428,7 +425,7 @@ const Settings: React.FC = () => {
                 onClick={handleTelegramUnlink}
                 className="text-xs border border-red-800/60 text-red-400 hover:bg-red-900/20 px-3 py-1.5 rounded-lg transition-colors"
               >
-                {isHe ? "נתק" : "Unlink"}
+                {t("Unlink", "נתק")}
               </button>
             ) : (
               <button
@@ -437,8 +434,8 @@ const Settings: React.FC = () => {
                 className="text-xs border border-blue-700/60 text-blue-400 hover:bg-blue-900/20 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
               >
                 {tgWaiting
-                  ? (isHe ? "ממתין לאישור בטלגרם..." : "Waiting for Telegram...")
-                  : (isHe ? "✈️ חבר טלגרם אישי" : "✈️ Connect Telegram")}
+                  ? (t("Waiting for Telegram...", "ממתין לאישור בטלגרם..."))
+                  : (t("✈️ Connect Telegram", "✈️ חבר טלגרם אישי"))}
               </button>
             )}
           </div>
@@ -455,12 +452,10 @@ const Settings: React.FC = () => {
       {/* ── Content Preferences ──────────────────────────────────────────── */}
       <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800 space-y-3">
         <h2 className="font-semibold text-sm text-gray-400 uppercase tracking-wider">
-          {isHe ? "העדפות תוכן" : "Content Preferences"}
+          {t("Content Preferences", "העדפות תוכן")}
         </h2>
         <p className="text-xs text-gray-500">
-          {isHe
-            ? "בחר אילו סוגי סיגנלים יוצגו לך ברשימת ההמלצות"
-            : "Choose which signal types appear in your recommendations feed"}
+          {t("Choose which signal types appear in your recommendations feed", "בחר אילו סוגי סיגנלים יוצגו לך ברשימת ההמלצות")}
         </p>
         {[
           { icon: "📉", he: "הצג סיגנלים לשורט (מכירה בחסר)", en: "Show short-side signals", val: allowsShort, set: setAllowsShort },
@@ -486,16 +481,14 @@ const Settings: React.FC = () => {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="font-semibold text-sm text-gray-400 uppercase tracking-wider">
-              {isHe ? "אימות דו-שלבי (2FA)" : "Two-Factor Authentication"}
+              {t("Two-Factor Authentication", "אימות דו-שלבי (2FA)")}
             </h2>
             <p className="text-xs text-gray-500 mt-1">
-              {isHe
-                ? "הגן על חשבונך עם Google Authenticator או כל אפליקציית TOTP"
-                : "Protect your account with Google Authenticator or any TOTP app"}
+              {t("Protect your account with Google Authenticator or any TOTP app", "הגן על חשבונך עם Google Authenticator או כל אפליקציית TOTP")}
             </p>
           </div>
           <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${twoFAEnabled ? "bg-green-900/40 text-green-300" : "bg-gray-800 text-gray-500"}`}>
-            {twoFAEnabled ? (isHe ? "פעיל" : "Enabled") : (isHe ? "כבוי" : "Disabled")}
+            {twoFAEnabled ? (t("Enabled", "פעיל")) : (t("Disabled", "כבוי"))}
           </span>
         </div>
 
@@ -511,7 +504,7 @@ const Settings: React.FC = () => {
               onClick={() => { setTwoFAStep("disable"); setTwoFACode(""); setTwoFAError(null); }}
               className="w-full border border-red-700/50 text-red-400 hover:bg-red-900/20 text-sm py-2.5 rounded-xl transition-colors"
             >
-              {isHe ? "בטל אימות דו-שלבי" : "Disable 2FA"}
+              {t("Disable 2FA", "בטל אימות דו-שלבי")}
             </button>
           ) : (
             <button
@@ -519,7 +512,7 @@ const Settings: React.FC = () => {
               disabled={twoFALoading}
               className="w-full border border-blue-700/50 text-blue-400 hover:bg-blue-900/20 text-sm py-2.5 rounded-xl transition-colors disabled:opacity-50"
             >
-              {twoFALoading ? (isHe ? "מכין..." : "Setting up...") : (isHe ? "🔐 הפעל אימות דו-שלבי" : "🔐 Enable 2FA")}
+              {twoFALoading ? (t("Setting up...", "מכין...")) : (t("🔐 Enable 2FA", "🔐 הפעל אימות דו-שלבי"))}
             </button>
           )
         )}
@@ -527,16 +520,14 @@ const Settings: React.FC = () => {
         {twoFAStep === "setup" && twoFAQR && (
           <div className="space-y-4">
             <p className="text-sm text-gray-300">
-              {isHe
-                ? "סרוק את קוד ה-QR עם Google Authenticator, לאחר מכן הכנס את הקוד שמוצג:"
-                : "Scan the QR code with Google Authenticator, then enter the code shown:"}
+              {t("Scan the QR code with Google Authenticator, then enter the code shown:", "סרוק את קוד ה-QR עם Google Authenticator, לאחר מכן הכנס את הקוד שמוצג:")}
             </p>
             <div className="flex justify-center">
               <img src={twoFAQR} alt="2FA QR Code" className="w-48 h-48 rounded-xl border-4 border-white" />
             </div>
             {twoFASecret && (
               <div className="bg-gray-800 rounded-xl px-4 py-2 text-center">
-                <p className="text-xs text-gray-500 mb-1">{isHe ? "או הכנס ידנית:" : "Or enter manually:"}</p>
+                <p className="text-xs text-gray-500 mb-1">{t("Or enter manually:", "או הכנס ידנית:")}</p>
                 <code className="text-xs text-blue-300 font-mono tracking-widest">{twoFASecret}</code>
               </div>
             )}
@@ -553,11 +544,11 @@ const Settings: React.FC = () => {
                 disabled={twoFACode.length !== 6 || twoFALoading}
                 className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
               >
-                {twoFALoading ? "..." : (isHe ? "אמת" : "Verify")}
+                {twoFALoading ? "..." : (t("Verify", "אמת"))}
               </button>
             </div>
             <button onClick={() => { setTwoFAStep("idle"); setTwoFAQR(null); }} className="w-full text-gray-500 hover:text-gray-300 text-xs py-1">
-              {isHe ? "ביטול" : "Cancel"}
+              {t("Cancel", "ביטול")}
             </button>
           </div>
         )}
@@ -565,7 +556,7 @@ const Settings: React.FC = () => {
         {twoFAStep === "disable" && (
           <div className="space-y-3">
             <p className="text-sm text-gray-300">
-              {isHe ? "הכנס את הקוד מהאפליקציה כדי לבטל:" : "Enter your authenticator code to disable:"}
+              {t("Enter your authenticator code to disable:", "הכנס את הקוד מהאפליקציה כדי לבטל:")}
             </p>
             <div className="flex gap-2">
               <input
@@ -580,11 +571,11 @@ const Settings: React.FC = () => {
                 disabled={twoFACode.length !== 6 || twoFALoading}
                 className="bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-medium"
               >
-                {twoFALoading ? "..." : (isHe ? "בטל" : "Disable")}
+                {twoFALoading ? "..." : (t("Disable", "בטל"))}
               </button>
             </div>
             <button onClick={() => { setTwoFAStep("idle"); setTwoFACode(""); }} className="w-full text-gray-500 hover:text-gray-300 text-xs py-1">
-              {isHe ? "חזור" : "Cancel"}
+              {t("Cancel", "חזור")}
             </button>
           </div>
         )}
@@ -596,13 +587,13 @@ const Settings: React.FC = () => {
         disabled={isLoading}
         className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition-colors"
       >
-        {isLoading ? (isHe ? "שומר..." : "Saving...") : (isHe ? "שמור שינויים" : "Save Changes")}
+        {isLoading ? (t("Saving...", "שומר...")) : (t("Save Changes", "שמור שינויים"))}
       </button>
 
       {/* ── Subscription ────────────────────────────────────────────────── */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 space-y-3">
         <h2 className="text-sm font-semibold text-gray-300">
-          {isHe ? "מנוי" : "Subscription"}
+          {t("Subscription", "מנוי")}
         </h2>
 
         {user?.is_pro ? (
@@ -612,28 +603,26 @@ const Settings: React.FC = () => {
                 PRO
               </span>
               <span className="text-xs text-gray-400">
-                {isHe ? "מעקב והמלצות ללא הגבלה" : "Unlimited tracking and recommendations"}
+                {t("Unlimited tracking and recommendations", "מעקב והמלצות ללא הגבלה")}
               </span>
             </div>
             {user?.subscription_expires_at && (
               <p className="text-xs text-gray-500">
-                {isHe ? "מתחדש ב-" : "Renews on "}
+                {t("Renews on ", "מתחדש ב-")}
                 {new Date(user.subscription_expires_at).toLocaleDateString(
-                  isHe ? "he-IL" : "en-US"
+                  t("en-US", "he-IL")
                 )}
               </p>
             )}
             <p className="text-[11px] text-gray-500 leading-relaxed">
-              {isHe
-                ? "ניהול או ביטול המנוי מתבצע בהגדרות החשבון בחנות שבה רכשת."
-                : "Manage or cancel your subscription in your store account settings."}
+              {t("Manage or cancel your subscription in your store account settings.", "ניהול או ביטול המנוי מתבצע בהגדרות החשבון בחנות שבה רכשת.")}
             </p>
           </>
         ) : (
           <>
             <div className="flex items-center gap-2">
               <span className="bg-gray-700 text-gray-300 text-xs font-semibold px-2.5 py-1 rounded-full">
-                {isHe ? "חינם" : "FREE"}
+                {t("FREE", "חינם")}
               </span>
               <span className="text-xs text-gray-400">
                 {isHe
@@ -648,13 +637,11 @@ const Settings: React.FC = () => {
                 onClick={() => setPaywallOpen(true)}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-xl text-sm"
               >
-                {isHe ? "שדרג למנוי" : "Upgrade"}
+                {t("Upgrade", "שדרג למנוי")}
               </button>
             ) : (
               <p className="text-xs text-gray-500">
-                {isHe
-                  ? "שדרוג זמין באפליקציה לאייפון ולאנדרואיד."
-                  : "Upgrading is available in the iOS and Android app."}
+                {t("Upgrading is available in the iOS and Android app.", "שדרוג זמין באפליקציה לאייפון ולאנדרואיד.")}
               </p>
             )}
           </>
@@ -664,12 +651,10 @@ const Settings: React.FC = () => {
       {/* ── Delete Account ──────────────────────────────────────────────── */}
       <div className="bg-gray-900 border border-red-900/40 rounded-2xl p-5 space-y-3">
         <h2 className="text-sm font-semibold text-red-400">
-          {isHe ? "מחיקת חשבון" : "Delete account"}
+          {t("Delete account", "מחיקת חשבון")}
         </h2>
         <p className="text-xs text-gray-400 leading-relaxed">
-          {isHe
-            ? "מחיקת החשבון היא לצמיתות. הפרטים האישיים, התיק, רשימת המעקב וההתראות יימחקו ולא ניתן לשחזר אותם."
-            : "Deleting your account is permanent. Your details, portfolio, watchlist and alerts are removed and cannot be restored."}
+          {t("Deleting your account is permanent. Your details, portfolio, watchlist and alerts are removed and cannot be restored.", "מחיקת החשבון היא לצמיתות. הפרטים האישיים, התיק, רשימת המעקב וההתראות יימחקו ולא ניתן לשחזר אותם.")}
         </p>
 
         {!delOpen ? (
@@ -677,7 +662,7 @@ const Settings: React.FC = () => {
             onClick={() => setDelOpen(true)}
             className="text-red-400 hover:text-red-300 text-sm font-medium underline underline-offset-4"
           >
-            {isHe ? "אני רוצה למחוק את החשבון" : "I want to delete my account"}
+            {t("I want to delete my account", "אני רוצה למחוק את החשבון")}
           </button>
         ) : (
           <div className="space-y-3 pt-1">
@@ -686,7 +671,7 @@ const Settings: React.FC = () => {
               value={delPassword}
               onChange={(e) => setDelPassword(e.target.value)}
               autoComplete="current-password"
-              placeholder={isHe ? "הסיסמה שלך" : "Your password"}
+              placeholder={t("Your password", "הסיסמה שלך")}
               className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-red-500"
             />
             <input
@@ -712,9 +697,7 @@ const Settings: React.FC = () => {
               >
                 {delLoading
                   ? "..."
-                  : isHe
-                  ? "מחק את החשבון לצמיתות"
-                  : "Permanently delete account"}
+                  : t("Permanently delete account", "מחק את החשבון לצמיתות")}
               </button>
               <button
                 onClick={() => {
@@ -725,7 +708,7 @@ const Settings: React.FC = () => {
                 }}
                 className="text-gray-500 hover:text-gray-300 text-sm px-4"
               >
-                {isHe ? "ביטול" : "Cancel"}
+                {t("Cancel", "ביטול")}
               </button>
             </div>
           </div>

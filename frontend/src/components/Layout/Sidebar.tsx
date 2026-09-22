@@ -1,4 +1,5 @@
 import React from "react";
+import { useT } from "../../i18n/t";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAppSelector } from "../../store";
 
@@ -23,6 +24,7 @@ const CLIENT_ITEMS: NavItem[] = [
 ];
 
 const Sidebar: React.FC = () => {
+  const t = useT();
   const navigate = useNavigate();
   const { user } = useAppSelector((state) => state.auth);
   const { unreadCount } = useAppSelector((state) => state.notifications);
@@ -73,7 +75,7 @@ const Sidebar: React.FC = () => {
         {isAdmin && (
           <>
             <p className="hidden md:block text-xs text-gray-600 uppercase tracking-wider px-3 pb-1 pt-2">
-              {isHe ? "ניהול" : "Admin"}
+              {t("Admin", "ניהול")}
             </p>
             {ADMIN_ITEMS.map(renderItem)}
             <div className="border-t border-gray-800 my-2" />
@@ -82,7 +84,7 @@ const Sidebar: React.FC = () => {
 
         {/* Client section */}
         <p className="hidden md:block text-xs text-gray-600 uppercase tracking-wider px-3 pb-1 pt-2">
-          {isHe ? "לקוח" : "Client"}
+          {t("Client", "לקוח")}
         </p>
         {CLIENT_ITEMS.map(renderItem)}
       </nav>
@@ -98,7 +100,7 @@ const Sidebar: React.FC = () => {
           </div>
           <div className="hidden md:block flex-1 min-w-0">
             <p className="text-xs font-medium truncate">{user?.full_name}</p>
-            <p className="text-xs text-gray-500">{isAdmin ? (isHe ? "מנהל" : "Admin") : (isHe ? "הגדרות" : "Settings")}</p>
+            <p className="text-xs text-gray-500">{isAdmin ? (t("Admin", "מנהל")) : (t("Settings", "הגדרות"))}</p>
           </div>
           <span className="hidden md:block text-gray-600 text-xs ml-auto">⚙️</span>
         </button>

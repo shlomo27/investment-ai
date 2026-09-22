@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useT, useDir } from "../i18n/t";
 import { useNavigate, Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { loginUser, registerUser, setUser } from "../store/slices/authSlice";
@@ -9,6 +10,8 @@ const TERMS_VERSION = "2026-09-14";
 import { authApi } from "../api/client";
 
 const Login: React.FC = () => {
+  const t = useT();
+  const dir = useDir();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const { isLoading, error } = useAppSelector((state) => state.auth);
@@ -60,7 +63,7 @@ const Login: React.FC = () => {
       dispatch(setUser(res.user));
       navigate(res.user.is_onboarded ? "/dashboard" : "/onboarding");
     } catch {
-      setTwoFAError(isHe ? "קוד שגוי, נסה שוב" : "Invalid code, please try again");
+      setTwoFAError(t("Invalid code, please try again", "קוד שגוי, נסה שוב"));
     } finally {
       setTwoFALoading(false);
     }
@@ -77,14 +80,14 @@ const Login: React.FC = () => {
   return (
     <div
       className="min-h-screen bg-gray-950 flex items-center justify-center px-4"
-      dir={isHe ? "rtl" : "ltr"}
+      dir={dir}
     >
       {/* Language toggle */}
       <button
-        onClick={() => setLang(isHe ? "en" : "he")}
+        onClick={() => setLang(lang === "he" ? "en" : "he")}
         className="fixed top-4 right-4 text-gray-400 hover:text-white text-sm border border-gray-700 rounded px-3 py-1"
       >
-        {isHe ? "EN" : "עב"}
+        {t("עב", "EN")}
       </button>
 
       <div className="w-full max-w-md">
@@ -96,10 +99,10 @@ const Login: React.FC = () => {
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-white">
-            {isHe ? "מערכת ייעוץ השקעות AI" : "Investment AI Platform"}
+            {t("Investment AI Platform", "מערכת ייעוץ השקעות AI")}
           </h1>
           <p className="text-gray-400 mt-1 text-sm">
-            {isHe ? "ניהול תיק השקעות מבוסס בינה מלאכותית" : "AI-powered portfolio management"}
+            {t("AI-powered portfolio management", "ניהול תיק השקעות מבוסס בינה מלאכותית")}
           </p>
         </div>
 
@@ -113,7 +116,7 @@ const Login: React.FC = () => {
                 : "text-gray-400 hover:text-white"
             }`}
           >
-            {isHe ? "כניסה" : "Login"}
+            {t("Login", "כניסה")}
           </button>
           <button
             onClick={() => setMode("register")}
@@ -123,7 +126,7 @@ const Login: React.FC = () => {
                 : "text-gray-400 hover:text-white"
             }`}
           >
-            {isHe ? "הרשמה" : "Register"}
+            {t("Register", "הרשמה")}
           </button>
         </div>
 
@@ -139,10 +142,10 @@ const Login: React.FC = () => {
               <div className="text-center mb-2">
                 <div className="text-3xl mb-2">🔐</div>
                 <p className="text-sm text-gray-300 font-medium">
-                  {isHe ? "אימות דו-שלבי" : "Two-Factor Authentication"}
+                  {t("Two-Factor Authentication", "אימות דו-שלבי")}
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  {isHe ? "הכנס את הקוד מאפליקציית האימות שלך" : "Enter the code from your authenticator app"}
+                  {t("Enter the code from your authenticator app", "הכנס את הקוד מאפליקציית האימות שלך")}
                 </p>
               </div>
               {twoFAError && (
@@ -163,37 +166,37 @@ const Login: React.FC = () => {
                 disabled={twoFACode.length !== 6 || twoFALoading}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl py-3 font-medium transition-colors"
               >
-                {twoFALoading ? (isHe ? "מאמת..." : "Verifying...") : (isHe ? "אמת כניסה" : "Verify Login")}
+                {twoFALoading ? (t("Verifying...", "מאמת...")) : (t("Verify Login", "אמת כניסה"))}
               </button>
               <button type="button" onClick={() => setTwoFARequired(false)} className="w-full text-gray-500 hover:text-gray-300 text-sm py-1">
-                {isHe ? "← חזור" : "← Back"}
+                {t("← Back", "← חזור")}
               </button>
             </form>
           ) : mode === "login" ? (
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
-                  {isHe ? "דוא\"ל" : "Email"}
+                  {t("Email", "דוא\"ל")}
                 </label>
                 <input
                   type="email"
                   value={loginForm.email}
                   onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500"
-                  placeholder={isHe ? "הזן דוא\"ל" : "Enter email"}
+                  placeholder={t("Enter email", "הזן דוא\"ל")}
                   required
                 />
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
-                  {isHe ? "סיסמה" : "Password"}
+                  {t("Password", "סיסמה")}
                 </label>
                 <input
                   type="password"
                   value={loginForm.password}
                   onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-blue-500"
-                  placeholder={isHe ? "הזן סיסמה" : "Enter password"}
+                  placeholder={t("Enter password", "הזן סיסמה")}
                   required
                 />
               </div>
@@ -202,7 +205,7 @@ const Login: React.FC = () => {
                 disabled={isLoading}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg py-3 font-medium transition-colors"
               >
-                {isLoading ? (isHe ? "מתחבר..." : "Logging in...") : (isHe ? "כניסה" : "Login")}
+                {isLoading ? (t("Logging in...", "מתחבר...")) : (t("Login", "כניסה"))}
               </button>
 
               {/* Without a way back in, a forgotten password is an uninstall. */}
@@ -210,14 +213,14 @@ const Login: React.FC = () => {
                 to="/reset-password"
                 className="block text-center text-gray-500 hover:text-gray-300 text-xs pt-1"
               >
-                {isHe ? "שכחת סיסמה?" : "Forgot your password?"}
+                {t("Forgot your password?", "שכחת סיסמה?")}
               </Link>
             </form>
           ) : (
             <form onSubmit={handleRegister} className="space-y-4">
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
-                  {isHe ? "שם מלא" : "Full Name"}
+                  {t("Full Name", "שם מלא")}
                 </label>
                 <input
                   type="text"
@@ -229,7 +232,7 @@ const Login: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
-                  {isHe ? "דוא\"ל" : "Email"}
+                  {t("Email", "דוא\"ל")}
                 </label>
                 <input
                   type="email"
@@ -241,7 +244,7 @@ const Login: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
-                  {isHe ? "טלפון" : "Phone"} <span className="text-red-400">*</span>
+                  {t("Phone", "טלפון")} <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="tel"
@@ -252,12 +255,12 @@ const Login: React.FC = () => {
                   required
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  {isHe ? "נדרש לקבלת התראות על המלצות" : "Required for receiving recommendation alerts"}
+                  {t("Required for receiving recommendation alerts", "נדרש לקבלת התראות על המלצות")}
                 </p>
               </div>
               <div>
                 <label className="block text-sm text-gray-400 mb-1">
-                  {isHe ? "סיסמה" : "Password"}
+                  {t("Password", "סיסמה")}
                 </label>
                 <input
                   type="password"
@@ -268,7 +271,7 @@ const Login: React.FC = () => {
                   required
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  {isHe ? "לפחות 8 תווים כולל ספרה" : "At least 8 characters including a number"}
+                  {t("At least 8 characters including a number", "לפחות 8 תווים כולל ספרה")}
                 </p>
               </div>
 
@@ -277,9 +280,7 @@ const Login: React.FC = () => {
                   record that the risk warning was accepted. */}
               <div className="bg-amber-500/5 border border-amber-500/30 rounded-lg p-3 space-y-2">
                 <p className="text-[11px] text-amber-300/90 leading-relaxed">
-                  {isHe
-                    ? "מסחר בניירות ערך כרוך בסיכון להפסד, לרבות אובדן מלוא ההשקעה. המערכת מספקת מידע וניתוח ממוכן בלבד ואינה מהווה ייעוץ השקעות אישי."
-                    : "Trading securities carries risk of loss, including your entire investment. This service provides automated information and analysis only, and is not personal investment advice."}
+                  {t("Trading securities carries risk of loss, including your entire investment. This service provides automated information and analysis only, and is not personal investment advice.", "מסחר בניירות ערך כרוך בסיכון להפסד, לרבות אובדן מלוא ההשקעה. המערכת מספקת מידע וניתוח ממוכן בלבד ואינה מהווה ייעוץ השקעות אישי.")}
                 </p>
                 <label className="flex items-start gap-2 cursor-pointer">
                   <input
@@ -292,15 +293,15 @@ const Login: React.FC = () => {
                     required
                   />
                   <span className="text-xs text-gray-300 leading-relaxed">
-                    {isHe ? "קראתי ואני מסכים ל" : "I have read and accept the "}
+                    {t("I have read and accept the ", "קראתי ואני מסכים ל")}
                     <a href="/terms.html" target="_blank" rel="noreferrer" className="text-blue-400 underline">
-                      {isHe ? "תנאי השימוש" : "Terms of Use"}
+                      {t("Terms of Use", "תנאי השימוש")}
                     </a>
-                    {isHe ? " ול" : " and "}
+                    {t(" and ", " ול")}
                     <a href="/privacy.html" target="_blank" rel="noreferrer" className="text-blue-400 underline">
-                      {isHe ? "מדיניות הפרטיות" : "Privacy Policy"}
+                      {t("Privacy Policy", "מדיניות הפרטיות")}
                     </a>
-                    {isHe ? ", ואני מאשר שאני בן 18 ומעלה." : ", and confirm I am 18 or older."}
+                    {t(", and confirm I am 18 or older.", ", ואני מאשר שאני בן 18 ומעלה.")}
                   </span>
                 </label>
               </div>
@@ -310,16 +311,14 @@ const Login: React.FC = () => {
                 disabled={isLoading || !registerForm.accepted_terms}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg py-3 font-medium transition-colors"
               >
-                {isLoading ? (isHe ? "נרשם..." : "Registering...") : (isHe ? "הרשמה" : "Register")}
+                {isLoading ? (t("Registering...", "נרשם...")) : (t("Register", "הרשמה"))}
               </button>
             </form>
           )}
         </div>
 
         <p className="text-center text-xs text-gray-600 mt-4">
-          {isHe
-            ? "המערכת אינה מספקת ייעוץ השקעות מוסדר. כל ההחלטות הן באחריות המשתמש."
-            : "This platform does not provide regulated investment advice. All decisions are the user's responsibility."}
+          {t("This platform does not provide regulated investment advice. All decisions are the user's responsibility.", "המערכת אינה מספקת ייעוץ השקעות מוסדר. כל ההחלטות הן באחריות המשתמש.")}
         </p>
       </div>
     </div>
