@@ -66,12 +66,14 @@ class RecommendationResponse(BaseModel):
     #: because saying nothing is always safe and a wrong entry would tell a
     #: reader that two different businesses are interchangeable.
     sibling_listings: List[Dict[str, Any]] = []
-    #: This listing's CURRENT price, sent only so the sibling note can compare
-    #: like with like. The sibling prices are live, while
-    #: current_price_at_recommendation can be weeks old — putting those two
-    #: next to each other made a stock that is $2 more expensive look $9
-    #: cheaper.
-    sibling_base_price: Optional[float] = None
+    #: The freshest price the system holds, refreshed by the scans rather than
+    #: frozen at approval like current_price_at_recommendation.
+    #:
+    #: The card needs both. The frozen one is what the target and stop were
+    #: set against; this one is what a reader buying today would pay, and it
+    #: is the only price that may be compared against a sibling listing's or
+    #: used to size the risk someone is actually taking on.
+    current_price: Optional[float] = None
     created_at: datetime
     approved_at: Optional[datetime]
     presented_at: Optional[datetime]
@@ -484,7 +486,7 @@ async def get_recommendations(
             current_price_at_recommendation=rec.current_price_at_recommendation,
             reasoning_locked=locked,
             sibling_listings=siblings_by_symbol.get(rec.symbol, []),
-            sibling_base_price=asset.last_price if asset else None,
+            current_price=asset.last_price if asset else None,
             **_apply_localized(
                 _lock_reasoning(rec, locked),
                 rec,
@@ -850,7 +852,7 @@ async def get_recommendation(
         current_price_at_recommendation=rec.current_price_at_recommendation,
         reasoning_locked=reasoning_locked,
         sibling_listings=await siblings_for(db, rec.symbol),
-        sibling_base_price=asset.last_price if asset else None,
+        current_price=asset.last_price if asset else None,
         **_apply_localized(_lock_reasoning(rec, reasoning_locked), rec, localized),
         # Technical analysis stays visible: it is computed locally with no LLM
         # cost, and it is the part a free user needs to judge timing on the

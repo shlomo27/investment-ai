@@ -116,7 +116,7 @@ const RecommendationCard: React.FC<Props> = ({
               // comparing those two read a stock that was $2 more expensive
               // as $9 cheaper. So the comparison is made here, against this
               // listing's own live price, or not offered at all.
-              const base = typeof rec.sibling_base_price === "number" ? rec.sibling_base_price : null;
+              const base = typeof rec.current_price === "number" ? rec.current_price : null;
               const priced = rec.sibling_listings.filter(
                 (s) => typeof s.last_price === "number"
               ) as Array<{ symbol: string; last_price: number }>;
@@ -290,14 +290,44 @@ const RecommendationCard: React.FC<Props> = ({
         {/* Key Metrics */}
         <div className="grid grid-cols-4 gap-4 mt-4">
           <div>
-            {/* This is the price the analysis was written against, frozen at
-                approval — not a live quote. Labelling it "current" told a
-                reader looking at a two-week-old card that the stock trades
-                there today, and the target percentage is measured from it. */}
-            <p className="text-xs text-gray-400" title={t("The price the analysis was written against, not a live quote", "המחיר שעליו נכתב הניתוח, לא מחיר השוק כרגע")}>
-              {t("Price at recommendation", "מחיר בעת ההמלצה")}
-            </p>
-            <p className="font-bold">{fmt(rec.current_price_at_recommendation)}</p>
+            {/* Both prices, with the live one leading.
+                The entry price is what the target and stop were set against,
+                so it cannot be dropped — but it is not what a reader buying
+                today pays, and showing it alone put a 33-day-old $344.72
+                beside a live sibling quote of $353.33 on a stock that had
+                since moved to $355.42. */}
+            {(() => {
+              const live = typeof rec.current_price === "number" ? rec.current_price : null;
+              const entry = rec.current_price_at_recommendation;
+              if (live === null) {
+                return (
+                  <>
+                    <p className="text-xs text-gray-400" title={t("The price the analysis was written against, not a live quote", "המחיר שעליו נכתב הניתוח, לא מחיר השוק כרגע")}>
+                      {t("Price at recommendation", "מחיר בעת ההמלצה")}
+                    </p>
+                    <p className="font-bold">{fmt(entry)}</p>
+                  </>
+                );
+              }
+              const drift = entry ? ((live - entry) / entry) * 100 : null;
+              return (
+                <>
+                  <p className="text-xs text-gray-400" title={t("The most recent price the system recorded, refreshed on every scan", "המחיר האחרון שהמערכת רשמה, מתעדכן בכל סריקה")}>
+                    {t("Current price", "מחיר נוכחי")}
+                  </p>
+                  <p className="font-bold">{fmt(live)}</p>
+                  {entry != null && (
+                    <p className="text-[10px] text-gray-500 num" dir="ltr">
+                      {t(
+                        `entry ${fmt(entry)}`,
+                        `בהמלצה ${fmt(entry)}`
+                      )}
+                      {drift !== null && ` (${drift >= 0 ? "+" : ""}${drift.toFixed(1)}%)`}
+                    </p>
+                  )}
+                </>
+              );
+            })()}
           </div>
           <div>
             <p className="text-xs text-gray-400">{t("Target", "יעד מחיר")}</p>
@@ -314,7 +344,18 @@ const RecommendationCard: React.FC<Props> = ({
                 over a week of live signals, confidence spans 11 points with a
                 standard deviation of 3, which cannot rank anything. */}
             {(() => {
-              const entry = rec.current_price_at_recommendation;
+              // Measured from the CURRENT price, not the one the analysis was
+              // written against. Those give different answers and only one of
+              // them describes the trade on offer: Alphabet's target of $430
+              // and stop of $295 read 1:1.7 from the old $344.72 and 1:1.2
+              // from today's $355.42. The stock had risen into its target, so
+              // the reward shrank and the risk grew — and the figure that
+              // exists to rank one trade against another was overstating this
+              // one by a third for anyone buying now.
+              const entry = typeof rec.current_price === "number"
+                ? rec.current_price
+                : rec.current_price_at_recommendation;
+              const fromLive = typeof rec.current_price === "number";
               const target = rec.target_price;
               const stop = rec.stop_loss;
               if (!entry || !target || !stop) {
@@ -322,6 +363,27 @@ const RecommendationCard: React.FC<Props> = ({
                   <>
                     <p className="text-xs text-gray-400">{t("Risk / reward", "סיכוי מול סיכון")}</p>
                     <p className="font-bold text-gray-600">—</p>
+                  </>
+                );
+              }
+              // Once the price has run through one of the two levels, the
+              // setup no longer exists and the ratio stops meaning anything:
+              // the absolute values would keep producing a confident-looking
+              // number out of a target already reached or a stop already
+              // broken. Say so instead.
+              const isShort = rec.recommendation_type === RecommendationType.SELL
+                || rec.recommendation_type === RecommendationType.STRONG_SELL;
+              const hitTarget = isShort ? entry <= target : entry >= target;
+              const hitStop = isShort ? entry >= stop : entry <= stop;
+              if (hitTarget || hitStop) {
+                return (
+                  <>
+                    <p className="text-xs text-gray-400">{t("Risk / reward", "סיכוי מול סיכון")}</p>
+                    <p className="font-bold text-gray-500 text-xs leading-tight">
+                      {hitTarget
+                        ? t("Target reached", "היעד הושג")
+                        : t("Past the stop", "עבר את הסטופ")}
+                    </p>
                   </>
                 );
               }
@@ -335,18 +397,24 @@ const RecommendationCard: React.FC<Props> = ({
                 : ratio >= 2 ? "text-green-400"
                 : ratio >= 1.5 ? "text-yellow-400"
                 : "text-orange-400";
+              const basis = fromLive
+                ? t("from the current price", "מהמחיר הנוכחי")
+                : t("from the price at recommendation", "ממחיר ההמלצה");
               return (
                 <>
                   <p
                     className="text-xs text-gray-400"
                     title={isHe
-                      ? `מסכנים ${downPct.toFixed(1)}% כדי להרוויח ${upPct.toFixed(1)}%`
-                      : `Risking ${downPct.toFixed(1)}% to make ${upPct.toFixed(1)}%`}
+                      ? `מסכנים ${downPct.toFixed(1)}% כדי להרוויח ${upPct.toFixed(1)}% — ${basis}`
+                      : `Risking ${downPct.toFixed(1)}% to make ${upPct.toFixed(1)}% — ${basis}`}
                   >
                     {t("Risk / reward", "סיכוי מול סיכון")}
                   </p>
                   <p className={`font-bold ${tone}`} dir="ltr">
                     {ratio === null ? "—" : `1 : ${ratio.toFixed(1)}`}
+                  </p>
+                  <p className="text-[10px] text-gray-500 num" dir="ltr">
+                    +{upPct.toFixed(0)}% / −{downPct.toFixed(0)}%
                   </p>
                 </>
               );
