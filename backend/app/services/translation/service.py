@@ -346,6 +346,36 @@ async def cached_translations(
     return out
 
 
+#: Warm jobs already running, so repeated page loads do not stack up the same
+#: work. Every visit to an untranslated feed would otherwise schedule another
+#: full pass over the same hundred rows while the first is still going.
+_WARMING: set = set()
+
+
+async def _warm_one(job: dict, target: str) -> None:
+    from app.core.database import AsyncSessionLocal
+
+    key = (target, job.get("symbol"), _hash(str(sorted(job["texts"].items()))))
+    if key in _WARMING:
+        return
+    _WARMING.add(key)
+    try:
+        async with AsyncSessionLocal() as db:
+            await translate_texts(
+                job["texts"],
+                target,
+                db,
+                company=job.get("company"),
+                symbol=job.get("symbol"),
+            )
+    except Exception as e:
+        logger.warning(
+            "Translation warm failed", symbol=job.get("symbol"), error=str(e)
+        )
+    finally:
+        _WARMING.discard(key)
+
+
 async def warm_translations(jobs: List[dict], target: str) -> None:
     """Fill the cache for texts a request served untranslated.
 
@@ -353,22 +383,15 @@ async def warm_translations(jobs: List[dict], target: str) -> None:
     the request's session is closed by the time this runs. Failures are
     logged and dropped: a warm that does not complete costs a reader one more
     view in the source language, nothing more.
+
+    Concurrent, not sequential. A feed of a hundred rows warmed one at a time
+    takes minutes, which is exactly long enough for a reader to refresh and
+    find half the cards translated and half not. Actual API concurrency is
+    still bounded by _CONCURRENCY inside _translate_one, so this floods
+    nothing — it just stops the jobs queueing behind each other.
     """
     if not jobs or not is_supported(target):
         return
-    from app.core.database import AsyncSessionLocal
-
-    for job in jobs:
-        try:
-            async with AsyncSessionLocal() as db:
-                await translate_texts(
-                    job["texts"],
-                    target,
-                    db,
-                    company=job.get("company"),
-                    symbol=job.get("symbol"),
-                )
-        except Exception as e:
-            logger.warning(
-                "Translation warm failed", symbol=job.get("symbol"), error=str(e)
-            )
+    await asyncio.gather(
+        *(_warm_one(job, target) for job in jobs), return_exceptions=True
+    )
