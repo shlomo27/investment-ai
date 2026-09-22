@@ -2050,3 +2050,39 @@ async def diagnose_share_classes(
     if not out["siblings_shown"]:
         out["blocked_by"] = "shares a CIK, but the equivalence test rejected it"
     return out
+
+
+@router.post("/share-classes/backfill-cik")
+async def run_cik_backfill(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch SEC issuer ids now, rather than waiting for a restart.
+
+    The backfill otherwise runs at startup and weekly, and only in the worker
+    holding the scheduler lock — so after a deploy it can be minutes away,
+    and there is no way to ask for it. Without it every share-class note
+    stays hidden, which looks identical to the feature not working.
+
+    Runs inline and returns what it did: this is the one place where waiting
+    a few seconds for an answer is the point.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    from app.services.share_classes.service import backfill_ciks
+
+    result = await backfill_ciks(db)
+
+    # Report the outcome, not just the count — "updated 0" means something
+    # very different depending on whether anything was missing to begin with.
+    from sqlalchemy import func as sqlfunc
+
+    from app.db.models.asset import Asset as _A
+
+    total = (await db.execute(select(sqlfunc.count(_A.id)))).scalar() or 0
+    with_cik = (
+        await db.execute(select(sqlfunc.count(_A.id)).where(_A.cik.isnot(None)))
+    ).scalar() or 0
+    return {**result, "assets": total, "with_cik": with_cik,
+            "coverage_pct": round(100 * with_cik / total, 1) if total else 0}
