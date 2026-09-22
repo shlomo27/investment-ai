@@ -692,6 +692,20 @@ export const marketApi = {
     return response.data;
   },
 
+  /** Fetch SEC issuer ids now. Returns coverage, not just a count. */
+  backfillCiks: async (): Promise<any> => {
+    const response = await api.post("/market/share-classes/backfill-cik");
+    return response.data;
+  },
+
+  /** Why a symbol does or does not show a sibling listing. */
+  diagnoseShareClasses: async (symbol: string): Promise<any> => {
+    const response = await api.get("/market/share-classes/diagnose", {
+      params: { symbol },
+    });
+    return response.data;
+  },
+
   retireStaleRecommendations: async (): Promise<any> => {
     const response = await api.post("/market/recommendations/retire-stale");
     return response.data;

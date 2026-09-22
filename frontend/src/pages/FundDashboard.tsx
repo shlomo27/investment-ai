@@ -135,9 +135,44 @@ const FundDashboard: React.FC = () => {
     setPauseBusy(false);
   };
   const [staleBusy, setStaleBusy] = useState(false);
+  const [cikBusy, setCikBusy] = useState(false);
+  const [cikResult, setCikResult] = useState<string>("");
+  const [diagSymbol, setDiagSymbol] = useState("GOOGL");
+  const [diagResult, setDiagResult] = useState<any>(null);
 
   // The retirement runs daily at 06:00; this clears a card that has outlived
   // the 45-day policy now rather than leaving it in the feed until morning.
+
+  const handleBackfillCiks = async () => {
+    setCikBusy(true);
+    setCikResult("");
+    try {
+      const r = await marketApi.backfillCiks();
+      // Coverage, not just a count: "updated 0" at 100% means everything was
+      // already filled, and at 0% means the SEC fetch failed. The same number
+      // with opposite meanings is exactly what a status line must not hide.
+      setCikResult(
+        isHe
+          ? `עודכנו ${r.updated ?? 0} · כיסוי ${r.coverage_pct}% (${r.with_cik}/${r.assets})` +
+            (r.reason === "sec_unavailable" ? " — ההורדה מה-SEC נכשלה" : "")
+          : `Updated ${r.updated ?? 0} · coverage ${r.coverage_pct}% (${r.with_cik}/${r.assets})` +
+            (r.reason === "sec_unavailable" ? " — the SEC fetch failed" : "")
+      );
+    } catch (e: any) {
+      setCikResult(e?.response?.data?.detail || (isHe ? "נכשל" : "Failed"));
+    }
+    setCikBusy(false);
+  };
+
+  const handleDiagnose = async () => {
+    setDiagResult(null);
+    try {
+      setDiagResult(await marketApi.diagnoseShareClasses(diagSymbol.trim().toUpperCase()));
+    } catch (e: any) {
+      setDiagResult({ error: e?.response?.data?.detail || "failed" });
+    }
+  };
+
   const handleRetireStale = async () => {
     setStaleBusy(true);
     try {
@@ -949,6 +984,56 @@ const FundDashboard: React.FC = () => {
                 </button>
               </div>
               {staleResult && <p className="text-xs text-gray-400 mt-2">{staleResult}</p>}
+            </div>
+
+            {/* Share classes. Grouping fails silently by design, so without a
+                way to ask, "no note on GOOGL" and "the backfill never ran"
+                look identical from the outside. */}
+            <div className="mt-4 pt-4 border-t border-gray-800">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm text-gray-300">
+                    {isHe ? "סוגי מניות (GOOGL/GOOG)" : "Share classes (GOOGL/GOOG)"}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {isHe
+                      ? "מושך מזהי חברה מה-SEC. בלעדיהם המערכת לא יודעת ששתי מניות הן אותה חברה"
+                      : "Fetches SEC issuer ids. Without them the system cannot tell two tickers are one company"}
+                  </p>
+                </div>
+                <button
+                  onClick={handleBackfillCiks}
+                  disabled={cikBusy}
+                  className="shrink-0 px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-blue-300 border border-gray-700 hover:border-blue-700 disabled:text-gray-600"
+                >
+                  {cikBusy ? (isHe ? "מריץ..." : "Running...") : (isHe ? "הרץ עכשיו" : "Run now")}
+                </button>
+              </div>
+              {cikResult && <p className="text-xs text-gray-400 mt-2">{cikResult}</p>}
+
+              <div className="flex items-center gap-2 mt-3">
+                <input
+                  value={diagSymbol}
+                  onChange={(e) => setDiagSymbol(e.target.value)}
+                  placeholder="GOOGL"
+                  dir="ltr"
+                  className="w-28 px-2 py-1 rounded-lg text-xs bg-gray-900 text-gray-200 border border-gray-800 font-mono"
+                />
+                <button
+                  onClick={handleDiagnose}
+                  className="px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-gray-300 border border-gray-700 hover:border-gray-500"
+                >
+                  {isHe ? "בדוק סימבול" : "Check symbol"}
+                </button>
+              </div>
+              {diagResult && (
+                <pre
+                  dir="ltr"
+                  className="mt-2 text-[10px] text-gray-400 bg-gray-950 border border-gray-800 rounded-lg p-2 overflow-x-auto max-h-56"
+                >
+                  {JSON.stringify(diagResult, null, 2)}
+                </pre>
+              )}
             </div>
 
             {demoList.length > 0 && (
