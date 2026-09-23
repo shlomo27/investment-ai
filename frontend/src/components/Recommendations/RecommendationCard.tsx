@@ -394,6 +394,32 @@ const RecommendationCard: React.FC<Props> = ({
               const ratio = risk > 0 ? reward / risk : null;
               const upPct = (reward / entry) * 100;
               const downPct = (risk / entry) * 100;
+
+              // A stop inside a normal day's movement is not a risk level, and
+              // the ratio built on it is not a measure of anything. FISV sat
+              // $0.31 above a $46.00 stop: arithmetically 1:84, rendered in
+              // green, reading as the best trade on the screen — while the
+              // position was two thirds of one percent from being closed by
+              // ordinary noise on a stock whose beta is 0.79.
+              //
+              // The ratio is not shown at all in that state. Dividing by a
+              // number this close to zero produces a figure whose size comes
+              // from the denominator, not from the opportunity, and no amount
+              // of colour makes that honest.
+              if (downPct < 2) {
+                return (
+                  <>
+                    <p className="text-xs text-gray-400">{t("Risk / reward", "סיכוי מול סיכון")}</p>
+                    <p className="font-bold text-orange-400 text-xs leading-tight">
+                      {t("At the stop", "צמוד לסטופ")}
+                    </p>
+                    <p className="text-[10px] text-gray-500 num" dir="ltr">
+                      −{downPct.toFixed(1)}%
+                    </p>
+                  </>
+                );
+              }
+
               const tone =
                 ratio === null ? "text-gray-600"
                 : ratio >= 2 ? "text-green-400"
@@ -413,7 +439,13 @@ const RecommendationCard: React.FC<Props> = ({
                     {t("Risk / reward", "סיכוי מול סיכון")}
                   </p>
                   <p className={`font-bold ${tone}`} dir="ltr">
-                    {ratio === null ? "—" : `1 : ${ratio.toFixed(1)}`}
+                    {/* Capped, because past about 10:1 the figure is reporting
+                        how tight the stop is rather than how good the trade
+                        is, and one decimal place on it claims a precision it
+                        does not have. "1 : 26.4" and "1 : 84.2" differ only in
+                        how close the price sits to the stop; the percentages
+                        below already say that, and say it in money. */}
+                    {ratio === null ? "—" : ratio > 10 ? "1 : 10+" : `1 : ${ratio.toFixed(1)}`}
                   </p>
                   <p className="text-[10px] text-gray-500 num" dir="ltr">
                     +{upPct.toFixed(0)}% / −{downPct.toFixed(0)}%
@@ -539,8 +571,14 @@ const RecommendationCard: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Actions */}
-      <div className="px-5 pb-5 flex items-center gap-2">
+      {/* Actions.
+          Wraps. Six buttons in one non-wrapping row fit only when every label
+          is short, so the row silently depended on the length of Hebrew: in
+          French "Suivre pour l'entrée" pushed the primary action off the
+          right edge with nothing to scroll, and the button a reader needs
+          most was the one they could not reach. Wrapping costs a line of
+          height and cannot be defeated by a longer word in any language. */}
+      <div className="px-5 pb-5 flex flex-wrap items-center gap-2">
         <button
           onClick={() => setExpanded(!expanded)}
           className="text-xs text-gray-400 hover:text-white border border-gray-700 rounded-lg px-3 py-1.5"
@@ -559,7 +597,10 @@ const RecommendationCard: React.FC<Props> = ({
         >
           {t("Research", "מחקר מלא")}
         </button>
-        <div className="flex-1" />
+        {/* Pushes the primary action right only where there is room for it.
+            On a phone it would consume the line and force a wrap with nothing
+            on it. */}
+        <div className="hidden sm:block flex-1" />
         {(() => {
           if (!isBuy) return null;
           const sig = (tech?.timing_signal || rec.technical_analysis?.timing_signal || "").toUpperCase();

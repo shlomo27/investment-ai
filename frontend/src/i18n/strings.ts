@@ -846,6 +846,7 @@ export const UI_STRINGS: StringTable = {
     "Create Bot via @BotFather → set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in Railway. Send /start to bot to get Chat ID": "Créez un bot via @BotFather → définissez TELEGRAM_BOT_TOKEN et TELEGRAM_CHAT_ID dans Railway. Envoyez /start au bot pour obtenir le Chat ID",
     "Requires Firebase FCM + browser permission. Browser must grant notifications and register push_token": "Nécessite Firebase FCM et l'autorisation du navigateur. Le navigateur doit accorder les notifications et enregistrer un push_token",
     "After simulation — click 'Remove' in Step 3 to delete the test position": "Après la simulation, cliquez sur « Retirer » à l'étape 3 pour supprimer la position de test",
+    "At the stop": "Au niveau du stop",
   },
   "es": {
     "Signals": "Señales",
@@ -1666,6 +1667,7 @@ export const UI_STRINGS: StringTable = {
     "Create Bot via @BotFather → set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in Railway. Send /start to bot to get Chat ID": "Crea el bot con @BotFather → define TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID en Railway. Envía /start al bot para obtener el Chat ID",
     "Requires Firebase FCM + browser permission. Browser must grant notifications and register push_token": "Requiere Firebase FCM y permiso del navegador. El navegador debe conceder las notificaciones y registrar un push_token",
     "After simulation — click 'Remove' in Step 3 to delete the test position": "Tras la simulación, pulsa «Quitar» en el paso 3 para eliminar la posición de prueba",
+    "At the stop": "Pegado al stop",
   },
   "de": {
     "Signals": "Signale",
@@ -2486,6 +2488,7 @@ export const UI_STRINGS: StringTable = {
     "Create Bot via @BotFather → set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in Railway. Send /start to bot to get Chat ID": "Bot über @BotFather anlegen → TELEGRAM_BOT_TOKEN und TELEGRAM_CHAT_ID in Railway setzen. Senden Sie /start an den Bot, um die Chat-ID zu erhalten",
     "Requires Firebase FCM + browser permission. Browser must grant notifications and register push_token": "Erfordert Firebase FCM und die Erlaubnis des Browsers. Der Browser muss Benachrichtigungen zulassen und ein push_token registrieren",
     "After simulation — click 'Remove' in Step 3 to delete the test position": "Klicken Sie nach der Simulation in Schritt 3 auf „Entfernen“, um die Testposition zu löschen",
+    "At the stop": "Am Stop",
   },
   "it": {
     "Loading...": "Caricamento…",
@@ -3298,6 +3301,7 @@ export const UI_STRINGS: StringTable = {
     "Create Bot via @BotFather → set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in Railway. Send /start to bot to get Chat ID": "Crea il bot con @BotFather → imposta TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID in Railway. Invia /start al bot per ottenere il Chat ID",
     "Requires Firebase FCM + browser permission. Browser must grant notifications and register push_token": "Richiede Firebase FCM e il permesso del browser. Il browser deve concedere le notifiche e registrare un push_token",
     "After simulation — click 'Remove' in Step 3 to delete the test position": "Dopo la simulazione, clicca su «Rimuovi» al passaggio 3 per eliminare la posizione di prova",
+    "At the stop": "A ridosso dello stop",
   },
   "pt-BR": {
     "Log out": "Sair",
@@ -4110,6 +4114,7 @@ export const UI_STRINGS: StringTable = {
     "Create Bot via @BotFather → set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in Railway. Send /start to bot to get Chat ID": "Crie o bot pelo @BotFather → defina TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID no Railway. Envie /start ao bot para obter o Chat ID",
     "Requires Firebase FCM + browser permission. Browser must grant notifications and register push_token": "Requer Firebase FCM e permissão do navegador. O navegador precisa conceder notificações e registrar um push_token",
     "After simulation — click 'Remove' in Step 3 to delete the test position": "Depois da simulação, clique em «Remover» na etapa 3 para excluir a posição de teste",
+    "At the stop": "Colado no stop",
   },
   "ar": {
     "Log out": "تسجيل الخروج",
@@ -4922,6 +4927,7 @@ export const UI_STRINGS: StringTable = {
     "Create Bot via @BotFather → set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in Railway. Send /start to bot to get Chat ID": "أنشئ البوت عبر ‎@BotFather ثم اضبط TELEGRAM_BOT_TOKEN وTELEGRAM_CHAT_ID في Railway. وأرسل ‎/start إلى البوت للحصول على Chat ID",
     "Requires Firebase FCM + browser permission. Browser must grant notifications and register push_token": "يتطلّب Firebase FCM وإذن المتصفح. ويجب أن يمنح المتصفح الإشعارات ويسجّل push_token",
     "After simulation — click 'Remove' in Step 3 to delete the test position": "بعد المحاكاة، اضغط «حذف» في الخطوة 3 لإزالة المركز الاختباري",
+    "At the stop": "ملاصق لوقف الخسارة",
   },
   "ko": {
     "Log out": "로그아웃",
@@ -5734,6 +5740,7 @@ export const UI_STRINGS: StringTable = {
     "Create Bot via @BotFather → set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in Railway. Send /start to bot to get Chat ID": "@BotFather로 봇을 만든 뒤 Railway에 TELEGRAM_BOT_TOKEN과 TELEGRAM_CHAT_ID를 설정하세요. 봇에 /start를 보내면 Chat ID를 얻을 수 있습니다",
     "Requires Firebase FCM + browser permission. Browser must grant notifications and register push_token": "Firebase FCM과 브라우저 권한이 필요합니다. 브라우저가 알림을 허용하고 push_token을 등록해야 합니다",
     "After simulation — click 'Remove' in Step 3 to delete the test position": "시뮬레이션이 끝나면 3단계에서 '삭제'를 눌러 테스트 포지션을 지우세요",
+    "At the stop": "손절가에 근접",
   },
   "ja": {
     "Log out": "ログアウト",
@@ -6546,5 +6553,6 @@ export const UI_STRINGS: StringTable = {
     "Create Bot via @BotFather → set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID in Railway. Send /start to bot to get Chat ID": "@BotFatherでボットを作成し、RailwayにTELEGRAM_BOT_TOKENとTELEGRAM_CHAT_IDを設定してください。ボットに /start を送るとChat IDが分かります",
     "Requires Firebase FCM + browser permission. Browser must grant notifications and register push_token": "Firebase FCMとブラウザの許可が必要です。ブラウザが通知を許可し、push_tokenを登録する必要があります",
     "After simulation — click 'Remove' in Step 3 to delete the test position": "シミュレーション後は、ステップ3の「削除」を押してテスト用ポジションを消してください",
+    "At the stop": "損切り価格の間際",
   },
 };
