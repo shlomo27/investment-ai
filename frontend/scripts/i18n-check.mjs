@@ -82,6 +82,9 @@ for (const file of walk(SRC)) {
       keys.add(raw.slice(1, -1).replace(/\\(["'\\])/g, "$1").replace(/\\n/g, "\n"));
     }
   }
+  for (const m of text.matchAll(PAIRED)) {
+    keys.add(m[1].slice(1, -1).replace(/\\(["'\\\\])/g, "$1"));
+  }
 }
 
 // A binding named `t` that is not the translator.

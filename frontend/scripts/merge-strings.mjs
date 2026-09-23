@@ -51,6 +51,9 @@ for (const file of walk(SRC)) {
   for (const m of stripComments(readFileSync(file, "utf8")).matchAll(CALL)) {
     live.add(m[1].slice(1, -1).replace(/\\(["'\\])/g, "$1").replace(/\\n/g, "\n"));
   }
+  for (const m of stripComments(readFileSync(file, "utf8")).matchAll(PAIRED)) {
+    live.add(m[1].slice(1, -1).replace(/\\(["'\\\\])/g, "$1"));
+  }
 }
 
 const src = readFileSync(STRINGS, "utf8");
