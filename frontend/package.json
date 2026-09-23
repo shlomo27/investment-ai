@@ -15,7 +15,8 @@
     "mobile:ios": "npm run mobile:sync && npx cap open ios",
     "i18n": "node scripts/i18n-check.mjs",
     "i18n:missing": "node scripts/i18n-check.mjs --missing",
-    "i18n:untranslated": "node scripts/untranslated-scan.mjs"
+    "i18n:untranslated": "node scripts/untranslated-scan.mjs",
+    "i18n:runtime": "node scripts/i18n-runtime-test.mjs"
   },
   "dependencies": {
     "@capacitor-firebase/messaging": "^8",
