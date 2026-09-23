@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { useT } from "../i18n/t";
+import { useT, useLocale } from "../i18n/t";
 import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { fetchRecommendations } from "../store/slices/notificationsSlice";
@@ -22,6 +22,7 @@ const SignalSummaryCard: React.FC<{
   isHe: boolean;
 }> = ({ title, recs, tone, subtitle, isHe }) => {
   const t = useT();
+  const locale = useLocale();
   const [expanded, setExpanded] = useState(false);
   const COLLAPSED = 3;
   const visible = expanded ? recs : recs.slice(0, COLLAPSED);
@@ -67,6 +68,7 @@ const SignalSummaryCard: React.FC<{
 
 const FundDashboard: React.FC = () => {
   const t = useT();
+  const locale = useLocale();
   const dispatch = useAppDispatch();
   const { recommendations } = useAppSelector((s) => s.notifications);
   const { user } = useAppSelector((s) => s.auth);
@@ -155,11 +157,12 @@ const FundDashboard: React.FC = () => {
       // already filled, and at 0% means the SEC fetch failed. The same number
       // with opposite meanings is exactly what a status line must not hide.
       setCikResult(
-        isHe
-          ? `עודכנו ${r.updated ?? 0} · כיסוי ${r.coverage_pct}% (${r.with_cik}/${r.assets})` +
-            (r.reason === "sec_unavailable" ? " — ההורדה מה-SEC נכשלה" : "")
-          : `Updated ${r.updated ?? 0} · coverage ${r.coverage_pct}% (${r.with_cik}/${r.assets})` +
-            (r.reason === "sec_unavailable" ? " — the SEC fetch failed" : "")
+        t("Updated {updated} · coverage {pct}% ({withCik}/{assets})",
+          "עודכנו {updated} · כיסוי {pct}% ({withCik}/{assets})",
+          { updated: r.updated ?? 0, pct: r.coverage_pct, withCik: r.with_cik, assets: r.assets }) +
+          (r.reason === "sec_unavailable"
+            ? t(" — the SEC fetch failed", " — ההורדה מה-SEC נכשלה")
+            : "")
       );
     } catch (e: any) {
       setCikResult(e?.response?.data?.detail || (t("Failed", "נכשל")));
@@ -189,9 +192,9 @@ const FundDashboard: React.FC = () => {
           ? ` (${r.reason})`
           : "";
       setStaleResult(
-        (isHe
-          ? `${r.expired ?? 0} המלצות הוסרו, ${r.requeued ?? 0} נשלחו לניתוח מחדש (מתוך ${r.stale ?? 0} ישנות).`
-          : `${r.expired ?? 0} retired, ${r.requeued ?? 0} re-queued (of ${r.stale ?? 0} stale).`) + why
+        t("{expired} retired, {requeued} re-queued (of {stale} stale).",
+          "{expired} המלצות הוסרו, {requeued} נשלחו לניתוח מחדש (מתוך {stale} ישנות).",
+          { expired: r.expired ?? 0, requeued: r.requeued ?? 0, stale: r.stale ?? 0 }) + why
       );
       dispatch(fetchRecommendations({}));
     } catch (e: any) {
@@ -229,7 +232,7 @@ const FundDashboard: React.FC = () => {
   };
 
   const handleRevokeDemo = async (id: number, email: string) => {
-    if (!window.confirm(isHe ? `לבטל את הגישה של ${email}?` : `Revoke access for ${email}?`)) return;
+    if (!window.confirm(t("Revoke access for {email}?", "לבטל את הגישה של {email}?", { email }))) return;
     try {
       await authApi.revokeDemoAccount(id);
       await loadDemoAccounts();
@@ -266,8 +269,10 @@ const FundDashboard: React.FC = () => {
       setBatchResult({
         started: false,
         reason: res.requeued
-          ? `${res.requeued} חברות שדיווחו הוחזרו לתור לניתוח מחדש (מתוך ${res.needed} שנמצאו). התור: ${res.queue_len}.`
-          : (res.reason || "לא נמצאו חברות שדורשות ניתוח מחדש"),
+          ? t("{requeued} reporting companies re-queued for analysis (of {needed} found). Queue: {queue}.",
+              "{requeued} חברות שדיווחו הוחזרו לתור לניתוח מחדש (מתוך {needed} שנמצאו). התור: {queue}.",
+              { requeued: res.requeued, needed: res.needed, queue: res.queue_len })
+          : (res.reason || t("No companies need re-analysis", "לא נמצאו חברות שדורשות ניתוח מחדש")),
       });
       await loadEarningsStatus();
     } catch (e: any) {
@@ -387,17 +392,17 @@ const FundDashboard: React.FC = () => {
       if (res?.started || res?.already_running) {
         setScreenerRunning(true);
         screenerWasRunning.current = true;
-        setScreenerStatus({ running: true, phase: res.phase || "מתחיל" });
+        setScreenerStatus({ running: true, phase: res.phase || t("starting", "מתחיל") });
       } else {
-        setScreenerResult({ error: res?.message || "ההרצה לא התחילה" });
+        setScreenerResult({ error: res?.message || t("The run did not start", "ההרצה לא התחילה") });
       }
     } catch (e: any) {
       setScreenerResult({
         error:
           e?.response?.data?.detail ||
           (e?.code === "ECONNABORTED"
-            ? "הבקשה עברה את זמן ההמתנה"
-            : e?.message || "ההרצה נכשלה"),
+            ? t("The request timed out", "הבקשה עברה את זמן ההמתנה")
+            : e?.message || t("The run failed", "ההרצה נכשלה")),
       });
     }
   };
@@ -676,9 +681,9 @@ const FundDashboard: React.FC = () => {
                         ? "text-yellow-400"
                         : "text-gray-500"
                     }>
-                      {isHe
-                        ? `נמדדו ${universeStats.beta_measured.toLocaleString()} מתוך ${universeStats.universe_total.toLocaleString()}`
-                        : `${universeStats.beta_measured.toLocaleString()} of ${universeStats.universe_total.toLocaleString()} measured`}
+                      {t("{done} of {total} measured", "נמדדו {done} מתוך {total}",
+                          { done: universeStats.beta_measured.toLocaleString(),
+                            total: universeStats.universe_total.toLocaleString() })}
                     </span>
                   </p>
                 )}
@@ -694,9 +699,9 @@ const FundDashboard: React.FC = () => {
             {betaRunning && (
               <p className="text-xs text-blue-300 mt-2">
                 {betaStatus?.total
-                  ? (isHe
-                      ? `מודד כעת — ${betaStatus.done} מתוך ${betaStatus.total}. אפשר לעזוב את הדף, הריצה ממשיכה בשרת.`
-                      : `Measuring — ${betaStatus.done} of ${betaStatus.total}. You can leave the page; the run continues on the server.`)
+                  ? t("Measuring — {done} of {total}. You can leave the page; the run continues on the server.",
+                      "מודד כעת — {done} מתוך {total}. אפשר לעזוב את הדף, הריצה ממשיכה בשרת.",
+                      { done: betaStatus.done ?? 0, total: betaStatus.total ?? 0 })
                   : (t("Starting...", "מתחיל..."))}
               </p>
             )}
@@ -735,8 +740,9 @@ const FundDashboard: React.FC = () => {
               <div className="mt-3 p-3 rounded-xl bg-gray-800/60 border border-gray-700 text-xs">
                 <p className="text-gray-400 mb-1">
                   {demoAccount.already_existed
-                    ? (isHe ? `סיסמה חדשה עבור ${demoAccount.label}. הישנה כבר לא עובדת:` : `New password for ${demoAccount.label}. The old one no longer works:`)
-                    : (isHe ? `נוצר חשבון עבור ${demoAccount.label}:` : `Account created for ${demoAccount.label}:`)}
+                    ? t("New password for {label}. The old one no longer works:",
+                        "סיסמה חדשה עבור {label}. הישנה כבר לא עובדת:", { label: demoAccount.label })
+                    : t("Account created for {label}:", "נוצר חשבון עבור {label}:", { label: demoAccount.label })}
                 </p>
                 {/* dir="ltr" is required: this is a right-to-left page, and a
                     Latin credential rendered inside it gets reordered by the
@@ -788,9 +794,10 @@ const FundDashboard: React.FC = () => {
                     {taScan.minutes_ago != null ? `${taScan.minutes_ago} ${t("min ago", "דקות")}` : "—"}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    {isHe
-                      ? `נסרקו ${taScan.scanned ?? 0} · הצליחו ${taScan.success ?? 0} · שגיאות ${taScan.errors ?? 0} · התראות שנשלחו ${taScan.alerted ?? 0}`
-                      : `${taScan.scanned ?? 0} scanned · ${taScan.success ?? 0} ok · ${taScan.errors ?? 0} errors · ${taScan.alerted ?? 0} alerts`}
+                    {t("{scanned} scanned · {ok} ok · {errors} errors · {alerts} alerts",
+                        "נסרקו {scanned} · הצליחו {ok} · שגיאות {errors} · התראות שנשלחו {alerts}",
+                        { scanned: taScan.scanned ?? 0, ok: taScan.success ?? 0,
+                          errors: taScan.errors ?? 0, alerts: taScan.alerted ?? 0 })}
                   </p>
                   {(taScan.errors ?? 0) > 0 && (taScan.errors ?? 0) >= (taScan.success ?? 0) && (
                     <p className="text-xs text-red-400 mt-1">
@@ -832,9 +839,11 @@ const FundDashboard: React.FC = () => {
                       : "—"}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
-                    {isHe
-                      ? `${taScan.news_scan.symbols ?? 0} מניות · ${taScan.news_scan.news_alerts ?? 0} התראות חדשות · ${taScan.news_scan.buzz_alerts ?? 0} התראות באז ב-X`
-                      : `${taScan.news_scan.symbols ?? 0} symbols · ${taScan.news_scan.news_alerts ?? 0} news alerts · ${taScan.news_scan.buzz_alerts ?? 0} X buzz alerts`}
+                    {t("{symbols} symbols · {news} news alerts · {buzz} X buzz alerts",
+                        "{symbols} מניות · {news} התראות חדשות · {buzz} התראות באז ב-X",
+                        { symbols: taScan.news_scan.symbols ?? 0,
+                          news: taScan.news_scan.news_alerts ?? 0,
+                          buzz: taScan.news_scan.buzz_alerts ?? 0 })}
                   </p>
                 </>
               )}
@@ -891,9 +900,11 @@ const FundDashboard: React.FC = () => {
                       </p>
                       <p className={sigState.recipients?.holders + sigState.recipients?.watchers_with_alerts_on > 0 ? "text-gray-300" : "text-red-400"}>
                         <span className="text-gray-500">{t("Recipients: ", "נמענים: ")}</span>
-                        {isHe
-                          ? `${sigState.recipients?.holders ?? 0} מחזיקים · ${sigState.recipients?.watchers_with_alerts_on ?? 0} עוקבים עם התראות (מתוך ${sigState.recipients?.on_watchlist_total ?? 0} ברשימת מעקב)`
-                          : `${sigState.recipients?.holders ?? 0} holders · ${sigState.recipients?.watchers_with_alerts_on ?? 0} watchers with alerts on (of ${sigState.recipients?.on_watchlist_total ?? 0} watching)`}
+                        {t("{holders} holders · {watchers} watchers with alerts on (of {total} watching)",
+                            "{holders} מחזיקים · {watchers} עוקבים עם התראות (מתוך {total} ברשימת מעקב)",
+                            { holders: sigState.recipients?.holders ?? 0,
+                              watchers: sigState.recipients?.watchers_with_alerts_on ?? 0,
+                              total: sigState.recipients?.on_watchlist_total ?? 0 })}
                       </p>
                     </>
                   )}
@@ -916,7 +927,7 @@ const FundDashboard: React.FC = () => {
                   <p className="text-xs text-yellow-300">
                     {t("Analyses are paused", "הניתוחים מושהים")}
                     {pause.until
-                      ? ` · ${t("until", "עד")} ${new Date(pause.until).toLocaleString(isHe ? "he-IL" : "en-US")}`
+                      ? ` · ${t("until", "עד")} ${new Date(pause.until).toLocaleString(locale)}`
                       : ""}
                   </p>
                   <button
@@ -1031,7 +1042,7 @@ const FundDashboard: React.FC = () => {
                     {d.login_count > 0 ? (
                       <span className="text-green-400" title={`${d.login_count} ${t("logins", "כניסות")}`}>
                         {t("used ", "נכנס ")}
-                        {new Date(d.last_login_at!).toLocaleDateString(isHe ? "he-IL" : "en-US")}
+                        {new Date(d.last_login_at!).toLocaleDateString(locale)}
                         {d.login_count > 1 ? ` ×${d.login_count}` : ""}
                       </span>
                     ) : (
@@ -1110,7 +1121,7 @@ const FundDashboard: React.FC = () => {
               <p className="text-xs text-gray-500 uppercase tracking-wide">
                 {t("Last run changes", "שינויים בהרצה האחרונה")}
                 {" · "}
-                {new Date(universeStats.pool_changes.ran_at).toLocaleString(isHe ? "he-IL" : "en-US")}
+                {new Date(universeStats.pool_changes.ran_at).toLocaleString(locale)}
               </p>
 
               {(() => {
@@ -1141,9 +1152,8 @@ const FundDashboard: React.FC = () => {
                         {(universeStats.pool_changes.no_data_sample?.length ?? 0) > 0 && (
                           <details className="text-xs">
                             <summary className="cursor-pointer text-gray-500 hover:text-gray-400">
-                              {isHe
-                                ? `אילו מניות חסרות? (${universeStats.pool_changes.no_data_count})`
-                                : `Which stocks are missing? (${universeStats.pool_changes.no_data_count})`}
+                              {t("Which stocks are missing? ({n})", "אילו מניות חסרות? ({n})",
+                                  { n: universeStats.pool_changes.no_data_count ?? 0 })}
                             </summary>
                             <div className="mt-1 flex flex-wrap gap-1">
                               {universeStats.pool_changes.no_data_sample!.map((s) => (
@@ -1196,9 +1206,9 @@ const FundDashboard: React.FC = () => {
 
               {universeStats.pool_changes.held_sticky > 0 && (
                 <p className="text-xs text-gray-500">
-                  {isHe
-                    ? `${universeStats.pool_changes.held_sticky} מניות ירדו מהדירוג אך מוחזקות במאגר עד שיושלם עליהן ניתוח מעמיק`
-                    : `${universeStats.pool_changes.held_sticky} stocks dropped out of the ranking but are held until their deep analysis completes`}
+                  {t("{n} stocks dropped out of the ranking but are held until their deep analysis completes",
+                      "{n} מניות ירדו מהדירוג אך מוחזקות במאגר עד שיושלם עליהן ניתוח מעמיק",
+                      { n: universeStats.pool_changes.held_sticky })}
                 </p>
               )}
 
@@ -1211,7 +1221,7 @@ const FundDashboard: React.FC = () => {
           {universeStats && universeStats.top_candidates?.length > 0 ? (
             <div className="space-y-2 mb-4">
               <p className="text-xs text-gray-500 uppercase tracking-wide">
-                {isHe ? `מניות לסריקת היום (${universeStats.active_pool} נבחרו)` : `Today's Scan Queue (${universeStats.active_pool} selected)`}
+                {t("Today's Scan Queue ({n} selected)", "מניות לסריקת היום ({n} נבחרו)", { n: universeStats.active_pool })}
               </p>
               {!poolOpen ? (
                 <>
@@ -1227,9 +1237,8 @@ const FundDashboard: React.FC = () => {
                       onClick={openPool}
                       className="text-xs text-blue-400 hover:text-blue-300 underline"
                     >
-                      {isHe
-                        ? `+ ${universeStats.active_pool - universeStats.top_candidates.length} מניות נוספות — הצג את כולן`
-                        : `+ ${universeStats.active_pool - universeStats.top_candidates.length} more — show all`}
+                      {t("+ {n} more — show all", "+ {n} מניות נוספות — הצג את כולן",
+                          { n: universeStats.active_pool - universeStats.top_candidates.length })}
                     </button>
                   )}
                 </>
@@ -1239,9 +1248,8 @@ const FundDashboard: React.FC = () => {
                     <p className="text-xs text-gray-500">
                       {poolLoading
                         ? (t("Loading...", "טוען..."))
-                        : isHe
-                        ? `${pool?.analyzed ?? 0} מתוך ${pool?.count ?? 0} כבר נותחו`
-                        : `${pool?.analyzed ?? 0} of ${pool?.count ?? 0} already analyzed`}
+                        : t("{done} of {total} already analyzed", "{done} מתוך {total} כבר נותחו",
+                            { done: pool?.analyzed ?? 0, total: pool?.count ?? 0 })}
                     </p>
                     <button
                       onClick={() => setPoolOpen(false)}
@@ -1390,7 +1398,7 @@ const FundDashboard: React.FC = () => {
           <div className="mb-4 p-3 rounded-xl bg-gray-800/60 border border-gray-700">
             <div className="flex items-center justify-between text-xs mb-2">
               <span className="text-gray-300">
-                {isHe ? `סריקה רבעונית ${qStatus.quarter}` : `Quarterly sweep ${qStatus.quarter}`}
+                {t("Quarterly sweep {quarter}", "סריקה רבעונית {quarter}", { quarter: qStatus.quarter })}
                 {qStatus.batch_running && (
                   <span className="ml-2 text-purple-300">
                     {t("· batch running now", "· אצווה רצה כעת")}
@@ -1408,9 +1416,9 @@ const FundDashboard: React.FC = () => {
               />
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              {isHe
-                ? `נותרו ${qStatus.remaining} מניות. כל ניתוח לוקח 1-3 דקות, ואצווה אחת מנתחת עד 75 מניות — כלומר שעה עד שלוש.`
-                : `${qStatus.remaining} remaining. Each analysis takes 1-3 minutes and a batch does up to 75, so one to three hours.`}
+              {t("{n} remaining. Each analysis takes 1-3 minutes and a batch does up to 75, so one to three hours.",
+                  "נותרו {n} מניות. כל ניתוח לוקח 1-3 דקות, ואצווה אחת מנתחת עד 75 מניות — כלומר שעה עד שלוש.",
+                  { n: qStatus.remaining })}
             </p>
           </div>
         )}
@@ -1420,10 +1428,16 @@ const FundDashboard: React.FC = () => {
             {batchResult.error
               ? batchResult.error
               : batchResult.started
-                ? (isHe ? `האצווה רצה ברקע — ${batchResult.remaining_before} מניות בתור. עקוב ביומן הסריקות.` : `Batch running — ${batchResult.remaining_before} in queue. Watch the scan log.`)
+                ? t("Batch running — {n} in queue. Watch the scan log.",
+                      "האצווה רצה ברקע — {n} מניות בתור. עקוב ביומן הסריקות.", { n: batchResult.remaining_before })
                 : batchResult.reason === "batch already running"
                   ? (t("A batch is already running — this is not an error. Watch the bar above.", "אצווה כבר רצה — זו אינה שגיאה. עקוב אחרי הפס למעלה."))
-                  : (isHe ? `לא הופעל: ${batchResult.reason}${batchResult.remaining != null ? ` (בתור: ${batchResult.remaining})` : ""}` : `Not started: ${batchResult.reason}`)}
+                  : t("Not started: {reason}{queue}", "לא הופעל: {reason}{queue}", {
+                      reason: batchResult.reason,
+                      queue: batchResult.remaining != null
+                        ? t(" (queued: {n})", " (בתור: {n})", { n: batchResult.remaining })
+                        : "",
+                    })}
           </div>
         )}
 
@@ -1432,12 +1446,15 @@ const FundDashboard: React.FC = () => {
           <div className={`mb-4 p-3 rounded-xl text-xs ${earningsCheckResult.error ? "bg-red-900/20 text-red-400" : "bg-blue-900/20 text-blue-300"}`}>
             {earningsCheckResult.error ? earningsCheckResult.error : (
               earningsCheckResult.skipped
-                ? (isHe ? `דולג: ${earningsCheckResult.reason}` : `Skipped: ${earningsCheckResult.reason}`)
-                : (isHe
-                    ? `נמצאו ${earningsCheckResult.past_confirmed ?? earningsCheckResult.fresh_this_run ?? 0} דוחות חדשים | סה"כ חברות שדיווחו הרבעון: ${earningsCheckResult.queued_total}`
-                      + (earningsCheckResult.demoted ? ` | ${earningsCheckResult.demoted} הוחזרו ל"עתידיים" (טרם פרסמו תוצאות)` : "")
-                    : `Found ${earningsCheckResult.past_confirmed ?? earningsCheckResult.fresh_this_run ?? 0} new | Reporters this quarter: ${earningsCheckResult.queued_total}`
-                      + (earningsCheckResult.demoted ? ` | ${earningsCheckResult.demoted} moved back to upcoming (no results published)` : ""))
+                ? t("Skipped: {reason}", "דולג: {reason}", { reason: earningsCheckResult.reason })
+                : t("Found {found} new | Reporters this quarter: {total}",
+                    'נמצאו {found} דוחות חדשים | סה"כ חברות שדיווחו הרבעון: {total}',
+                    { found: earningsCheckResult.past_confirmed ?? earningsCheckResult.fresh_this_run ?? 0,
+                      total: earningsCheckResult.queued_total })
+                  + (earningsCheckResult.demoted
+                      ? t(" | {n} moved back to upcoming (no results published)",
+                          ' | {n} הוחזרו ל"עתידיים" (טרם פרסמו תוצאות)', { n: earningsCheckResult.demoted })
+                      : "")
             )}
           </div>
         )}
@@ -1482,9 +1499,8 @@ const FundDashboard: React.FC = () => {
                   </div>
                   {total > done && (
                     <p className="text-xs text-gray-500 mt-1">
-                      {isHe
-                        ? `${total - done} חברות שדיווחו עדיין ממתינות לניתוח`
-                        : `${total - done} reporters still waiting for analysis`}
+                      {t("{n} reporters still waiting for analysis",
+                          "{n} חברות שדיווחו עדיין ממתינות לניתוח", { n: total - done })}
                     </p>
                   )}
                 </div>
@@ -1496,9 +1512,8 @@ const FundDashboard: React.FC = () => {
               {earningsStatus.scan_triggered ? (
                 <div className="inline-flex items-center gap-2 bg-green-900/30 border border-green-800/50 rounded-lg px-3 py-1.5 text-xs text-green-300">
                   <span className="w-2 h-2 bg-green-400 rounded-full" />
-                  {isHe
-                    ? `סריקה רבעונית הושקה — ${earningsStatus.scan_triggered}`
-                    : `Quarterly scan triggered — ${earningsStatus.scan_triggered}`}
+                  {t("Quarterly scan triggered — {when}", "סריקה רבעונית הושקה — {when}",
+                      { when: earningsStatus.scan_triggered })}
                 </div>
               ) : (
                 <div className="inline-flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1.5 text-xs text-gray-400">
@@ -1516,9 +1531,8 @@ const FundDashboard: React.FC = () => {
                     {t("Reported — analysis status", "פרסמו דוחות — סטטוס ניתוח")}
                   </p>
                   <p className="text-xs text-gray-400">
-                    {isHe
-                      ? `${earningsStatus.analyzed_count ?? 0}/${earningsStatus.companies.length} נותחו`
-                      : `${earningsStatus.analyzed_count ?? 0}/${earningsStatus.companies.length} analyzed`}
+                    {t("{done}/{total} analyzed", "{done}/{total} נותחו",
+                        { done: earningsStatus.analyzed_count ?? 0, total: earningsStatus.companies.length })}
                   </p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto pr-1">
@@ -1577,7 +1591,7 @@ const FundDashboard: React.FC = () => {
             {earningsStatus.last_check && (
               <p className="text-xs text-gray-600 mt-3">
                 {t("Last check:", "בדיקה אחרונה:")}{" "}
-                {new Date(earningsStatus.last_check).toLocaleString(isHe ? "he-IL" : "en-US")}
+                {new Date(earningsStatus.last_check).toLocaleString(locale)}
               </p>
             )}
           </>
@@ -1697,7 +1711,8 @@ const FundDashboard: React.FC = () => {
               step: 1,
               icon: "⚡",
               title: t("Run Full AI Scan", "הרץ סריקת AI מלאה"),
-              desc: isHe ? `Claude מנתח את ${simSymbol} ומחליט BUY/SELL/HOLD` : `Claude analyzes ${simSymbol} and decides BUY/SELL/HOLD`,
+              desc: t("Claude analyzes {symbol} and decides BUY/SELL/HOLD",
+                       "Claude מנתח את {symbol} ומחליט BUY/SELL/HOLD", { symbol: simSymbol }),
               action: async () => {
                 const r = await marketApi.scanPoolNow();
                 return r;
@@ -1706,8 +1721,9 @@ const FundDashboard: React.FC = () => {
             {
               step: 3,
               icon: "💼",
-              title: isHe ? `צור פוזיציית בדיקה (${simSymbol})` : `Create Test Position (${simSymbol})`,
-              desc: isHe ? `מוסיף ${simSymbol} לתיק שלך (10 יחידות) כדי שה-TA scan ישלח לך התראות` : `Adds ${simSymbol} to your portfolio (10 units) so TA scan alerts fire to you`,
+              title: t("Create Test Position ({symbol})", "צור פוזיציית בדיקה ({symbol})", { symbol: simSymbol }),
+              desc: t("Adds {symbol} to your portfolio (10 units) so TA scan alerts fire to you",
+                      "מוסיף {symbol} לתיק שלך (10 יחידות) כדי שה-TA scan ישלח לך התראות", { symbol: simSymbol }),
               action: async () => marketApi.simulateCreatePosition(simSymbol),
               removeAction: async () => marketApi.simulateRemovePosition(simSymbol),
             },
@@ -1729,9 +1745,9 @@ const FundDashboard: React.FC = () => {
               step: 6,
               icon: "🧠",
               title: t("AI Engines Check", "בדיקת 3 מנועי ה-AI"),
-              desc: isHe
-                ? `ניתוח אמיתי מלא של ${simSymbol} — מוודא ש-Claude, GPT (חדשות) ו-Gemini (מאקרו) כולם פועלים. לוקח 1-3 דקות ועולה ~10-25 סנט`
-                : `Real full analysis of ${simSymbol} — verifies Claude, GPT (news) and Gemini (macro) all fire. Takes 1-3 min, costs ~$0.10-0.25`,
+              desc: t("Real full analysis of {symbol} — verifies Claude, GPT (news) and Gemini (macro) all fire. Takes 1-3 min, costs ~$0.10-0.25",
+                      "ניתוח אמיתי מלא של {symbol} — מוודא ש-Claude, GPT (חדשות) ו-Gemini (מאקרו) כולם פועלים. לוקח 1-3 דקות ועולה ~10-25 סנט",
+                      { symbol: simSymbol }),
               action: async () => marketApi.simulateAiEnginesCheck(simSymbol),
             },
             {
@@ -1745,9 +1761,9 @@ const FundDashboard: React.FC = () => {
               step: 8,
               icon: "📡",
               title: t("Price Sources Check", "בדיקת מקורות מחיר"),
-              desc: isHe
-                ? `בודק אחד-אחד את Yahoo, Alpaca, FMP, Finnhub ו-Polygon על ${simSymbol} ומראה מי מחזיר מחיר. חינם ומיידי — בלי AI.`
-                : `Probes Yahoo, Alpaca, FMP, Finnhub and Polygon one by one on ${simSymbol} and shows which return a price. Free and instant — no AI.`,
+              desc: t("Probes Yahoo, Alpaca, FMP, Finnhub and Polygon one by one on {symbol} and shows which return a price. Free and instant — no AI.",
+                      "בודק אחד-אחד את Yahoo, Alpaca, FMP, Finnhub ו-Polygon על {symbol} ומראה מי מחזיר מחיר. חינם ומיידי — בלי AI.",
+                      { symbol: simSymbol }),
               action: async () => marketApi.checkPriceSources(simSymbol),
             },
             {
@@ -1761,9 +1777,9 @@ const FundDashboard: React.FC = () => {
               step: 10,
               icon: "🔎",
               title: t("Earnings Check for a Symbol", "בדיקת דוח לחברה"),
-              desc: isHe
-                ? `מראה מה כל לוח הדוחות אומר על ${simSymbol} — מה רשום אצלנו, מה Finnhub אומר על העבר ועל העתיד, ומה נאסד"ק אומר — ואיזו מסקנה המערכת מסיקה. חינם ומיידי.`
-                : `Shows what every earnings calendar says about ${simSymbol} — what we stored, what Finnhub says about past and future, what Nasdaq says — and the verdict the watcher reaches. Free and instant.`,
+              desc: t("Shows what every earnings calendar says about {symbol} — what we stored, what Finnhub says about past and future, what Nasdaq says — and the verdict the watcher reaches. Free and instant.",
+                      'מראה מה כל לוח הדוחות אומר על {symbol} — מה רשום אצלנו, מה Finnhub אומר על העבר ועל העתיד, ומה נאסד"ק אומר — ואיזו מסקנה המערכת מסיקה. חינם ומיידי.',
+                      { symbol: simSymbol }),
               action: async () => marketApi.checkEarningsForSymbol(simSymbol),
             },
           ].map(({ step, icon, title, desc, action, removeAction }: any) => (
@@ -1868,9 +1884,9 @@ const FundDashboard: React.FC = () => {
                                       <td className={`py-1 pr-2 font-medium ${tone}`}>{pct ?? "—"}</td>
                                       <td className="py-1 text-gray-400">
                                         {h.skipped_now
-                                          ? (isHe ? `מדולג ${Math.ceil(h.skipped_for_seconds / 60)} דק׳` : `skipped ${Math.ceil(h.skipped_for_seconds / 60)}m`)
+                                          ? t("skipped {n}m", "מדולג {n} דק׳", { n: Math.ceil(h.skipped_for_seconds / 60) })
                                           : h.consecutive_failures > 0
-                                            ? (isHe ? `${h.consecutive_failures} כשלונות ברצף` : `${h.consecutive_failures} in a row`)
+                                            ? t("{n} in a row", "{n} כשלונות ברצף", { n: h.consecutive_failures })
                                             : (t("active", "פעיל"))}
                                       </td>
                                     </tr>
@@ -1983,8 +1999,12 @@ const FundDashboard: React.FC = () => {
                       )}
                       <p className="text-xs text-gray-500">
                         {simStep[step].workflow_status === "saved"
-                          ? (isHe ? `נשמרה המלצה חדשה (#${simStep[step].recommendation_id})` : `New recommendation saved (#${simStep[step].recommendation_id})`)
-                          : (isHe ? `סטטוס: ${simStep[step].workflow_status || "?"}${simStep[step].error ? " — " + simStep[step].error : ""}` : `Status: ${simStep[step].workflow_status || "?"}`)}
+                          ? t("New recommendation saved (#{id})", "נשמרה המלצה חדשה (#{id})",
+                              { id: simStep[step].recommendation_id })
+                          : t("Status: {status}{error}", "סטטוס: {status}{error}", {
+                              status: simStep[step].workflow_status || "?",
+                              error: simStep[step].error ? " — " + simStep[step].error : "",
+                            })}
                       </p>
                     </div>
                   ) : step === 5 && simStep[step].diagnostics ? (
