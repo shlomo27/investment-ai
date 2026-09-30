@@ -1615,6 +1615,22 @@ async def signal_state(
     def _dec(v):
         return v.decode() if isinstance(v, bytes) else v
 
+    # When the scan last touched this symbol, derived from the baseline's TTL.
+    #
+    # The alerting core refreshes that key to a full 7 days on every
+    # observation, including the ones where nothing changed. So a TTL near
+    # 604800 means the symbol was scanned minutes ago, and a TTL that has
+    # visibly decayed means nothing has looked at it since.
+    #
+    # This is the difference between "correctly silent, the signal simply has
+    # not moved" and "silent because no scan covers this symbol" — two states
+    # that are otherwise indistinguishable from outside, and the reason a
+    # reader cannot tell a working alert from a broken one.
+    BASELINE_TTL = 7 * 24 * 3600
+    last_seen = None
+    if confirmed_ttl and confirmed_ttl > 0:
+        last_seen = BASELINE_TTL - confirmed_ttl
+
     pending = None
     if pending_raw:
         try:
@@ -1641,6 +1657,11 @@ async def signal_state(
         "symbol": sym,
         "confirmed_signal": _dec(confirmed),
         "confirmed_expires_in_seconds": confirmed_ttl if confirmed_ttl and confirmed_ttl > 0 else None,
+        #: Seconds since the scan last observed this symbol. None means the
+        #: symbol has no baseline at all — nothing has ever scanned it, or
+        #: Redis was cleared since.
+        "last_scanned_seconds_ago": last_seen,
+        "scan_is_covering_this_symbol": last_seen is not None and last_seen < 2 * 3600,
         "pending_change": pending,
         "cooldown_signal": _dec(cooldown),
         "cooldown_expires_in_seconds": cooldown_ttl if cooldown_ttl and cooldown_ttl > 0 else None,
