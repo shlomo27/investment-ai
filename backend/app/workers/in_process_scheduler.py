@@ -1292,10 +1292,21 @@ async def job_backfill_ciks():
     )
 
     # Technical analysis scan — every 30 minutes (free: pandas-ta + yfinance, no Claude)
+    #
+    # next_run_time pulls the first pass forward to startup. An interval
+    # trigger otherwise schedules its first run one full interval out, so
+    # every restart bought another 30 minutes of silence — and a day with
+    # several deploys could reset that window before the scan ever ran, which
+    # is exactly how the panel came to say "no completed pass recorded" while
+    # the job was configured correctly and the process was healthy. This is
+    # the one job holders depend on for alerts; it should not wait for
+    # permission to start.
+    from datetime import datetime as _dt
     scheduler.add_job(
         job_daily_ta_scan,
         "interval",
         minutes=30,
+        next_run_time=_dt.now(),
         id="scheduled_ta_scan",
         replace_existing=True,
     )
