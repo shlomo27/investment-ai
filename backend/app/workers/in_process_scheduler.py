@@ -69,7 +69,33 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
     from sqlalchemy import select
     import redis.asyncio as aioredis
 
-    signal = (ta or {}).get("timing_signal", "WAIT")
+    signal = (ta or {}).get("timing_signal")
+    # No data is not a signal.
+    #
+    # A failed price fetch returns {}, and `.get("timing_signal", "WAIT")`
+    # turned that into a confirmed WAIT — the alerting core could not tell
+    # "the indicators say wait" from "we never got any indicators". Three
+    # things followed, all of them observed:
+    #
+    #   A stock at SELL_NOW whose fetch failed read as a downgrade, so the
+    #   holder got "the signal weakened" about a stock nothing had looked at.
+    #
+    #   The baseline was then overwritten with WAIT, losing the real signal.
+    #
+    #   And every later failure re-confirmed WAIT, so once a symbol fell into
+    #   this state it went silent for as long as its data kept failing —
+    #   which is how GOOGL came to sit at WAIT for three days with a
+    #   watchlist card quoting a price and support levels from different
+    #   afternoons, while its own research page, which re-runs the analysis
+    #   on demand, answered correctly every time it was opened.
+    #
+    # Returning here leaves the previous baseline untouched, which is the
+    # honest state: we do not know, so nothing has changed.
+    if not signal:
+        logger.warning(f"[ta] {symbol}: no timing_signal in analysis — "
+                       f"not treating as WAIT, baseline left alone")
+        return False
+
     own_client = redis_client is None
     r = redis_client or aioredis.from_url(settings.REDIS_URL)
     try:
@@ -508,7 +534,18 @@ async def job_daily_ta_scan():
                     await asyncio.sleep(3)
                     result = await run_technical_workflow(symbol=symbol, exchange=exchange)
                     ta = result.get("technical_analysis") or {}
-                success += 1
+                # Counted after the retry, and only when something came back.
+                # `success += 1` sat here unconditionally, so a scan where
+                # every single fetch returned nothing still reported
+                # "scanned 900 · ok 900 · errors 0" — the heartbeat the admin
+                # panel reads looked perfect while no analysis had been
+                # computed at all. A failure that reports itself as a success
+                # is worse than one that crashes.
+                if ta:
+                    success += 1
+                else:
+                    errors += 1
+                    logger.warning(f"[ta_scan] {symbol}: no analysis after retry")
 
                 # Persist the fresh TA onto any live recommendation for this
                 # symbol so the feed card + technical page reflect the latest
