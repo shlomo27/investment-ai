@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.database import get_db
+from app.core.languages import normalize
 from app.core.security import (
     verify_password,
     get_password_hash,
