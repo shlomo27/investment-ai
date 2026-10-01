@@ -1626,6 +1626,11 @@ async def scheduler_state(current_user: User = Depends(get_current_active_user))
 
     return {
         "scheduler_running": bool(state.get("running")),
+        #: Why it is not running, when it is not: waiting for the lock during
+        #: a deploy, or the keeper itself failing. Without this the panel
+        #: could only report the symptom.
+        "stage": state.get("stage"),
+        "detail": state.get("detail"),
         "published_at": state.get("alive_at"),
         "holder_pid": state.get("holder_pid"),
         "job_count": len(state.get("jobs", [])),

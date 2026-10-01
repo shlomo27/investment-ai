@@ -812,8 +812,14 @@ const FundDashboard: React.FC = () => {
                         ? t("The scheduler check could not be reached — the server may still be deploying.",
                             "לא הצלחתי להגיע לבדיקת המתזמן — ייתכן שהשרת עדיין בתהליך פריסה.")
                         : !schedState.scheduler_running
-                          ? t("No scheduler is running — nothing will scan until one starts.",
-                              "אף מתזמן לא רץ — שום דבר לא ייסרק עד שיעלה אחד.")
+                          ? (schedState.stage === "waiting_for_lock"
+                              ? t("Waiting for the scheduler lock — the previous container still holds it. This clears itself.",
+                                  "ממתין לנעילת המתזמן — המכולה הקודמת עדיין מחזיקה בה. זה מסתדר מעצמו.")
+                              : schedState.detail
+                                ? t("The scheduler could not start: {detail}",
+                                    "המתזמן לא הצליח לעלות: {detail}", { detail: schedState.detail })
+                                : t("No scheduler is running — nothing will scan until one starts.",
+                                    "אף מתזמן לא רץ — שום דבר לא ייסרק עד שיעלה אחד."))
                           : !schedState.ta_scan_registered
                             ? t("The scheduler is up but the scan job is not registered.",
                                 "המתזמן פעיל אבל עבודת הסריקה לא רשומה בו.")

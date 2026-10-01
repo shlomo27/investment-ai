@@ -161,6 +161,31 @@ async def lifespan(app: FastAPI):
         SCHEDULER_LOCK_KEY = 931_702  # arbitrary app-wide constant
         logged_waiting = False
         did_maintenance = False
+
+        async def _publish(payload: dict):
+            """Write the keeper's own state where the panel can read it.
+
+            Every failure in this loop was caught, logged and retried, so from
+            outside it was indistinguishable from a scheduler that had simply
+            not started — and the panel could only say "no scheduler is
+            running", which is a symptom, not a cause. Three deploys were
+            spent guessing at reasons that turned out to be wrong. The reason
+            is published here instead.
+            """
+            try:
+                import redis.asyncio as _aioredis, json as _json
+                from datetime import datetime as _dt, timezone as _tz
+                rc = _aioredis.from_url(settings.REDIS_URL)
+                try:
+                    await rc.set(
+                        "investment_ai:scheduler:state",
+                        _json.dumps({"alive_at": _dt.now(_tz.utc).isoformat(), **payload}),
+                        ex=600,
+                    )
+                finally:
+                    await rc.aclose()
+            except Exception:
+                pass
         while True:
             conn = None
             try:
@@ -300,6 +325,12 @@ async def lifespan(app: FastAPI):
                     await asyncio.sleep(5)
                     continue
                 await conn.close()
+                await _publish({
+                    "running": False,
+                    "stage": "waiting_for_lock",
+                    "detail": "another process holds the scheduler lock — "
+                              "usually the previous container during a deploy",
+                })
                 if not logged_waiting:
                     logger.info("Scheduler lock held elsewhere — will keep retrying every 60s")
                     logged_waiting = True
@@ -310,6 +341,11 @@ async def lifespan(app: FastAPI):
                     except Exception:
                         pass
                 logger.warning("Scheduler keeper iteration failed — retrying", error=str(exc))
+                await _publish({
+                    "running": False,
+                    "stage": "keeper_failed",
+                    "detail": f"{type(exc).__name__}: {exc}"[:300],
+                })
             await asyncio.sleep(60)
 
     sched_state["task"] = asyncio.create_task(_scheduler_keeper())
