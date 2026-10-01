@@ -162,8 +162,16 @@ async def lifespan(app: FastAPI):
         logged_waiting = False
         did_maintenance = False
 
-        async def _publish(payload: dict):
+        async def _publish(payload: dict, key: str = "investment_ai:scheduler:waiting"):
             """Write the keeper's own state where the panel can read it.
+
+            Note the key. uvicorn runs four workers and the lock elects one
+            winner, so three of them are always "waiting" — and when every
+            worker wrote the same key, the last write won and it was a loser
+            three times out of four. The panel reported "waiting for the lock"
+            while the scheduler may have been running the whole time. The
+            holder writes :state, everyone else writes :waiting, and the
+            reader prefers :state.
 
             Every failure in this loop was caught, logged and retried, so from
             outside it was indistinguishable from a scheduler that had simply
@@ -178,9 +186,13 @@ async def lifespan(app: FastAPI):
                 rc = _aioredis.from_url(settings.REDIS_URL)
                 try:
                     await rc.set(
-                        "investment_ai:scheduler:state",
+                        key,
                         _json.dumps({"alive_at": _dt.now(_tz.utc).isoformat(), **payload}),
-                        ex=600,
+                        # Shorter than the holder's, and shorter than the 60s
+                        # publish interval times three, so a stale "waiting"
+                        # from a container that has since won or died expires
+                        # on its own rather than outliving the truth.
+                        ex=180,
                     )
                 finally:
                     await rc.aclose()
@@ -269,6 +281,8 @@ async def lifespan(app: FastAPI):
                             rc = _aioredis.from_url(settings.REDIS_URL)
                             try:
                                 await rc.set(
+                                    # The authoritative key: only the worker
+                                    # holding the lock ever writes it.
                                     "investment_ai:scheduler:state",
                                     _json.dumps({
                                         "alive_at": _dt.now(_tz.utc).isoformat(),
