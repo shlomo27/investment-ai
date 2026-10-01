@@ -854,6 +854,8 @@ export const UI_STRINGS: StringTable = {
     "No scheduler is running — nothing will scan until one starts.": "Aucun planificateur ne tourne — rien ne sera analysé tant qu'il n'a pas démarré.",
     "The scheduler is up but the scan job is not registered.": "Le planificateur tourne mais la tâche d'analyse n'y est pas enregistrée.",
     "Scheduler is up · next scan in {n} min — it has not completed one yet.": "Planificateur actif · prochaine analyse dans {n} min — aucune n'est encore allée au bout.",
+    "Checking the scheduler...": "Vérification du planificateur…",
+    "The scheduler check could not be reached — the server may still be deploying.": "Impossible de joindre la vérification du planificateur — le serveur est peut-être encore en cours de déploiement.",
   },
   "es": {
     "Signals": "Señales",
@@ -1682,6 +1684,8 @@ export const UI_STRINGS: StringTable = {
     "No scheduler is running — nothing will scan until one starts.": "No hay ningún planificador en marcha: nada se escaneará hasta que arranque uno.",
     "The scheduler is up but the scan job is not registered.": "El planificador está activo, pero la tarea de escaneo no está registrada en él.",
     "Scheduler is up · next scan in {n} min — it has not completed one yet.": "Planificador activo · próximo escaneo en {n} min; todavía no ha completado ninguno.",
+    "Checking the scheduler...": "Comprobando el planificador…",
+    "The scheduler check could not be reached — the server may still be deploying.": "No se pudo contactar con la comprobación del planificador: puede que el servidor aún se esté desplegando.",
   },
   "de": {
     "Signals": "Signale",
@@ -2510,6 +2514,8 @@ export const UI_STRINGS: StringTable = {
     "No scheduler is running — nothing will scan until one starts.": "Es läuft kein Scheduler — bis einer startet, wird nichts gescannt.",
     "The scheduler is up but the scan job is not registered.": "Der Scheduler läuft, aber der Scan-Job ist dort nicht registriert.",
     "Scheduler is up · next scan in {n} min — it has not completed one yet.": "Scheduler läuft · nächster Scan in {n} Min. — abgeschlossen wurde noch keiner.",
+    "Checking the scheduler...": "Scheduler wird geprüft…",
+    "The scheduler check could not be reached — the server may still be deploying.": "Die Scheduler-Prüfung war nicht erreichbar — der Server wird möglicherweise noch ausgerollt.",
   },
   "it": {
     "Loading...": "Caricamento…",
@@ -3330,6 +3336,8 @@ export const UI_STRINGS: StringTable = {
     "No scheduler is running — nothing will scan until one starts.": "Nessuno scheduler in esecuzione: non verrà analizzato nulla finché non ne parte uno.",
     "The scheduler is up but the scan job is not registered.": "Lo scheduler è attivo ma l'attività di scansione non vi è registrata.",
     "Scheduler is up · next scan in {n} min — it has not completed one yet.": "Scheduler attivo · prossima scansione fra {n} min — nessuna è ancora arrivata in fondo.",
+    "Checking the scheduler...": "Verifica dello scheduler…",
+    "The scheduler check could not be reached — the server may still be deploying.": "Non è stato possibile raggiungere la verifica dello scheduler: il server potrebbe essere ancora in fase di rilascio.",
   },
   "pt-BR": {
     "Log out": "Sair",
@@ -4150,6 +4158,8 @@ export const UI_STRINGS: StringTable = {
     "No scheduler is running — nothing will scan until one starts.": "Nenhum agendador em execução — nada será varrido até que um inicie.",
     "The scheduler is up but the scan job is not registered.": "O agendador está ativo, mas a tarefa de varredura não está registrada nele.",
     "Scheduler is up · next scan in {n} min — it has not completed one yet.": "Agendador ativo · próxima varredura em {n} min — nenhuma foi concluída ainda.",
+    "Checking the scheduler...": "Verificando o agendador…",
+    "The scheduler check could not be reached — the server may still be deploying.": "Não foi possível alcançar a verificação do agendador — o servidor pode ainda estar em implantação.",
   },
   "ar": {
     "Log out": "تسجيل الخروج",
@@ -4970,6 +4980,8 @@ export const UI_STRINGS: StringTable = {
     "No scheduler is running — nothing will scan until one starts.": "لا يوجد مجدول قيد التشغيل — لن يُفحص شيء حتى يبدأ أحدها.",
     "The scheduler is up but the scan job is not registered.": "المجدول يعمل لكن مهمة الفحص غير مسجّلة فيه.",
     "Scheduler is up · next scan in {n} min — it has not completed one yet.": "المجدول يعمل · الفحص التالي بعد {n} دقيقة — ولم يكتمل أي فحص بعد.",
+    "Checking the scheduler...": "جارٍ فحص المجدول…",
+    "The scheduler check could not be reached — the server may still be deploying.": "تعذّر الوصول إلى فحص المجدول — قد يكون الخادم ما زال قيد النشر.",
   },
   "ko": {
     "Log out": "로그아웃",
@@ -5790,6 +5802,8 @@ export const UI_STRINGS: StringTable = {
     "No scheduler is running — nothing will scan until one starts.": "실행 중인 스케줄러가 없습니다 — 하나가 시작될 때까지 아무것도 스캔되지 않습니다.",
     "The scheduler is up but the scan job is not registered.": "스케줄러는 떠 있지만 스캔 작업이 등록되어 있지 않습니다.",
     "Scheduler is up · next scan in {n} min — it has not completed one yet.": "스케줄러 정상 · 다음 스캔까지 {n}분 — 아직 완료된 스캔은 없습니다.",
+    "Checking the scheduler...": "스케줄러 확인 중…",
+    "The scheduler check could not be reached — the server may still be deploying.": "스케줄러 점검에 연결하지 못했습니다 — 서버가 아직 배포 중일 수 있습니다.",
   },
   "ja": {
     "Log out": "ログアウト",
@@ -6610,5 +6624,7 @@ export const UI_STRINGS: StringTable = {
     "No scheduler is running — nothing will scan until one starts.": "スケジューラが動いていません — 起動するまで何もスキャンされません。",
     "The scheduler is up but the scan job is not registered.": "スケジューラは稼働していますが、スキャンのジョブが登録されていません。",
     "Scheduler is up · next scan in {n} min — it has not completed one yet.": "スケジューラ稼働中 · 次のスキャンまで{n}分 — まだ一度も完了していません。",
+    "Checking the scheduler...": "スケジューラを確認中…",
+    "The scheduler check could not be reached — the server may still be deploying.": "スケジューラの確認に接続できませんでした — サーバーがまだデプロイ中の可能性があります。",
   },
 };

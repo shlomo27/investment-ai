@@ -118,7 +118,9 @@ const FundDashboard: React.FC = () => {
         // Fetched alongside, because the scan's own heartbeat cannot explain
         // its own absence: a scan that has never completed has nothing to say
         // about why.
-        const sched = await marketApi.getSchedulerState().catch(() => null);
+        const sched = await marketApi
+          .getSchedulerState()
+          .catch(() => ({ unreachable: true }));
         if (!cancelled) setSchedState(sched);
       } catch { /* admin only */ }
     };
@@ -796,19 +798,29 @@ const FundDashboard: React.FC = () => {
                       still minutes away after a restart. The scan's own
                       heartbeat cannot explain its own absence — a run that has
                       never completed has nothing to say about why. */}
-                  {schedState && (
-                    <p className={`text-xs mt-1 ${schedState.scheduler_running ? "text-gray-400" : "text-red-400"}`}>
-                      {!schedState.scheduler_running
-                        ? t("No scheduler is running — nothing will scan until one starts.",
-                            "אף מתזמן לא רץ — שום דבר לא ייסרק עד שיעלה אחד.")
-                        : !schedState.ta_scan_registered
-                          ? t("The scheduler is up but the scan job is not registered.",
-                              "המתזמן פעיל אבל עבודת הסריקה לא רשומה בו.")
-                          : t("Scheduler is up · next scan in {n} min — it has not completed one yet.",
-                              "המתזמן פעיל · הסריקה הבאה בעוד {n} דקות — עדיין לא הושלמה אף אחת.",
-                              { n: Math.max(0, Math.round((schedState.ta_scan_in_seconds ?? 0) / 60)) })}
-                    </p>
-                  )}
+                  {/* Rendered in every state, including when the check
+                      itself fails. Guarding this on a truthy value meant a
+                      failed request rendered nothing at all — the panel looked
+                      exactly as it had before the diagnostic existed, which is
+                      the failure mode this diagnostic was added to remove. */}
+                  <p className={`text-xs mt-1 ${
+                    schedState?.scheduler_running ? "text-gray-400" : "text-red-400"
+                  }`}>
+                    {schedState === null
+                      ? t("Checking the scheduler...", "בודק את המתזמן...")
+                      : schedState.unreachable
+                        ? t("The scheduler check could not be reached — the server may still be deploying.",
+                            "לא הצלחתי להגיע לבדיקת המתזמן — ייתכן שהשרת עדיין בתהליך פריסה.")
+                        : !schedState.scheduler_running
+                          ? t("No scheduler is running — nothing will scan until one starts.",
+                              "אף מתזמן לא רץ — שום דבר לא ייסרק עד שיעלה אחד.")
+                          : !schedState.ta_scan_registered
+                            ? t("The scheduler is up but the scan job is not registered.",
+                                "המתזמן פעיל אבל עבודת הסריקה לא רשומה בו.")
+                            : t("Scheduler is up · next scan in {n} min — it has not completed one yet.",
+                                "המתזמן פעיל · הסריקה הבאה בעוד {n} דקות — עדיין לא הושלמה אף אחת.",
+                                { n: Math.max(0, Math.round((schedState.ta_scan_in_seconds ?? 0) / 60)) })}
+                  </p>
                 </>
               ) : (
                 <>
