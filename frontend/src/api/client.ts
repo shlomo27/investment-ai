@@ -644,6 +644,12 @@ export const marketApi = {
     return response.data;
   },
 
+  /** Whether the scheduler is alive and when the technical scan next fires. */
+  getSchedulerState: async (): Promise<any> => {
+    const response = await api.get("/market/diagnostics/scheduler");
+    return response.data;
+  },
+
   getSignalState: async (symbol: string): Promise<any> => {
     const response = await api.get(`/market/diagnostics/signal-state/${symbol}`);
     return response.data;

@@ -1578,6 +1578,65 @@ async def ta_scan_diagnostics(
     return out
 
 
+@router.get("/diagnostics/scheduler")
+async def scheduler_state(current_user: User = Depends(get_current_active_user)):
+    """Whether the scheduler is alive, and when each job next fires.
+
+    "No completed pass recorded" had two very different causes behind it —
+    a scan too large to finish inside its own interval, and an interval
+    trigger whose first run is one interval after startup, so repeated
+    deploys kept pushing it away. Neither was visible from outside, and both
+    produced the same sentence. This shows the state the scan is actually in.
+
+    Read from Redis rather than from this process: only one of the four
+    uvicorn workers holds the scheduler, so local state would answer "no
+    scheduler" three times out of four.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.core.config import settings
+    import json as _json
+    import redis.asyncio as aioredis
+    from datetime import datetime, timezone
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        raw = await r.get("investment_ai:scheduler:state")
+        beat = await r.get("investment_ai:ta_scan:heartbeat")
+    finally:
+        await r.aclose()
+
+    if not raw:
+        return {
+            "scheduler_running": False,
+            "reason": "no scheduler has published its state in the last 10 minutes",
+            "ta_scan_heartbeat": beat.decode() if beat else None,
+        }
+
+    state = _json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+    ta = next((j for j in state.get("jobs", []) if j["id"] == "scheduled_ta_scan"), None)
+    seconds_to_ta = None
+    if ta and ta.get("next_run"):
+        try:
+            seconds_to_ta = (
+                datetime.fromisoformat(ta["next_run"]) - datetime.now(timezone.utc)
+            ).total_seconds()
+        except Exception:
+            pass
+
+    return {
+        "scheduler_running": bool(state.get("running")),
+        "published_at": state.get("alive_at"),
+        "holder_pid": state.get("holder_pid"),
+        "job_count": len(state.get("jobs", [])),
+        "ta_scan_registered": ta is not None,
+        "ta_scan_next_run": ta.get("next_run") if ta else None,
+        "ta_scan_in_seconds": int(seconds_to_ta) if seconds_to_ta is not None else None,
+        "ta_scan_heartbeat": beat.decode() if beat else None,
+        "jobs": state.get("jobs", []),
+    }
+
+
 @router.get("/diagnostics/signal-state/{symbol}")
 async def signal_state(
     symbol: str,

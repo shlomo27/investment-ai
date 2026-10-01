@@ -226,8 +226,52 @@ async def lifespan(app: FastAPI):
                     # by another worker within 60s, leaving TWO schedulers alive
                     # and firing every job twice — double AI spend and duplicate
                     # alerts, exactly what the lock exists to prevent.
+                    # Publish what the scheduler is actually doing, where the
+                    # other three uvicorn workers can read it.
+                    #
+                    # Only one worker holds the scheduler, so an endpoint that
+                    # looked at local state would answer "no scheduler" three
+                    # times out of four. Writing it to Redis makes the answer
+                    # the same whichever worker serves the request — and turns
+                    # "the panel says the scan never completed" into something
+                    # with a cause attached: no scheduler at all, a scheduler
+                    # with the job missing, or a job whose next run is an hour
+                    # away.
+                    async def _publish_jobs():
+                        try:
+                            import redis.asyncio as _aioredis, json as _json
+                            from datetime import datetime as _dt, timezone as _tz
+                            rc = _aioredis.from_url(settings.REDIS_URL)
+                            try:
+                                await rc.set(
+                                    "investment_ai:scheduler:state",
+                                    _json.dumps({
+                                        "alive_at": _dt.now(_tz.utc).isoformat(),
+                                        "running": bool(scheduler.running),
+                                        "holder_pid": held_pid,
+                                        "jobs": sorted(
+                                            (
+                                                {
+                                                    "id": j.id,
+                                                    "next_run": j.next_run_time.isoformat()
+                                                    if j.next_run_time else None,
+                                                }
+                                                for j in scheduler.get_jobs()
+                                            ),
+                                            key=lambda d: d["id"],
+                                        ),
+                                    }),
+                                    ex=600,
+                                )
+                            finally:
+                                await rc.aclose()
+                        except Exception as pub_exc:
+                            logger.debug("scheduler state publish failed", error=str(pub_exc))
+
+                    await _publish_jobs()
                     while True:
                         await asyncio.sleep(60)
+                        await _publish_jobs()
                         try:
                             pid = (await conn.execute(text("SELECT pg_backend_pid()"))).scalar()
                             # A silently re-established connection is a NEW

@@ -851,6 +851,9 @@ export const UI_STRINGS: StringTable = {
     "never — nothing is scanning this symbol": "jamais — rien n'analyse ce titre",
     "{n} min ago": "il y a {n} min",
     "{n} hours ago — the scan is not reaching it": "il y a {n} h — l'analyse ne l'atteint pas",
+    "No scheduler is running — nothing will scan until one starts.": "Aucun planificateur ne tourne — rien ne sera analysé tant qu'il n'a pas démarré.",
+    "The scheduler is up but the scan job is not registered.": "Le planificateur tourne mais la tâche d'analyse n'y est pas enregistrée.",
+    "Scheduler is up · next scan in {n} min — it has not completed one yet.": "Planificateur actif · prochaine analyse dans {n} min — aucune n'est encore allée au bout.",
   },
   "es": {
     "Signals": "Señales",
@@ -1676,6 +1679,9 @@ export const UI_STRINGS: StringTable = {
     "never — nothing is scanning this symbol": "nunca: nada está escaneando este valor",
     "{n} min ago": "hace {n} min",
     "{n} hours ago — the scan is not reaching it": "hace {n} h: el escaneo no llega hasta él",
+    "No scheduler is running — nothing will scan until one starts.": "No hay ningún planificador en marcha: nada se escaneará hasta que arranque uno.",
+    "The scheduler is up but the scan job is not registered.": "El planificador está activo, pero la tarea de escaneo no está registrada en él.",
+    "Scheduler is up · next scan in {n} min — it has not completed one yet.": "Planificador activo · próximo escaneo en {n} min; todavía no ha completado ninguno.",
   },
   "de": {
     "Signals": "Signale",
@@ -2501,6 +2507,9 @@ export const UI_STRINGS: StringTable = {
     "never — nothing is scanning this symbol": "nie — nichts scannt diesen Wert",
     "{n} min ago": "vor {n} Min.",
     "{n} hours ago — the scan is not reaching it": "vor {n} Std. — der Scan erreicht ihn nicht",
+    "No scheduler is running — nothing will scan until one starts.": "Es läuft kein Scheduler — bis einer startet, wird nichts gescannt.",
+    "The scheduler is up but the scan job is not registered.": "Der Scheduler läuft, aber der Scan-Job ist dort nicht registriert.",
+    "Scheduler is up · next scan in {n} min — it has not completed one yet.": "Scheduler läuft · nächster Scan in {n} Min. — abgeschlossen wurde noch keiner.",
   },
   "it": {
     "Loading...": "Caricamento…",
@@ -3318,6 +3327,9 @@ export const UI_STRINGS: StringTable = {
     "never — nothing is scanning this symbol": "mai — nulla sta analizzando questo titolo",
     "{n} min ago": "{n} min fa",
     "{n} hours ago — the scan is not reaching it": "{n} ore fa — la scansione non lo raggiunge",
+    "No scheduler is running — nothing will scan until one starts.": "Nessuno scheduler in esecuzione: non verrà analizzato nulla finché non ne parte uno.",
+    "The scheduler is up but the scan job is not registered.": "Lo scheduler è attivo ma l'attività di scansione non vi è registrata.",
+    "Scheduler is up · next scan in {n} min — it has not completed one yet.": "Scheduler attivo · prossima scansione fra {n} min — nessuna è ancora arrivata in fondo.",
   },
   "pt-BR": {
     "Log out": "Sair",
@@ -4135,6 +4147,9 @@ export const UI_STRINGS: StringTable = {
     "never — nothing is scanning this symbol": "nunca — nada está varrendo esta ação",
     "{n} min ago": "há {n} min",
     "{n} hours ago — the scan is not reaching it": "há {n} h — a varredura não chega até ela",
+    "No scheduler is running — nothing will scan until one starts.": "Nenhum agendador em execução — nada será varrido até que um inicie.",
+    "The scheduler is up but the scan job is not registered.": "O agendador está ativo, mas a tarefa de varredura não está registrada nele.",
+    "Scheduler is up · next scan in {n} min — it has not completed one yet.": "Agendador ativo · próxima varredura em {n} min — nenhuma foi concluída ainda.",
   },
   "ar": {
     "Log out": "تسجيل الخروج",
@@ -4952,6 +4967,9 @@ export const UI_STRINGS: StringTable = {
     "never — nothing is scanning this symbol": "أبدًا — لا شيء يفحص هذا السهم",
     "{n} min ago": "قبل {n} دقيقة",
     "{n} hours ago — the scan is not reaching it": "قبل {n} ساعة — الفحص لا يصل إليه",
+    "No scheduler is running — nothing will scan until one starts.": "لا يوجد مجدول قيد التشغيل — لن يُفحص شيء حتى يبدأ أحدها.",
+    "The scheduler is up but the scan job is not registered.": "المجدول يعمل لكن مهمة الفحص غير مسجّلة فيه.",
+    "Scheduler is up · next scan in {n} min — it has not completed one yet.": "المجدول يعمل · الفحص التالي بعد {n} دقيقة — ولم يكتمل أي فحص بعد.",
   },
   "ko": {
     "Log out": "로그아웃",
@@ -5769,6 +5787,9 @@ export const UI_STRINGS: StringTable = {
     "never — nothing is scanning this symbol": "없음 — 이 종목을 스캔하는 것이 없습니다",
     "{n} min ago": "{n}분 전",
     "{n} hours ago — the scan is not reaching it": "{n}시간 전 — 스캔이 닿지 않고 있습니다",
+    "No scheduler is running — nothing will scan until one starts.": "실행 중인 스케줄러가 없습니다 — 하나가 시작될 때까지 아무것도 스캔되지 않습니다.",
+    "The scheduler is up but the scan job is not registered.": "스케줄러는 떠 있지만 스캔 작업이 등록되어 있지 않습니다.",
+    "Scheduler is up · next scan in {n} min — it has not completed one yet.": "스케줄러 정상 · 다음 스캔까지 {n}분 — 아직 완료된 스캔은 없습니다.",
   },
   "ja": {
     "Log out": "ログアウト",
@@ -6586,5 +6607,8 @@ export const UI_STRINGS: StringTable = {
     "never — nothing is scanning this symbol": "なし — この銘柄をスキャンしているものがありません",
     "{n} min ago": "{n}分前",
     "{n} hours ago — the scan is not reaching it": "{n}時間前 — スキャンが届いていません",
+    "No scheduler is running — nothing will scan until one starts.": "スケジューラが動いていません — 起動するまで何もスキャンされません。",
+    "The scheduler is up but the scan job is not registered.": "スケジューラは稼働していますが、スキャンのジョブが登録されていません。",
+    "Scheduler is up · next scan in {n} min — it has not completed one yet.": "スケジューラ稼働中 · 次のスキャンまで{n}分 — まだ一度も完了していません。",
   },
 };

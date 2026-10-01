@@ -101,6 +101,7 @@ const FundDashboard: React.FC = () => {
   const [pause, setPause] = useState<Awaited<ReturnType<typeof marketApi.getAnalysesPause>> | null>(null);
   const [pauseBusy, setPauseBusy] = useState(false);
   const [taScan, setTaScan] = useState<Awaited<ReturnType<typeof marketApi.getTaScanDiagnostics>> | null>(null);
+  const [schedState, setSchedState] = useState<any>(null);
   const [sigSymbol, setSigSymbol] = useState("");
   const [sigState, setSigState] = useState<any>(null);
   const checkSignalState = async () => {
@@ -114,6 +115,11 @@ const FundDashboard: React.FC = () => {
       try {
         const d = await marketApi.getTaScanDiagnostics();
         if (!cancelled) setTaScan(d);
+        // Fetched alongside, because the scan's own heartbeat cannot explain
+        // its own absence: a scan that has never completed has nothing to say
+        // about why.
+        const sched = await marketApi.getSchedulerState().catch(() => null);
+        if (!cancelled) setSchedState(sched);
       } catch { /* admin only */ }
     };
     tick();
@@ -780,9 +786,30 @@ const FundDashboard: React.FC = () => {
               {taScan === null ? (
                 <p className="text-xs text-gray-500 mt-1">{t("Loading...", "טוען...")}</p>
               ) : !taScan.ran ? (
-                <p className="text-xs text-red-400 mt-1">
-                  {t("No completed pass recorded — the scan has not finished a run.", "לא נרשמה אף ריצה מוצלחת — הסריקה לא השלימה מעבר.")}
-                </p>
+                <>
+                  <p className="text-xs text-red-400 mt-1">
+                    {t("No completed pass recorded — the scan has not finished a run.", "לא נרשמה אף ריצה מוצלחת — הסריקה לא השלימה מעבר.")}
+                  </p>
+                  {/* Why. The sentence above had three possible causes and
+                      named none of them: no scheduler running at all, a
+                      scheduler without this job, or a job whose next run is
+                      still minutes away after a restart. The scan's own
+                      heartbeat cannot explain its own absence — a run that has
+                      never completed has nothing to say about why. */}
+                  {schedState && (
+                    <p className={`text-xs mt-1 ${schedState.scheduler_running ? "text-gray-400" : "text-red-400"}`}>
+                      {!schedState.scheduler_running
+                        ? t("No scheduler is running — nothing will scan until one starts.",
+                            "אף מתזמן לא רץ — שום דבר לא ייסרק עד שיעלה אחד.")
+                        : !schedState.ta_scan_registered
+                          ? t("The scheduler is up but the scan job is not registered.",
+                              "המתזמן פעיל אבל עבודת הסריקה לא רשומה בו.")
+                          : t("Scheduler is up · next scan in {n} min — it has not completed one yet.",
+                              "המתזמן פעיל · הסריקה הבאה בעוד {n} דקות — עדיין לא הושלמה אף אחת.",
+                              { n: Math.max(0, Math.round((schedState.ta_scan_in_seconds ?? 0) / 60)) })}
+                    </p>
+                  )}
+                </>
               ) : (
                 <>
                   <p className={`text-xs mt-1 ${
