@@ -858,6 +858,7 @@ export const UI_STRINGS: StringTable = {
     "The scheduler check could not be reached — the server may still be deploying.": "Impossible de joindre la vérification du planificateur — le serveur est peut-être encore en cours de déploiement.",
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "En attente du verrou du planificateur — l'ancien conteneur le détient encore. Cela se résout tout seul.",
     "The scheduler could not start: {detail}": "Le planificateur n'a pas pu démarrer : {detail}",
+    "Scheduler not running — {stage}: {detail}": "Planificateur à l'arrêt — {stage} : {detail}",
   },
   "es": {
     "Signals": "Señales",
@@ -1690,6 +1691,7 @@ export const UI_STRINGS: StringTable = {
     "The scheduler check could not be reached — the server may still be deploying.": "No se pudo contactar con la comprobación del planificador: puede que el servidor aún se esté desplegando.",
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "Esperando el bloqueo del planificador: el contenedor anterior aún lo retiene. Se resuelve solo.",
     "The scheduler could not start: {detail}": "El planificador no pudo arrancar: {detail}",
+    "Scheduler not running — {stage}: {detail}": "Planificador detenido — {stage}: {detail}",
   },
   "de": {
     "Signals": "Signale",
@@ -2522,6 +2524,7 @@ export const UI_STRINGS: StringTable = {
     "The scheduler check could not be reached — the server may still be deploying.": "Die Scheduler-Prüfung war nicht erreichbar — der Server wird möglicherweise noch ausgerollt.",
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "Wartet auf die Scheduler-Sperre — der vorherige Container hält sie noch. Das löst sich von selbst.",
     "The scheduler could not start: {detail}": "Der Scheduler konnte nicht starten: {detail}",
+    "Scheduler not running — {stage}: {detail}": "Scheduler läuft nicht — {stage}: {detail}",
   },
   "it": {
     "Loading...": "Caricamento…",
@@ -3346,6 +3349,7 @@ export const UI_STRINGS: StringTable = {
     "The scheduler check could not be reached — the server may still be deploying.": "Non è stato possibile raggiungere la verifica dello scheduler: il server potrebbe essere ancora in fase di rilascio.",
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "In attesa del lock dello scheduler: il container precedente lo detiene ancora. Si risolve da solo.",
     "The scheduler could not start: {detail}": "Lo scheduler non è riuscito ad avviarsi: {detail}",
+    "Scheduler not running — {stage}: {detail}": "Scheduler non in esecuzione — {stage}: {detail}",
   },
   "pt-BR": {
     "Log out": "Sair",
@@ -4170,6 +4174,7 @@ export const UI_STRINGS: StringTable = {
     "The scheduler check could not be reached — the server may still be deploying.": "Não foi possível alcançar a verificação do agendador — o servidor pode ainda estar em implantação.",
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "Aguardando o bloqueio do agendador — o contêiner anterior ainda o mantém. Isso se resolve sozinho.",
     "The scheduler could not start: {detail}": "O agendador não conseguiu iniciar: {detail}",
+    "Scheduler not running — {stage}: {detail}": "Agendador parado — {stage}: {detail}",
   },
   "ar": {
     "Log out": "تسجيل الخروج",
@@ -4994,6 +4999,7 @@ export const UI_STRINGS: StringTable = {
     "The scheduler check could not be reached — the server may still be deploying.": "تعذّر الوصول إلى فحص المجدول — قد يكون الخادم ما زال قيد النشر.",
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "في انتظار قفل المجدول — لا تزال الحاوية السابقة تحتفظ به. يُحلّ هذا من تلقاء نفسه.",
     "The scheduler could not start: {detail}": "تعذّر بدء تشغيل المجدول: {detail}",
+    "Scheduler not running — {stage}: {detail}": "المجدول متوقف — {stage}: {detail}",
   },
   "ko": {
     "Log out": "로그아웃",
@@ -5818,6 +5824,7 @@ export const UI_STRINGS: StringTable = {
     "The scheduler check could not be reached — the server may still be deploying.": "스케줄러 점검에 연결하지 못했습니다 — 서버가 아직 배포 중일 수 있습니다.",
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "스케줄러 잠금을 기다리는 중 — 이전 컨테이너가 아직 보유하고 있습니다. 저절로 해결됩니다.",
     "The scheduler could not start: {detail}": "스케줄러를 시작하지 못했습니다: {detail}",
+    "Scheduler not running — {stage}: {detail}": "스케줄러 정지 — {stage}: {detail}",
   },
   "ja": {
     "Log out": "ログアウト",
@@ -6642,5 +6649,6 @@ export const UI_STRINGS: StringTable = {
     "The scheduler check could not be reached — the server may still be deploying.": "スケジューラの確認に接続できませんでした — サーバーがまだデプロイ中の可能性があります。",
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "スケジューラのロック待ちです — 以前のコンテナがまだ保持しています。これは自然に解消します。",
     "The scheduler could not start: {detail}": "スケジューラを起動できませんでした：{detail}",
+    "Scheduler not running — {stage}: {detail}": "スケジューラ停止中 — {stage}：{detail}",
   },
 };

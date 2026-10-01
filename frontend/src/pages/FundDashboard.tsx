@@ -798,11 +798,15 @@ const FundDashboard: React.FC = () => {
                       still minutes away after a restart. The scan's own
                       heartbeat cannot explain its own absence — a run that has
                       never completed has nothing to say about why. */}
-                  {/* Rendered in every state, including when the check
-                      itself fails. Guarding this on a truthy value meant a
-                      failed request rendered nothing at all — the panel looked
-                      exactly as it had before the diagnostic existed, which is
-                      the failure mode this diagnostic was added to remove. */}
+                  {/* The payload, verbatim.
+                      Three versions of this line in a row hid the thing they
+                      were added to show: one rendered nothing when the fetch
+                      failed, one let three idle workers overwrite the one
+                      that had the answer, and one matched on `stage` and
+                      threw away the `detail` carrying the lock holder's pid
+                      and idle time. Each was a small piece of presentation
+                      logic standing between a reader and a fact. There is no
+                      presentation logic here now. */}
                   <p className={`text-xs mt-1 ${
                     schedState?.scheduler_running ? "text-gray-400" : "text-red-400"
                   }`}>
@@ -811,22 +815,19 @@ const FundDashboard: React.FC = () => {
                       : schedState.unreachable
                         ? t("The scheduler check could not be reached — the server may still be deploying.",
                             "לא הצלחתי להגיע לבדיקת המתזמן — ייתכן שהשרת עדיין בתהליך פריסה.")
-                        : !schedState.scheduler_running
-                          ? (schedState.stage === "waiting_for_lock"
-                              ? t("Waiting for the scheduler lock — the previous container still holds it. This clears itself.",
-                                  "ממתין לנעילת המתזמן — המכולה הקודמת עדיין מחזיקה בה. זה מסתדר מעצמו.")
-                              : schedState.detail
-                                ? t("The scheduler could not start: {detail}",
-                                    "המתזמן לא הצליח לעלות: {detail}", { detail: schedState.detail })
-                                : t("No scheduler is running — nothing will scan until one starts.",
-                                    "אף מתזמן לא רץ — שום דבר לא ייסרק עד שיעלה אחד."))
-                          : !schedState.ta_scan_registered
-                            ? t("The scheduler is up but the scan job is not registered.",
-                                "המתזמן פעיל אבל עבודת הסריקה לא רשומה בו.")
-                            : t("Scheduler is up · next scan in {n} min — it has not completed one yet.",
-                                "המתזמן פעיל · הסריקה הבאה בעוד {n} דקות — עדיין לא הושלמה אף אחת.",
-                                { n: Math.max(0, Math.round((schedState.ta_scan_in_seconds ?? 0) / 60)) })}
+                        : schedState.scheduler_running
+                          ? t("Scheduler is up · next scan in {n} min — it has not completed one yet.",
+                              "המתזמן פעיל · הסריקה הבאה בעוד {n} דקות — עדיין לא הושלמה אף אחת.",
+                              { n: Math.max(0, Math.round((schedState.ta_scan_in_seconds ?? 0) / 60)) })
+                          : t("Scheduler not running — {stage}: {detail}",
+                              "המתזמן לא רץ — {stage}: {detail}",
+                              { stage: schedState.stage ?? "?", detail: schedState.detail ?? "?" })}
                   </p>
+                  {schedState && !schedState.unreachable && !schedState.scheduler_running && (
+                    <pre dir="ltr" className="mt-1 text-[10px] text-gray-500 bg-gray-950 border border-gray-800 rounded-lg p-2 overflow-x-auto max-h-40">
+                      {JSON.stringify(schedState, null, 2)}
+                    </pre>
+                  )}
                 </>
               ) : (
                 <>
