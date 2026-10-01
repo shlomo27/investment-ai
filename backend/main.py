@@ -262,12 +262,17 @@ async def lifespan(app: FastAPI):
                     # turns an indefinite hang into something that raises,
                     # gets caught, releases the lock and lets another worker
                     # try.
+                    # On the loop, as it was before. The thread offload two
+                    # commits ago was a guess at a psycopg2 hang; the real
+                    # fault was create_scheduler returning None, and
+                    # AsyncIOScheduler.start() binds to the current event loop
+                    # — in a worker thread there is none, and it raises.
                     await _step("creating_scheduler")
-                    scheduler = await asyncio.wait_for(
-                        asyncio.to_thread(create_scheduler, sync_db_url), timeout=120
-                    )
+                    scheduler = create_scheduler(sync_db_url)
+                    if scheduler is None:
+                        raise RuntimeError("create_scheduler returned None")
                     await _step("starting_scheduler")
-                    await asyncio.wait_for(asyncio.to_thread(scheduler.start), timeout=120)
+                    scheduler.start()
                     await _step("scheduler_started")
                     sched_state["scheduler"] = scheduler
                     logger.info(
