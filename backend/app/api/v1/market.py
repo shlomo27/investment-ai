@@ -1619,11 +1619,18 @@ async def scheduler_state(current_user: User = Depends(get_current_active_user))
         await r.aclose()
 
     if not raw:
-        # A crash outranks a wait: three workers waiting is the design, one
-        # worker failing is the thing worth reading.
+        # Anything but "waiting" outranks waiting. Three workers waiting is
+        # the design; the fourth — crashed, or stopped partway through
+        # start-up — is the one carrying the answer, and it is outnumbered
+        # three to one.
         crashed = next((w for w in workers if w.get("stage") == "keeper_failed"), None)
+        progress = next(
+            (w for w in workers
+             if w.get("stage") not in (None, "waiting_for_lock", "keeper_failed")),
+            None,
+        )
         waiting = next((w for w in workers if w.get("stage") == "waiting_for_lock"), None)
-        chosen = crashed or waiting or {}
+        chosen = crashed or progress or waiting or {}
         return {
             "scheduler_running": False,
             "stage": chosen.get("stage", "no_holder"),

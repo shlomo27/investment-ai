@@ -220,11 +220,55 @@ async def lifespan(app: FastAPI):
                 if got_lock:
                     sched_state["conn"] = conn  # hold connection = hold lock
                     held_pid = (await conn.execute(text("SELECT pg_backend_pid()"))).scalar()
+
+                    # A breadcrumb at each step, because the failure has no
+                    # exception to report.
+                    #
+                    # Four workers all report "waiting for the lock" while a
+                    # live backend holds it and nobody publishes a running
+                    # scheduler — and nobody reports a crash either. So one
+                    # worker reaches this branch and stops inside it without
+                    # raising: a hang, not an error. create_scheduler and
+                    # scheduler.start() both drive a synchronous psycopg2 job
+                    # store from inside the event loop, and roughly twenty
+                    # add_job calls each write to Postgres the same way.
+                    #
+                    # Nothing downstream can name which of those it is, so
+                    # each step says so before it starts. Whichever stage the
+                    # panel is stuck on is the one that does not return.
+                    async def _step(name: str):
+                        await _publish({
+                            "running": False, "stage": name,
+                            "detail": f"holder pid {held_pid} reached: {name}",
+                        })
+
+                    await _step("lock_acquired")
                     sync_db_url = settings.DATABASE_URL.replace(
                         "postgresql+asyncpg://", "postgresql+psycopg2://"
                     )
-                    scheduler = create_scheduler(sync_db_url)
-                    scheduler.start()
+                    # Off the event loop, and with a deadline.
+                    #
+                    # create_scheduler builds a SQLAlchemyJobStore and
+                    # scheduler.start() reads and writes it with synchronous
+                    # psycopg2 — around twenty add_job calls, each a blocking
+                    # round trip — all of it running directly on the async
+                    # loop. If Postgres is slow to hand out a connection, or
+                    # never does, that blocks forever with no timeout and no
+                    # exception: the worker holds the advisory lock, publishes
+                    # nothing, and looks from outside exactly like a worker
+                    # that is merely waiting for a lock it is itself holding.
+                    #
+                    # A thread keeps the loop responsive, and 120 seconds
+                    # turns an indefinite hang into something that raises,
+                    # gets caught, releases the lock and lets another worker
+                    # try.
+                    await _step("creating_scheduler")
+                    scheduler = await asyncio.wait_for(
+                        asyncio.to_thread(create_scheduler, sync_db_url), timeout=120
+                    )
+                    await _step("starting_scheduler")
+                    await asyncio.wait_for(asyncio.to_thread(scheduler.start), timeout=120)
+                    await _step("scheduler_started")
                     sched_state["scheduler"] = scheduler
                     logger.info(
                         "In-process scheduler started (this worker holds the scheduler lock)",
