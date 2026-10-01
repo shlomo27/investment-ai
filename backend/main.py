@@ -230,10 +230,60 @@ async def lifespan(app: FastAPI):
                         "In-process scheduler started (this worker holds the scheduler lock)",
                         jobs=["load_universe Sun 07:00 IL", "prescreener daily 08:00 IL", "full_scan Wed 09:00 IL"],
                     )
+                    async def _publish_jobs():
+                        try:
+                            import redis.asyncio as _aioredis, json as _json
+                            from datetime import datetime as _dt, timezone as _tz
+                            rc = _aioredis.from_url(settings.REDIS_URL)
+                            try:
+                                await rc.set(
+                                    # The authoritative key: only the worker
+                                    # holding the lock ever writes it.
+                                    "investment_ai:scheduler:state",
+                                    _json.dumps({
+                                        "alive_at": _dt.now(_tz.utc).isoformat(),
+                                        "running": bool(scheduler.running),
+                                        "holder_pid": held_pid,
+                                        "jobs": sorted(
+                                            (
+                                                {
+                                                    "id": j.id,
+                                                    "next_run": j.next_run_time.isoformat()
+                                                    if j.next_run_time else None,
+                                                }
+                                                for j in scheduler.get_jobs()
+                                            ),
+                                            key=lambda d: d["id"],
+                                        ),
+                                    }),
+                                    ex=600,
+                                )
+                            finally:
+                                await rc.aclose()
+                        except Exception as pub_exc:
+                            logger.debug("scheduler state publish failed", error=str(pub_exc))
+
+                    # Say it is up before doing anything else.
+                    #
+                    # The first publish used to sit after stale-job cleanup, a
+                    # Telegram admin alert with no timeout, and two unguarded
+                    # database maintenance calls. Any of them failing or
+                    # hanging meant a scheduler that had genuinely started was
+                    # never reported as started — the panel said "no scheduler
+                    # is running" about a running scheduler.
+                    await _publish_jobs()
+
+                    # Maintenance cannot unwind the lock holder. It used to run
+                    # unguarded in the same try block, so a failure here threw
+                    # the worker out of the branch holding the lock.
                     # Purge ghost jobs persisted by older code versions — the
                     # Postgres job store outlives deploys, so renamed/removed
                     # jobs would keep firing forever (stale daily full scan!).
-                    removed = remove_stale_jobs(scheduler)
+                    try:
+                        removed = remove_stale_jobs(scheduler)
+                    except Exception as maint_exc:
+                        removed = []
+                        logger.warning("Stale-job cleanup failed", error=str(maint_exc))
                     if removed:
                         try:
                             from app.services.notifications.telegram_service import get_telegram_service
@@ -247,8 +297,14 @@ async def lifespan(app: FastAPI):
                     # One-shot maintenance: restore bought-then-hidden recs,
                     # then collapse duplicate live recommendations.
                     if not did_maintenance:
-                        await restore_actioned_recommendations()
-                        await dedupe_live_recommendations()
+                        try:
+                            await restore_actioned_recommendations()
+                            await dedupe_live_recommendations()
+                        except Exception as maint_exc:
+                            logger.warning(
+                                "Start-up maintenance failed — scheduler stays up",
+                                error=str(maint_exc),
+                            )
                         # Fill SEC issuer ids now rather than waiting for
                         # Sunday. Until this has run, share-class grouping has
                         # nothing to key on: GOOGL and GOOG stay two unrelated
@@ -284,39 +340,6 @@ async def lifespan(app: FastAPI):
                     # with a cause attached: no scheduler at all, a scheduler
                     # with the job missing, or a job whose next run is an hour
                     # away.
-                    async def _publish_jobs():
-                        try:
-                            import redis.asyncio as _aioredis, json as _json
-                            from datetime import datetime as _dt, timezone as _tz
-                            rc = _aioredis.from_url(settings.REDIS_URL)
-                            try:
-                                await rc.set(
-                                    # The authoritative key: only the worker
-                                    # holding the lock ever writes it.
-                                    "investment_ai:scheduler:state",
-                                    _json.dumps({
-                                        "alive_at": _dt.now(_tz.utc).isoformat(),
-                                        "running": bool(scheduler.running),
-                                        "holder_pid": held_pid,
-                                        "jobs": sorted(
-                                            (
-                                                {
-                                                    "id": j.id,
-                                                    "next_run": j.next_run_time.isoformat()
-                                                    if j.next_run_time else None,
-                                                }
-                                                for j in scheduler.get_jobs()
-                                            ),
-                                            key=lambda d: d["id"],
-                                        ),
-                                    }),
-                                    ex=600,
-                                )
-                            finally:
-                                await rc.aclose()
-                        except Exception as pub_exc:
-                            logger.debug("scheduler state publish failed", error=str(pub_exc))
-
                     await _publish_jobs()
                     while True:
                         await asyncio.sleep(60)
@@ -411,6 +434,29 @@ async def lifespan(app: FastAPI):
                     logged_waiting = True
             except Exception as exc:
                 if conn is not None:
+                    # Release the lock explicitly before letting the
+                    # connection go.
+                    #
+                    # pg_try_advisory_lock is session-scoped and conn.close()
+                    # on a pooled SQLAlchemy connection does not end the
+                    # session — it returns the connection to the pool with the
+                    # lock still held. So a worker that acquired the lock and
+                    # then failed during start-up kept it forever: its own
+                    # retry a minute later asked a different pooled connection,
+                    # was refused by the session it had abandoned, and
+                    # reported "waiting for the lock". The holder it was
+                    # waiting for was itself.
+                    #
+                    # The retry loop also kept querying on that same pooled
+                    # connection, which reset its state_change, so it always
+                    # looked freshly idle — "lock held by pid 66581 (idle,
+                    # idle 9s)" — and never aged into the stale-holder reclaim.
+                    try:
+                        await conn.execute(
+                            text("SELECT pg_advisory_unlock(:k)"), {"k": SCHEDULER_LOCK_KEY}
+                        )
+                    except Exception:
+                        pass
                     try:
                         await conn.close()
                     except Exception:
