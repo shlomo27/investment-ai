@@ -472,13 +472,13 @@ async def job_daily_ta_scan():
 
     redis_client = aioredis.from_url(settings.REDIS_URL)
     logger.info("[ta_scan] started")
+    # Declared before the try so the crash handler can always report them,
+    # including when the failure happens before the loop starts.
+    alerted = success = errors = 0
+    ran_out_of_time = False
     try:
         async with AsyncSessionLocal() as db:
-            rows = await db.execute(
-                select(MasterListEntry.symbol).where(MasterListEntry.is_active == True).distinct()
-            )
-            master_symbols = {r[0] for r in rows.all()}
-            # Also cover every stock users actually HOLD — a position bought
+            # Every stock users actually HOLD — a position bought
             # from a past master list must stay monitored even after the list
             # rotates. TA is free (no LLM), so the wider set costs nothing.
             held_rows = await db.execute(
@@ -508,19 +508,48 @@ async def job_daily_ta_scan():
             )
             watched_symbols = {r[0] for r in watch_rows.all()}
 
-        symbols = sorted(master_symbols | held_symbols | live_symbols | watched_symbols)
+        # Only what this scan can actually act on.
+        #
+        # The set used to include the whole active master list — around 900
+        # symbols. At roughly two to three seconds each, counting the fetch,
+        # the retry on an empty result and the 0.5s courtesy sleep, one pass
+        # took well over an hour. The job fires every 30 minutes with
+        # max_instances=1, so every later trigger was skipped while the first
+        # run ground on, and the heartbeat is written at the very end — so a
+        # deploy, a restart, or simply the next day arriving meant it was
+        # never written at all. The admin panel said "no completed pass
+        # recorded" because there had never been one.
+        #
+        # The master list bought nothing here: process_signal_transition
+        # alerts holders and watchers only, so a master-list symbol nobody
+        # holds or follows cannot produce an alert however often it is
+        # scanned. Prices for the full universe are refreshed by the
+        # pre-screener, which fetches them in batches instead of one at a
+        # time. What is left is the set that can actually reach a person.
+        symbols = sorted(held_symbols | live_symbols | watched_symbols)
         if not symbols:
-            logger.info("[ta_scan] no active master list symbols — skipping")
+            logger.info("[ta_scan] nothing held, followed or in the feed — skipping")
             return
 
         logger.info(
             f"[ta_scan] scanning {len(symbols)} stocks "
-            f"(master={len(master_symbols)}, held-only={len(held_symbols - master_symbols)}, "
-            f"live-rec-only={len(live_symbols - master_symbols - held_symbols)})"
+            f"(held={len(held_symbols)}, followed={len(watched_symbols)}, "
+            f"live-rec={len(live_symbols)}; master list excluded — it cannot alert)"
         )
-        alerted = success = errors = 0
+        # A hard stop at 20 minutes, under the 30-minute interval. Whatever
+        # the set grows to, the run ends in time to write its heartbeat and
+        # let the next one start.
+        import time as _t
+        deadline = _t.monotonic() + 20 * 60
 
         for symbol in symbols:
+            if _t.monotonic() > deadline:
+                ran_out_of_time = True
+                logger.warning(
+                    f"[ta_scan] 20-minute budget reached — stopping at {symbol}; "
+                    f"{len(symbols) - success - errors} not reached this pass"
+                )
+                break
             try:
                 async with AsyncSessionLocal() as db:
                     asset = (await db.execute(select(Asset).where(Asset.symbol==symbol))).scalar_one_or_none()
@@ -602,13 +631,29 @@ async def job_daily_ta_scan():
         from datetime import datetime, timezone
         await redis_client.set(
             "investment_ai:ta_scan:heartbeat",
-            f"{datetime.now(timezone.utc).isoformat()}|scanned={len(symbols)}|"
-            f"success={success}|alerted={alerted}|errors={errors}",
+            f"{datetime.now(timezone.utc).isoformat()}|scanned={success + errors}|"
+            f"success={success}|alerted={alerted}|errors={errors}"
+            + ("|truncated=1" if ran_out_of_time else ""),
             ex=7 * 24 * 3600,
         )
         logger.info(f"[ta_scan] done: success={success}, alerted={alerted}, errors={errors}")
     except Exception as exc:
         logger.error(f"[ta_scan] failed: {exc}")
+        # Record the crash too. The heartbeat was only ever written on the
+        # happy path, so a run that died partway left no trace and the panel
+        # reported "no completed pass" — the same message as a scan that had
+        # never started. An error that leaves no evidence is indistinguishable
+        # from nothing having happened.
+        try:
+            from datetime import datetime, timezone
+            await redis_client.set(
+                "investment_ai:ta_scan:heartbeat",
+                f"{datetime.now(timezone.utc).isoformat()}|scanned={success + errors}|"
+                f"success={success}|alerted={alerted}|errors={errors}|crashed={exc}"[:400],
+                ex=7 * 24 * 3600,
+            )
+        except Exception:
+            pass
     finally:
         await redis_client.aclose()
 

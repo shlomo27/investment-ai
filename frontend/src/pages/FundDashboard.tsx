@@ -878,6 +878,19 @@ const FundDashboard: React.FC = () => {
                     <p className="text-red-400">{sigState.error}</p>
                   ) : (
                     <>
+                      {/* First, because it decides whether the rest means
+                          anything: a confirmed signal from a scan that has not
+                          run in days is a record of the past, not a state. */}
+                      <p className={sigState.scan_is_covering_this_symbol ? "text-gray-300" : "text-red-400"}>
+                        <span className="text-gray-500">{t("Last scanned: ", "נסרקה לאחרונה: ")}</span>
+                        <span dir="ltr">
+                          {sigState.last_scanned_seconds_ago == null
+                            ? t("never — nothing is scanning this symbol", "אף פעם — שום דבר לא סורק את המניה")
+                            : sigState.last_scanned_seconds_ago < 3600
+                              ? t("{n} min ago", "לפני {n} דקות", { n: Math.round(sigState.last_scanned_seconds_ago / 60) })
+                              : t("{n} hours ago — the scan is not reaching it", "לפני {n} שעות — הסריקה לא מגיעה אליה", { n: Math.round(sigState.last_scanned_seconds_ago / 3600) })}
+                        </span>
+                      </p>
                       <p className="text-gray-300">
                         <span className="text-gray-500">{t("Confirmed signal: ", "סיגנל מאושר אחרון: ")}</span>
                         <span dir="ltr">{sigState.confirmed_signal || (t("— none", "— אין"))}</span>
