@@ -162,16 +162,26 @@ async def lifespan(app: FastAPI):
         logged_waiting = False
         did_maintenance = False
 
-        async def _publish(payload: dict, key: str = "investment_ai:scheduler:waiting"):
-            """Write the keeper's own state where the panel can read it.
+        import os as _os
+        _WORKER_KEY = f"investment_ai:scheduler:worker:{_os.getpid()}"
 
-            Note the key. uvicorn runs four workers and the lock elects one
-            winner, so three of them are always "waiting" — and when every
-            worker wrote the same key, the last write won and it was a loser
-            three times out of four. The panel reported "waiting for the lock"
-            while the scheduler may have been running the whole time. The
-            holder writes :state, everyone else writes :waiting, and the
-            reader prefers :state.
+        async def _publish(payload: dict, key: str = _WORKER_KEY):
+            """Write this worker's own state where the panel can read it.
+
+            One key per worker, because every shared key has been clobbered.
+            uvicorn runs four of these and the advisory lock elects one, so
+            three are always waiting — the design working. Writing them all to
+            one key meant the last write won and it was a loser three times
+            out of four, and the panel reported "waiting for the lock"
+            whatever the holder was doing. Splitting it into holder/waiter
+            keys moved the problem rather than fixing it: a keeper that
+            crashed wrote the failure to the waiter key, where the three
+            genuine waiters immediately overwrote the only line that said
+            what had actually gone wrong.
+
+            Per-worker keys cannot collide. The reader looks at all of them
+            and reports the holder if there is one, then any crash, then
+            waiting.
 
             Every failure in this loop was caught, logged and retried, so from
             outside it was indistinguishable from a scheduler that had simply
@@ -338,13 +348,64 @@ async def lifespan(app: FastAPI):
                     sched_state["conn"] = None
                     await asyncio.sleep(5)
                     continue
+                # Who holds it, and is that process still alive?
+                #
+                # The lock is session-scoped, so a container killed without a
+                # clean shutdown leaves its backend holding it until the TCP
+                # connection is reaped — with default keepalives that is up to
+                # two hours. For that whole window the lock belongs to a
+                # process that no longer exists, every new container waits for
+                # it, and nothing is scheduled. "Usually the previous
+                # container during a deploy" was the comforting reading;
+                # "a dead one from an hour ago" is the other.
+                holder = None
+                try:
+                    holder = (await conn.execute(text("""
+                        SELECT a.pid, a.state,
+                               EXTRACT(EPOCH FROM (now() - a.state_change))::int AS idle_seconds
+                        FROM pg_locks l
+                        JOIN pg_stat_activity a ON a.pid = l.pid
+                        WHERE l.locktype = 'advisory' AND l.objid = :k AND l.granted
+                        LIMIT 1
+                    """), {"k": SCHEDULER_LOCK_KEY})).mappings().first()
+                except Exception:
+                    holder = None
+
+                # Reclaim it from a backend that has been idle long enough to
+                # be dead. Five minutes is far longer than any real handover:
+                # the holder heartbeats its connection every 60 seconds, so a
+                # live scheduler is never idle this long.
+                reclaimed = False
+                if holder and holder["state"] == "idle" and (holder["idle_seconds"] or 0) > 300:
+                    try:
+                        await conn.execute(
+                            text("SELECT pg_terminate_backend(:pid)"), {"pid": holder["pid"]}
+                        )
+                        reclaimed = True
+                        logger.warning(
+                            "Terminated a stale scheduler-lock holder",
+                            pid=holder["pid"], idle_seconds=holder["idle_seconds"],
+                        )
+                    except Exception as kill_exc:
+                        logger.warning("Could not terminate lock holder", error=str(kill_exc))
+
                 await conn.close()
                 await _publish({
                     "running": False,
                     "stage": "waiting_for_lock",
-                    "detail": "another process holds the scheduler lock — "
-                              "usually the previous container during a deploy",
+                    "detail": (
+                        f"lock held by pid {holder['pid']} "
+                        f"({holder['state']}, idle {holder['idle_seconds']}s)"
+                        + (" — terminated as stale, retrying shortly" if reclaimed else "")
+                        if holder else
+                        "another process holds the scheduler lock — "
+                        "usually the previous container during a deploy"
+                    ),
                 })
+                if reclaimed:
+                    # Do not wait the full minute after clearing it.
+                    await asyncio.sleep(2)
+                    continue
                 if not logged_waiting:
                     logger.info("Scheduler lock held elsewhere — will keep retrying every 60s")
                     logged_waiting = True

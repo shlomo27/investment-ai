@@ -1601,31 +1601,36 @@ async def scheduler_state(current_user: User = Depends(get_current_active_user))
 
     r = aioredis.from_url(settings.REDIS_URL)
     try:
-        # The holder's key wins. Three of the four uvicorn workers never get
-        # the lock, so "waiting" is the normal state for most of them and says
-        # nothing about whether a scheduler exists — only the absence of a
-        # holder does.
+        # Every worker publishes under its own key, so nothing can overwrite
+        # anything. Three of the four never get the lock — "waiting" is their
+        # normal state and says nothing about whether a scheduler exists.
         raw = await r.get("investment_ai:scheduler:state")
-        waiting = await r.get("investment_ai:scheduler:waiting")
+        workers = []
+        async for k in r.scan_iter("investment_ai:scheduler:worker:*"):
+            v = await r.get(k)
+            if not v:
+                continue
+            try:
+                workers.append(_json.loads(v.decode() if isinstance(v, bytes) else v))
+            except Exception:
+                pass
         beat = await r.get("investment_ai:ta_scan:heartbeat")
     finally:
         await r.aclose()
 
     if not raw:
-        wait_state = {}
-        if waiting:
-            try:
-                wait_state = _json.loads(
-                    waiting.decode() if isinstance(waiting, bytes) else waiting
-                )
-            except Exception:
-                wait_state = {}
+        # A crash outranks a wait: three workers waiting is the design, one
+        # worker failing is the thing worth reading.
+        crashed = next((w for w in workers if w.get("stage") == "keeper_failed"), None)
+        waiting = next((w for w in workers if w.get("stage") == "waiting_for_lock"), None)
+        chosen = crashed or waiting or {}
         return {
             "scheduler_running": False,
-            "stage": wait_state.get("stage", "no_holder"),
-            "detail": wait_state.get(
+            "stage": chosen.get("stage", "no_holder"),
+            "detail": chosen.get(
                 "detail", "no worker has published a running scheduler in the last 10 minutes"
             ),
+            "workers_reporting": len(workers),
             "reason": "no scheduler has published its state in the last 10 minutes",
             "ta_scan_heartbeat": beat.decode() if beat else None,
         }
