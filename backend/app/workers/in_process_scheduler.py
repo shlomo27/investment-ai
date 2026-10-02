@@ -995,18 +995,40 @@ async def job_poll_telegram_links():
             msg = upd.get("message") or {}
             chat = msg.get("chat") or {}
             text = (msg.get("text") or "").strip()
-            if chat.get("type") != "private" or not text.startswith("/start"):
+            if chat.get("type") != "private" or not text:
                 continue
             chat_id = str(chat["id"])
+
+            # The code arrives three ways, and all three must work:
+            #
+            #   "/start CODE"            — the deep link, when it works
+            #   "/start@my_bot CODE"     — the same, from some clients
+            #   "CODE"                   — pasted by hand
+            #
+            # The deep link is not reliable. Opening t.me/bot?start=CODE into
+            # a chat that already exists can land on the conversation without
+            # sending anything, and on iOS it first goes through a browser
+            # page and an "open another app?" prompt. When that failed the
+            # user was left with no way to finish, and a bare /start got a
+            # reply pointing them back at the same link. Accepting the code as
+            # plain text gives every user a path that cannot be lost in a
+            # hand-off between apps.
             parts = text.split(maxsplit=1)
-            if len(parts) < 2:
+            if parts[0].split("@")[0] == "/start":
+                code = parts[1].strip() if len(parts) > 1 else ""
+            elif len(parts) == 1 and 6 <= len(text) <= 32 and " " not in text:
+                code = text
+            else:
+                code = ""
+            if not code:
                 await tg.send_message(
-                    "כדי לחבר את החשבון, לחץ על 'חבר טלגרם אישי' בהגדרות המערכת "
-                    "והשתמש בקישור שנוצר.",
+                    "כדי לחבר את החשבון: בהגדרות המערכת לחץ על 'חבר טלגרם אישי', "
+                    "והעתק לכאן את הקוד שמופיע שם.\n\n"
+                    "To link your account: in Settings tap 'Connect Telegram' "
+                    "and send the code shown there to this chat.",
                     chat_id=chat_id,
                 )
                 continue
-            code = parts[1].strip()
             uid_raw = await r.get(f"investment_ai:tg_link:{code}")
             if not uid_raw:
                 await tg.send_message(

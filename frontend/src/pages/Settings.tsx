@@ -50,6 +50,10 @@ const Settings: React.FC = () => {
   // Personal Telegram linking
   const [tgLinked, setTgLinked] = useState<boolean>((user as any)?.telegram_linked ?? false);
   const [tgWaiting, setTgWaiting] = useState(false);
+  // The one-time code, shown so it can be pasted into the bot by hand when
+  // the t.me hand-off loses it — which it does when the chat already exists.
+  const [tgCode, setTgCode] = useState<string>("");
+  const [tgCodeCopied, setTgCodeCopied] = useState(false);
   const tgPollRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -62,6 +66,8 @@ const Settings: React.FC = () => {
   const handleTelegramConnect = async () => {
     try {
       const { link } = await authApi.telegramLinkCode();
+      setTgCode(new URL(link).searchParams.get("start") ?? "");
+      setTgCodeCopied(false);
       window.open(link, "_blank");
       setTgWaiting(true);
       if (tgPollRef.current) window.clearInterval(tgPollRef.current);
@@ -441,9 +447,32 @@ const Settings: React.FC = () => {
             )}
           </div>
           {tgWaiting && (
-            <p className="text-xs text-gray-600 mt-2">
-              {t('A Telegram window opened — tap "Start" there and linking completes automatically within ~30s.', 'נפתח חלון טלגרם — לחץ שם על "Start" והחיבור יושלם אוטומטית תוך חצי דקה.')}
-            </p>
+            <div className="mt-2 space-y-2">
+              <p className="text-xs text-gray-600">
+                {t('A Telegram window opened — tap "Start" there and linking completes automatically within ~30s.', 'נפתח חלון טלגרם — לחץ שם על "Start" והחיבור יושלם אוטומטית תוך חצי דקה.')}
+              </p>
+              {tgCode && (
+                <div className="rounded-lg border border-gray-800 bg-gray-950 p-2">
+                  <p className="text-xs text-gray-400">
+                    {t("Didn't connect? Send this code to the bot:", "לא התחבר? שלח לבוט את הקוד הזה:")}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <code dir="ltr" className="font-mono text-sm text-gray-200 select-all">{tgCode}</code>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard?.writeText(tgCode).then(() => setTgCodeCopied(true)).catch(() => {});
+                      }}
+                      className="text-xs text-blue-400 border border-gray-700 rounded px-2 py-0.5"
+                    >
+                      {tgCodeCopied ? t("Copied", "הועתק") : t("Copy", "העתק")}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {t("Valid for 10 minutes.", "תקף ל-10 דקות.")}
+                  </p>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>

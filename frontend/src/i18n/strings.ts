@@ -859,6 +859,9 @@ export const UI_STRINGS: StringTable = {
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "En attente du verrou du planificateur — l'ancien conteneur le détient encore. Cela se résout tout seul.",
     "The scheduler could not start: {detail}": "Le planificateur n'a pas pu démarrer : {detail}",
     "Scheduler not running — {stage}: {detail}": "Planificateur à l'arrêt — {stage} : {detail}",
+    "Didn't connect? Send this code to the bot:": "Pas connecté ? Envoyez ce code au bot :",
+    "Copy": "Copier",
+    "Valid for 10 minutes.": "Valable 10 minutes.",
   },
   "es": {
     "Signals": "Señales",
@@ -1692,6 +1695,9 @@ export const UI_STRINGS: StringTable = {
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "Esperando el bloqueo del planificador: el contenedor anterior aún lo retiene. Se resuelve solo.",
     "The scheduler could not start: {detail}": "El planificador no pudo arrancar: {detail}",
     "Scheduler not running — {stage}: {detail}": "Planificador detenido — {stage}: {detail}",
+    "Didn't connect? Send this code to the bot:": "¿No se conectó? Envía este código al bot:",
+    "Copy": "Copiar",
+    "Valid for 10 minutes.": "Válido durante 10 minutos.",
   },
   "de": {
     "Signals": "Signale",
@@ -2525,6 +2531,9 @@ export const UI_STRINGS: StringTable = {
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "Wartet auf die Scheduler-Sperre — der vorherige Container hält sie noch. Das löst sich von selbst.",
     "The scheduler could not start: {detail}": "Der Scheduler konnte nicht starten: {detail}",
     "Scheduler not running — {stage}: {detail}": "Scheduler läuft nicht — {stage}: {detail}",
+    "Didn't connect? Send this code to the bot:": "Nicht verbunden? Senden Sie diesen Code an den Bot:",
+    "Copy": "Kopieren",
+    "Valid for 10 minutes.": "10 Minuten gültig.",
   },
   "it": {
     "Loading...": "Caricamento…",
@@ -3350,6 +3359,9 @@ export const UI_STRINGS: StringTable = {
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "In attesa del lock dello scheduler: il container precedente lo detiene ancora. Si risolve da solo.",
     "The scheduler could not start: {detail}": "Lo scheduler non è riuscito ad avviarsi: {detail}",
     "Scheduler not running — {stage}: {detail}": "Scheduler non in esecuzione — {stage}: {detail}",
+    "Didn't connect? Send this code to the bot:": "Non si è collegato? Invia questo codice al bot:",
+    "Copy": "Copia",
+    "Valid for 10 minutes.": "Valido per 10 minuti.",
   },
   "pt-BR": {
     "Log out": "Sair",
@@ -4175,6 +4187,9 @@ export const UI_STRINGS: StringTable = {
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "Aguardando o bloqueio do agendador — o contêiner anterior ainda o mantém. Isso se resolve sozinho.",
     "The scheduler could not start: {detail}": "O agendador não conseguiu iniciar: {detail}",
     "Scheduler not running — {stage}: {detail}": "Agendador parado — {stage}: {detail}",
+    "Didn't connect? Send this code to the bot:": "Não conectou? Envie este código para o bot:",
+    "Copy": "Copiar",
+    "Valid for 10 minutes.": "Válido por 10 minutos.",
   },
   "ar": {
     "Log out": "تسجيل الخروج",
@@ -5000,6 +5015,9 @@ export const UI_STRINGS: StringTable = {
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "في انتظار قفل المجدول — لا تزال الحاوية السابقة تحتفظ به. يُحلّ هذا من تلقاء نفسه.",
     "The scheduler could not start: {detail}": "تعذّر بدء تشغيل المجدول: {detail}",
     "Scheduler not running — {stage}: {detail}": "المجدول متوقف — {stage}: {detail}",
+    "Didn't connect? Send this code to the bot:": "لم يتم الربط؟ أرسل هذا الرمز إلى البوت:",
+    "Copy": "نسخ",
+    "Valid for 10 minutes.": "صالح لمدة 10 دقائق.",
   },
   "ko": {
     "Log out": "로그아웃",
@@ -5825,6 +5843,9 @@ export const UI_STRINGS: StringTable = {
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "스케줄러 잠금을 기다리는 중 — 이전 컨테이너가 아직 보유하고 있습니다. 저절로 해결됩니다.",
     "The scheduler could not start: {detail}": "스케줄러를 시작하지 못했습니다: {detail}",
     "Scheduler not running — {stage}: {detail}": "스케줄러 정지 — {stage}: {detail}",
+    "Didn't connect? Send this code to the bot:": "연결되지 않았나요? 이 코드를 봇에 보내세요:",
+    "Copy": "복사",
+    "Valid for 10 minutes.": "10분간 유효합니다.",
   },
   "ja": {
     "Log out": "ログアウト",
@@ -6650,5 +6671,8 @@ export const UI_STRINGS: StringTable = {
     "Waiting for the scheduler lock — the previous container still holds it. This clears itself.": "スケジューラのロック待ちです — 以前のコンテナがまだ保持しています。これは自然に解消します。",
     "The scheduler could not start: {detail}": "スケジューラを起動できませんでした：{detail}",
     "Scheduler not running — {stage}: {detail}": "スケジューラ停止中 — {stage}：{detail}",
+    "Didn't connect? Send this code to the bot:": "連携できませんでしたか？このコードをボットに送ってください：",
+    "Copy": "コピー",
+    "Valid for 10 minutes.": "有効期限は10分です。",
   },
 };
