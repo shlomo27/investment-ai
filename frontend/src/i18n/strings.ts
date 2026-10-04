@@ -862,6 +862,7 @@ export const UI_STRINGS: StringTable = {
     "Didn't connect? Send this code to the bot:": "Pas connecté ? Envoyez ce code au bot :",
     "Copy": "Copier",
     "Valid for 10 minutes.": "Valable 10 minutes.",
+    "AI-powered investment research — analyzes hundreds of stocks daily and delivers analysis, technical signals and real-time alerts.": "Recherche en investissement pilotée par l'IA — analyse des centaines de titres chaque jour et fournit analyses, signaux techniques et alertes en temps réel.",
   },
   "es": {
     "Signals": "Señales",
@@ -1698,6 +1699,7 @@ export const UI_STRINGS: StringTable = {
     "Didn't connect? Send this code to the bot:": "¿No se conectó? Envía este código al bot:",
     "Copy": "Copiar",
     "Valid for 10 minutes.": "Válido durante 10 minutos.",
+    "AI-powered investment research — analyzes hundreds of stocks daily and delivers analysis, technical signals and real-time alerts.": "Análisis de inversiones con IA: estudia cientos de valores cada día y ofrece análisis, señales técnicas y alertas en tiempo real.",
   },
   "de": {
     "Signals": "Signale",
@@ -2534,6 +2536,7 @@ export const UI_STRINGS: StringTable = {
     "Didn't connect? Send this code to the bot:": "Nicht verbunden? Senden Sie diesen Code an den Bot:",
     "Copy": "Kopieren",
     "Valid for 10 minutes.": "10 Minuten gültig.",
+    "AI-powered investment research — analyzes hundreds of stocks daily and delivers analysis, technical signals and real-time alerts.": "KI-gestützte Aktienanalyse — untersucht täglich Hunderte von Aktien und liefert Analysen, technische Signale und Benachrichtigungen in Echtzeit.",
   },
   "it": {
     "Loading...": "Caricamento…",
@@ -3362,6 +3365,7 @@ export const UI_STRINGS: StringTable = {
     "Didn't connect? Send this code to the bot:": "Non si è collegato? Invia questo codice al bot:",
     "Copy": "Copia",
     "Valid for 10 minutes.": "Valido per 10 minuti.",
+    "AI-powered investment research — analyzes hundreds of stocks daily and delivers analysis, technical signals and real-time alerts.": "Ricerca sugli investimenti basata sull'IA: analizza centinaia di titoli ogni giorno e fornisce analisi, segnali tecnici e avvisi in tempo reale.",
   },
   "pt-BR": {
     "Log out": "Sair",
@@ -4190,6 +4194,7 @@ export const UI_STRINGS: StringTable = {
     "Didn't connect? Send this code to the bot:": "Não conectou? Envie este código para o bot:",
     "Copy": "Copiar",
     "Valid for 10 minutes.": "Válido por 10 minutos.",
+    "AI-powered investment research — analyzes hundreds of stocks daily and delivers analysis, technical signals and real-time alerts.": "Pesquisa de investimentos com IA — analisa centenas de ações por dia e entrega análises, sinais técnicos e alertas em tempo real.",
   },
   "ar": {
     "Log out": "تسجيل الخروج",
@@ -5018,6 +5023,7 @@ export const UI_STRINGS: StringTable = {
     "Didn't connect? Send this code to the bot:": "لم يتم الربط؟ أرسل هذا الرمز إلى البوت:",
     "Copy": "نسخ",
     "Valid for 10 minutes.": "صالح لمدة 10 دقائق.",
+    "AI-powered investment research — analyzes hundreds of stocks daily and delivers analysis, technical signals and real-time alerts.": "أبحاث استثمارية مدعومة بالذكاء الاصطناعي — تحلّل مئات الأسهم يوميًا وتقدّم تحليلات وإشارات فنية وتنبيهات فورية.",
   },
   "ko": {
     "Log out": "로그아웃",
@@ -5846,6 +5852,7 @@ export const UI_STRINGS: StringTable = {
     "Didn't connect? Send this code to the bot:": "연결되지 않았나요? 이 코드를 봇에 보내세요:",
     "Copy": "복사",
     "Valid for 10 minutes.": "10분간 유효합니다.",
+    "AI-powered investment research — analyzes hundreds of stocks daily and delivers analysis, technical signals and real-time alerts.": "AI 기반 투자 리서치 — 매일 수백 개 종목을 분석해 분석 자료, 기술적 신호, 실시간 알림을 제공합니다.",
   },
   "ja": {
     "Log out": "ログアウト",
@@ -6674,5 +6681,6 @@ export const UI_STRINGS: StringTable = {
     "Didn't connect? Send this code to the bot:": "連携できませんでしたか？このコードをボットに送ってください：",
     "Copy": "コピー",
     "Valid for 10 minutes.": "有効期限は10分です。",
+    "AI-powered investment research — analyzes hundreds of stocks daily and delivers analysis, technical signals and real-time alerts.": "AIによる投資リサーチ — 毎日数百銘柄を分析し、分析結果・テクニカルシグナル・リアルタイム通知をお届けします。",
   },
 };

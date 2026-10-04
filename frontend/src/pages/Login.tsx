@@ -118,7 +118,7 @@ const Login: React.FC = () => {
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-white">
-            {t("Investment AI Platform", "מערכת ייעוץ השקעות AI")}
+            {t("Investment AI Platform", "מערכת ניתוח השקעות AI")}
           </h1>
           <p className="text-gray-400 mt-1 text-sm">
             {t("AI-powered portfolio management", "ניהול תיק השקעות מבוסס בינה מלאכותית")}

@@ -110,7 +110,7 @@ const Onboarding: React.FC = () => {
                 {t("Welcome, {name}!", "ברוך הבא, {name}!", { name: user?.full_name?.split(" ")[0] ?? "" })}
               </h1>
               <p className="text-gray-400 text-sm leading-relaxed">
-                {t("AI-powered investment advisory — analyzes hundreds of stocks daily and delivers recommendations, technical analysis, and real-time alerts.", "מערכת ייעוץ השקעות מבוססת AI — מנתחת מאות מניות מדי יום ומספקת המלצות, ניתוחים טכניים והתרעות בזמן אמת.")}
+                {t("AI-powered investment research — analyzes hundreds of stocks daily and delivers analysis, technical signals and real-time alerts.", "מערכת ניתוח השקעות מבוססת AI — מנתחת מאות מניות מדי יום ומספקת ניתוחים, סיגנלים טכניים והתרעות בזמן אמת.")}
               </p>
             </div>
 

@@ -30,7 +30,7 @@ const Navbar: React.FC = () => {
         <h2 className="font-semibold text-sm text-gray-300 truncate">
           <span className="md:hidden">Investment AI</span>
           <span className="hidden md:inline">
-            {t("Investment AI Platform", "מערכת ייעוץ השקעות AI")}
+            {t("Investment AI Platform", "מערכת ניתוח השקעות AI")}
           </span>
         </h2>
       </div>
