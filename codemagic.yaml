@@ -15,6 +15,8 @@
 #     VITE_FIREBASE_MESSAGING_SENDER_ID
 #     VITE_FIREBASE_APP_ID
 #     VITE_FIREBASE_VAPID_KEY      Cloud Messaging → Web Push certificates
+#     VITE_REVENUECAT_IOS_KEY      RevenueCat → Project → API keys (appl_…)
+#     VITE_REVENUECAT_ANDROID_KEY  RevenueCat → Project → API keys (goog_…)
 #
 #   Group "firebase_config" (base64-encoded files, both secure):
 #     GOOGLE_SERVICES_JSON         base64 of google-services.json     (Android)
@@ -83,6 +85,16 @@ workflows:
             exit 1
           fi
           echo "$GOOGLE_SERVICES_JSON" | base64 --decode > android/app/google-services.json
+      - name: Require the RevenueCat key
+        script: |
+          # Without it the app builds, installs and runs — and the upgrade
+          # button does nothing. App Review always tries the in-app purchase,
+          # so a missing key is a rejection under 2.1 (App Completeness).
+          if [ -z "$VITE_REVENUECAT_ANDROID_KEY" ]; then
+            echo "VITE_REVENUECAT_ANDROID_KEY is not set — purchases would be disabled in the"
+            echo "Play Store build. Add it to the investment_ai environment group."
+            exit 1
+          fi
       - *install_web
       - name: Set version from the build number
         script: |
@@ -144,6 +156,16 @@ workflows:
             exit 1
           fi
           echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > ios/App/App/GoogleService-Info.plist
+      - name: Require the RevenueCat key
+        script: |
+          # Without it the app builds, installs and runs — and the upgrade
+          # button does nothing. App Review always tries the in-app purchase,
+          # so a missing key is a rejection under 2.1 (App Completeness).
+          if [ -z "$VITE_REVENUECAT_IOS_KEY" ]; then
+            echo "VITE_REVENUECAT_IOS_KEY is not set — purchases would be disabled in the"
+            echo "App Store build. Add it to the investment_ai environment group."
+            exit 1
+          fi
       - *install_web
       - name: Fetch signing files
         script: |
