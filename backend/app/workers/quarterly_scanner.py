@@ -244,6 +244,14 @@ async def requeue_stale_live_recommendations() -> dict:
 
     Expiry is skipped entirely while the decision engine is down — an outage
     must not be allowed to quietly empty the feed.
+
+    The whole sweep is skipped while analyses are deliberately paused. Expiry
+    means "fifteen days of re-validation attempts failed", and during a pause
+    no attempt is ever made — so the feed emptied one card a day at 06:00, each
+    the moment it turned 45 days old, with nothing having been re-checked.
+    Re-queueing is skipped too: every queued attempt counts toward the
+    two-try cap, so a pause would spend a symbol's tries on analyses that
+    never ran and leave it capped for a month once the pause lifted.
     """
     from datetime import datetime, timezone, timedelta
     from app.core.config import settings
@@ -252,9 +260,13 @@ async def requeue_stale_live_recommendations() -> dict:
     from app.db.models.recommendation import (
         Recommendation, RecommendationStatus as _RS,
     )
-    from app.workers.cost_guard import is_decision_engine_down
+    from app.workers.cost_guard import is_decision_engine_down, is_analysis_paused
     from sqlalchemy import select, update as _update
     import redis.asyncio as aioredis
+
+    if await is_analysis_paused():
+        return {"requeued": 0, "expired": 0,
+                "reason": "analyses paused — nothing can be re-validated, so nothing is retired"}
 
     live = [_RS.APPROVED, _RS.PRESENTED_TO_USER, _RS.ACTIONED]
     now = datetime.now(timezone.utc)
