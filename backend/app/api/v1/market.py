@@ -1690,6 +1690,7 @@ async def signal_state(
     from app.core.database import AsyncSessionLocal
     from app.db.models.portfolio import Portfolio
     from app.db.models.watchlist import Watchlist
+    from app.db.models.recommendation import Recommendation
     from sqlalchemy import select as _sel
     import json as _json
     import redis.asyncio as aioredis
@@ -1702,6 +1703,7 @@ async def signal_state(
         pending_raw = await r.get(f"investment_ai:ta_pending_signal:{sym}")
         cooldown = await r.get(f"investment_ai:ta_alert:{sym}")
         cooldown_ttl = await r.ttl(f"investment_ai:ta_alert:{sym}")
+        restore_raw = await r.get("investment_ai:maintenance:restore_paused_expiries:v1")
     finally:
         await r.aclose()
 
@@ -1745,6 +1747,32 @@ async def signal_state(
             _sel(Watchlist.user_id, Watchlist.alert_on_technical_signal)
             .where(Watchlist.symbol == sym)
         )).all()
+        # "Why is it not in the feed?" — the symbol's recommendations, newest
+        # first, as stored. A card leaves the feed by being superseded,
+        # rejected on re-analysis, retired by age, or dismissed; the rows
+        # say which without anyone reading the database.
+        rec_rows = (await db.execute(
+            _sel(Recommendation.id, Recommendation.recommendation_type,
+                 Recommendation.status, Recommendation.created_at)
+            .where(Recommendation.symbol == sym)
+            .order_by(Recommendation.created_at.desc())
+            .limit(6)
+        )).all()
+
+    from datetime import datetime as _dt, timezone as _tz
+    from app.workers.cost_guard import get_pause_status
+    _now = _dt.now(_tz.utc)
+
+    def _age_days(ts):
+        ts = ts if ts.tzinfo else ts.replace(tzinfo=_tz.utc)
+        return round((_now - ts).total_seconds() / 86400, 1)
+
+    restore = None
+    if restore_raw:
+        try:
+            restore = _json.loads(_dec(restore_raw))
+        except (ValueError, TypeError):
+            restore = {"state": _dec(restore_raw)}
 
     return {
         "symbol": sym,
@@ -1766,6 +1794,14 @@ async def signal_state(
                 {"user_id": u, "alerts_enabled": bool(a)} for u, a in watch_rows
             ],
         },
+        "recommendations": [
+            {"id": i, "type": t.value if t else None, "status": s.value,
+             "created_at": c.isoformat(), "age_days": _age_days(c)}
+            for i, t, s, c in rec_rows
+        ],
+        "analyses_pause": await get_pause_status(),
+        #: None until the one-shot pause-expiry restore has run.
+        "pause_expiry_restore": restore,
     }
 
 

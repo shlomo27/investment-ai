@@ -1601,6 +1601,10 @@ async def restore_paused_expiries() -> int:
                 await db.commit()
                 restored = result.rowcount or 0
             logger.info(f"[maintenance] restored {restored} recommendations retired during the analysis pause")
+            # Kept as the flag's value so the alert-state panel can show
+            # whether this ran, when, and what it brought back.
+            import json as _json
+            await r.set(flag, _json.dumps({"ran_at": now.isoformat(), "restored": restored}))
             return restored
         except Exception:
             await r.delete(flag)  # let the next boot try again

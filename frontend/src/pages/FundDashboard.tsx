@@ -965,6 +965,39 @@ const FundDashboard: React.FC = () => {
                               watchers: sigState.recipients?.watchers_with_alerts_on ?? 0,
                               total: sigState.recipients?.on_watchlist_total ?? 0 })}
                       </p>
+                      {/* Why a card is or is not in the feed: the symbol's
+                          recommendations as stored, newest first. Shown raw —
+                          the status column is the answer. */}
+                      <div className="pt-1 mt-1 border-t border-gray-700">
+                        <p className="text-gray-500">{t("Recommendations (newest first):", "המלצות (החדשה ראשונה):")}</p>
+                        {(sigState.recommendations ?? []).length === 0 ? (
+                          <p className="text-gray-400">{t("none", "אין")}</p>
+                        ) : (
+                          <div dir="ltr" className="font-mono text-gray-300">
+                            {sigState.recommendations.map((r: any) => (
+                              <p key={r.id} className={["APPROVED", "PRESENTED_TO_USER", "ACTIONED"].includes(r.status) ? "text-green-400" : ""}>
+                                #{r.id} · {r.type} · {r.status} · {r.created_at?.slice(0, 10)} · {r.age_days}d
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-gray-500 mt-1">
+                          {t("Analyses paused: ", "ניתוחים מושהים: ")}
+                          <span dir="ltr" className="text-gray-300">
+                            {sigState.analyses_pause?.paused
+                              ? `${t("yes", "כן")} · ${String(sigState.analyses_pause.until ?? "").slice(0, 10)}`
+                              : t("no", "לא")}
+                          </span>
+                        </p>
+                        <p className="text-gray-500">
+                          {t("Pause-expiry restore: ", "שחזור המלצות שירדו בהשהיה: ")}
+                          <span dir="ltr" className="text-gray-300">
+                            {sigState.pause_expiry_restore
+                              ? JSON.stringify(sigState.pause_expiry_restore)
+                              : t("has not run", "לא רץ")}
+                          </span>
+                        </p>
+                      </div>
                     </>
                   )}
                 </div>
