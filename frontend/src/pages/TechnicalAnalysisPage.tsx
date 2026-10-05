@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   ReferenceLine, Cell,
 } from "recharts";
 import { useAppSelector } from "../store";
+import { useLocale } from "../i18n/t";
 import { recommendationsApi, ordersApi } from "../api/client";
 import {
   Recommendation, RecommendationType, TechnicalAnalysis,
@@ -220,6 +221,7 @@ const PriceLevels: React.FC<{ ta: TechnicalAnalysis }> = ({ ta }) => {
 const TechnicalAnalysisPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const locale = useLocale();
   const { user } = useAppSelector(s => s.auth);
   const isHe = user?.preferred_language === "he";
 
@@ -228,13 +230,57 @@ const TechnicalAnalysisPage: React.FC = () => {
   const [running, setRunning] = useState(false);
   const [tradeModal, setTradeModal] = useState<{ type: OrderType } | null>(null);
 
-  const runAnalysis = async (r: Recommendation) => {
+  // Refresh bookkeeping lives in refs, not state, because every path that
+  // refreshes — the 5-minute tick, returning to the tab, the bfcache restore —
+  // must read the CURRENT value, not the one captured when it was created.
+  const recRef = useRef<Recommendation | null>(null);
+  const inFlightSince = useRef<number | null>(null);
+  useEffect(() => { recRef.current = rec; }, [rec]);
+
+  const runAnalysis = async (r: Recommendation, attempt = 1) => {
+    inFlightSince.current = Date.now();
     setRunning(true);
     try {
       const result = await recommendationsApi.requestTechnicalAnalysis(r.id);
       setRec(prev => prev ? { ...prev, technical_analysis: result.technical_analysis } : prev);
-    } catch {}
+    } catch {
+      // Coming back to a phone that slept, the network is often not up yet
+      // for the first request. One retry a few seconds later instead of
+      // leaving the old snapshot on screen until the next 5-minute tick.
+      if (attempt === 1) {
+        inFlightSince.current = null;
+        setRunning(false);
+        window.setTimeout(() => {
+          const cur = recRef.current;
+          if (cur) runAnalysis(cur, 2);
+        }, 4000);
+        return;
+      }
+    }
+    inFlightSince.current = null;
     setRunning(false);
+  };
+
+  // Is a refresh both wanted and allowed right now?
+  //
+  // "Allowed" used to be `!running`. That locked the page permanently: open
+  // it, let the phone lock while a refresh is in flight, and iOS freezes the
+  // request — and with it the timer behind the 30-second timeout. `running`
+  // stayed true, and both the 5-minute tick and the return-to-tab handler
+  // checked it and did nothing, for as long as the page stayed open. A user
+  // who opened GOOGL at 13:00 and looked again at 17:00 saw the 13:00
+  // analysis. Now an in-flight request older than 45 seconds of wall-clock
+  // time is treated as dead, which a frozen timer cannot fake.
+  const refreshIfStale = (maxAgeMs: number) => {
+    const cur = recRef.current;
+    if (!cur) return;
+    const since = inFlightSince.current;
+    if (since !== null && Date.now() - since < 45_000) return;
+    const ta = cur.technical_analysis as TechnicalAnalysis | null;
+    const age = ta?.analysis_timestamp
+      ? Date.now() - new Date(ta.analysis_timestamp).getTime()
+      : Infinity;
+    if (age > maxAgeMs) runAnalysis(cur);
   };
 
   useEffect(() => {
@@ -259,42 +305,30 @@ const TechnicalAnalysisPage: React.FC = () => {
     }).catch(() => navigate("/recommendations"));
   }, [id]);
 
-  // Live view: while the page stays open, silently re-run the (free)
-  // technical analysis every 5 minutes so signal flips appear without a
-  // manual browser refresh.
+  // Live view: every 5 minutes while open. The age check makes the tick
+  // cheap when nothing is stale.
   useEffect(() => {
-    const timer = setInterval(() => {
-      setRec((current) => {
-        if (current && !running) runAnalysis(current);
-        return current;
-      });
-    }, 5 * 60 * 1000);
-    return () => clearInterval(timer);
-  }, [running]);
+    const timer = window.setInterval(() => refreshIfStale(4.5 * 60 * 1000), 5 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
-  // Wake-up refresh: mobile browsers freeze timers in background tabs, so a
-  // tab reopened hours/days later keeps showing its old snapshot until the
-  // next (frozen) tick. Refresh immediately when the tab becomes visible
-  // again and the snapshot is stale.
+  // Coming back. Mobile browsers freeze timers in background tabs, so the
+  // tick above cannot be relied on after the phone has slept; refresh the
+  // moment the page is visible again. pageshow covers the back-forward cache,
+  // where Safari restores a page without firing visibilitychange.
   useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState !== "visible") return;
-      setRec((current) => {
-        const ta = current?.technical_analysis as TechnicalAnalysis | null;
-        const stale = ta?.analysis_timestamp
-          ? Date.now() - new Date(ta.analysis_timestamp).getTime() > 5 * 60 * 1000
-          : true;
-        if (current && !running && stale) runAnalysis(current);
-        return current;
-      });
+    const onReturn = () => {
+      if (document.visibilityState === "visible") refreshIfStale(5 * 60 * 1000);
     };
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onReturn);
+    window.addEventListener("focus", onReturn);
+    window.addEventListener("pageshow", onReturn);
     return () => {
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onReturn);
+      window.removeEventListener("focus", onReturn);
+      window.removeEventListener("pageshow", onReturn);
     };
-  }, [running]);
+  }, []);
 
   const handleConfirmTrade = async (quantity: number, price: number) => {
     if (!rec || !tradeModal) return;
@@ -323,9 +357,26 @@ const TechnicalAnalysisPage: React.FC = () => {
   const ss      = SIG[signal] ?? SIG.WAIT;
   const score   = ta?.technical_score ?? 50;
   const entry   = rec.current_price_at_recommendation ?? ta?.current_price ?? 0;
-  const rrRatio = rec.target_price && rec.stop_loss && entry && Math.abs(entry - rec.stop_loss) > 0
-    ? (Math.abs(rec.target_price - entry) / Math.abs(entry - rec.stop_loss)).toFixed(1)
-    : null;
+  // "Price at analysis" is the price when THIS analysis ran, not when the
+  // recommendation was approved. The header showed GOOGL at $344.72 — its
+  // price on 1 September — beside an analysis stamped 5 October, and the
+  // risk/reward beside it (1.7×) was computed from that September price
+  // rather than from what a buyer pays today. Same correction as the feed
+  // card: measure from the analysed price, say "at the stop" when it is
+  // within 2%, and cap the figure where it stops meaning anything.
+  const analysedPrice = ta?.current_price ?? entry;
+  const rrRatio = (() => {
+    const tgt = rec.target_price, stp = rec.stop_loss, px = analysedPrice;
+    if (!tgt || !stp || !px) return null;
+    const hitTarget = isShort ? px <= tgt : px >= tgt;
+    const hitStop   = isShort ? px >= stp : px <= stp;
+    if (hitTarget) return "TARGET";
+    if (hitStop) return "STOP";
+    const risk = Math.abs(px - stp);
+    if (risk / px < 0.02) return "AT_STOP";
+    const r = Math.abs(tgt - px) / risk;
+    return r > 10 ? "10+" : r.toFixed(1);
+  })();
 
   const breakdown     = ta?.analysis_breakdown ?? [];
   const fib           = ta?.fibonacci_levels;
@@ -342,7 +393,20 @@ const TechnicalAnalysisPage: React.FC = () => {
           ← RESEARCH · {rec.symbol}
         </Link>
         <span className="text-xs text-gray-700">
-          {ta?.analysis_timestamp ? new Date(ta.analysis_timestamp).toLocaleString("en-US") : ""}
+          {ta?.analysis_timestamp ? (() => {
+            // The age, not only the clock time. A bare timestamp left the
+            // reader to notice that 1:05 PM was four hours ago; the age says
+            // it, and turns orange once the snapshot is older than a scan
+            // cycle.
+            const mins = Math.max(0, Math.round((Date.now() - new Date(ta.analysis_timestamp).getTime()) / 60000));
+            const age = mins < 1 ? "just now" : mins < 60 ? `${mins} min ago` : `${Math.round(mins / 60)} h ago`;
+            return (
+              <>
+                {new Date(ta.analysis_timestamp).toLocaleString(locale)}
+                <span className={mins > 35 ? "text-orange-400" : ""}> · {running ? "updating…" : age}</span>
+              </>
+            );
+          })() : ""}
         </span>
       </div>
 
@@ -370,7 +434,13 @@ const TechnicalAnalysisPage: React.FC = () => {
             {rrRatio && (
               <div className="text-center">
                 <p className="text-xs text-gray-600 tracking-widest">RISK / REWARD</p>
-                <p className="text-2xl font-bold text-white">{rrRatio}<span className="text-gray-500 text-base">×</span></p>
+                {rrRatio === "TARGET" || rrRatio === "STOP" || rrRatio === "AT_STOP" ? (
+                  <p className="text-sm font-bold text-orange-400 mt-1">
+                    {rrRatio === "TARGET" ? "TARGET HIT" : rrRatio === "STOP" ? "PAST STOP" : "AT STOP"}
+                  </p>
+                ) : (
+                  <p className="text-2xl font-bold text-white">{rrRatio}<span className="text-gray-500 text-base">×</span></p>
+                )}
               </div>
             )}
             <div className="text-center">
@@ -379,10 +449,10 @@ const TechnicalAnalysisPage: React.FC = () => {
                 {score.toFixed(0)}<span className="text-gray-600 text-sm">/100</span>
               </p>
             </div>
-            {entry > 0 && (
+            {analysedPrice > 0 && (
               <div className="text-center">
                 <p className="text-xs text-gray-600 tracking-widest">PRICE AT ANALYSIS</p>
-                <p className="text-2xl font-bold text-white">${entry.toFixed(2)}</p>
+                <p className="text-2xl font-bold text-white">${analysedPrice.toFixed(2)}</p>
               </div>
             )}
           </div>
