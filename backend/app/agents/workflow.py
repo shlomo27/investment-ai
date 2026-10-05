@@ -467,6 +467,13 @@ async def _notify_recommendation_removed(symbol: str, old_type: str, new_type: s
     elif nt in ("REJECTED", "REJECT"):
         headline = f"🔻 {symbol}: ההמלצה בוטלה"
         action = "המניה כבר לא עומדת בקריטריונים של הוועדה. שקול לבחון מחדש את הפוזיציה."
+    elif nt == "EXPIRED":
+        # Retired by age: nothing was decided about the stock, the system
+        # simply could not re-check it in time. Saying "cancelled" would imply
+        # a negative verdict that was never reached.
+        headline = f"⏳ {symbol}: ההמלצה הוסרה — לא עודכנה בזמן"
+        action = ("הניתוח ישן מדי ולא הצלחנו לאמת אותו מחדש. זו לא המלצה למכור — "
+                  "המניה תחזור לרשימה אם ניתוח חדש ימליץ עליה.")
     else:  # HOLD
         headline = f"🔻 {symbol}: כבר לא {old_label} — עברה ל'החזק'"
         action = "אין סיבה חדה למכור, אבל גם לא לקנות עוד. סביר להמשיך להחזיק ולעקוב."

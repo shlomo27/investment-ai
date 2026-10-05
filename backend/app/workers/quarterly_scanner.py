@@ -277,14 +277,15 @@ async def requeue_stale_live_recommendations() -> dict:
     try:
         async with AsyncSessionLocal() as db:
             rows = await db.execute(
-                select(Recommendation.id, Recommendation.symbol, Recommendation.created_at)
+                select(Recommendation.id, Recommendation.symbol, Recommendation.created_at,
+                       Recommendation.recommendation_type)
                 .where(
                     Recommendation.status.in_(live),
                     Recommendation.created_at < revalidate_before,
                 )
                 .order_by(Recommendation.created_at)
             )
-            stale = rows.all()
+            stale = [(i, s, c, t) for i, s, c, t in rows.all()]
             if not stale:
                 return {"requeued": 0, "expired": 0, "reason": "no stale live recommendations"}
 
@@ -293,22 +294,51 @@ async def requeue_stale_live_recommendations() -> dict:
                 select(Asset.symbol).where(Asset.symbol.in_(syms), Asset.in_universe == True)
             )).all()}
 
-            expired_ids = [
-                r[0] for r in stale
-                if (r[2] if r[2].tzinfo else r[2].replace(tzinfo=timezone.utc)) < expire_before
-            ]
+            # The fifteen-day grace runs from the first day re-validation was
+            # actually attempted, not from day 30 of the card's life. They are
+            # the same day while everything runs; they part company after a
+            # pause or a long outage, when every card already past 45 days
+            # would otherwise be retired on the first morning back — before the
+            # re-analysis queued in that same run had a chance to confirm any
+            # of them.
+            grace = timedelta(days=STALE_EXPIRE_DAYS - STALE_REVALIDATE_DAYS)
+            expiring = []
+            for rec_id, sym, created, rtype in stale:
+                key = f"{REDIS_PREFIX}revalidating_since:{rec_id}"
+                since_raw = await redis_client.get(key)
+                if since_raw is None:
+                    await redis_client.set(key, now.isoformat(), ex=TTL_SECONDS)
+                    continue
+                since = datetime.fromisoformat(
+                    since_raw.decode() if isinstance(since_raw, bytes) else since_raw)
+                created = created if created.tzinfo else created.replace(tzinfo=timezone.utc)
+                if created < expire_before and since <= now - grace:
+                    expiring.append((rec_id, sym, rtype))
+
             engine_down = await is_decision_engine_down()
             expired = 0
-            if expired_ids and not engine_down:
+            if expiring and not engine_down:
                 await db.execute(
                     _update(Recommendation)
-                    .where(Recommendation.id.in_(expired_ids))
+                    .where(Recommendation.id.in_([e[0] for e in expiring]))
                     .values(status=_RS.DISMISSED)
                 )
                 await db.commit()
-                expired = len(expired_ids)
+                expired = len(expiring)
                 logger.info(f"[quarterly_scanner] expired {expired} live recommendations "
-                            f"older than {STALE_EXPIRE_DAYS}d without re-validation")
+                            f"not re-validated within {grace.days}d of trying")
+                # A card that disappears without a word reads as a glitch — or
+                # worse, is not noticed at all by someone holding the stock.
+                # Holders and watchers hear about it the same way they would
+                # had a re-analysis withdrawn it.
+                from app.agents.workflow import _notify_recommendation_removed
+                for _id, sym, rtype in expiring:
+                    if rtype is not None:
+                        await _notify_recommendation_removed(
+                            sym, rtype.value, "EXPIRED",
+                            "הניתוח ישן מדי ולא הצלחנו לאמת אותו מחדש. זו לא המלצה למכור — "
+                            "המניה תחזור לרשימה אם ניתוח חדש ימליץ עליה.",
+                        )
 
         # Re-queue everything still live and stale — including what was just
         # expired, since a re-analysis is exactly how it earns its way back.
@@ -317,7 +347,7 @@ async def requeue_stale_live_recommendations() -> dict:
         requeued = 0
         capped = 0
         seen: set[str] = set()
-        for _id, sym, _created in reversed(stale):   # oldest consumed first
+        for _id, sym, _created, _type in reversed(stale):   # oldest consumed first
             if sym not in known or sym in seen:
                 continue
             seen.add(sym)
