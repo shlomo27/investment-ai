@@ -1550,6 +1550,68 @@ async def restore_actioned_recommendations() -> int:
         return 0
 
 
+async def restore_paused_expiries() -> int:
+    """
+    One-shot repair (startup): until abc1127 the daily stale sweep kept
+    retiring recommendations at 45 days while analyses were paused, so no
+    re-validation was ever attempted and the feed lost a card a day — GOOGL
+    among them. Restore those to APPROVED.
+
+    Identified as: DISMISSED, created 45–75 days ago (a pause lasts at most
+    30 days), and still the newest recommendation of any status for its
+    symbol — a superseded or rejected one always has a newer row, so only
+    expiry (or the user's own dismiss, which leaves no different trace)
+    matches. Runs once, guarded by a Redis flag, and only while paused: once
+    analyses resume, the sweep re-validates these properly.
+    """
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import select, update, exists
+    from sqlalchemy.orm import aliased
+    import redis.asyncio as aioredis
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.recommendation import Recommendation, RecommendationStatus
+    from app.workers.cost_guard import is_analysis_paused
+
+    flag = "investment_ai:maintenance:restore_paused_expiries:v1"
+    if not await is_analysis_paused():
+        return 0
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        if not await r.set(flag, "1", nx=True):
+            return 0
+        try:
+            now = datetime.now(timezone.utc)
+            newer = aliased(Recommendation)
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    update(Recommendation)
+                    .where(
+                        Recommendation.status == RecommendationStatus.DISMISSED,
+                        Recommendation.created_at < now - timedelta(days=45),
+                        Recommendation.created_at >= now - timedelta(days=75),
+                        ~exists().where(
+                            newer.symbol == Recommendation.symbol,
+                            newer.created_at > Recommendation.created_at,
+                        ),
+                    )
+                    .values(status=RecommendationStatus.APPROVED)
+                    .execution_options(synchronize_session=False)
+                )
+                await db.commit()
+                restored = result.rowcount or 0
+            logger.info(f"[maintenance] restored {restored} recommendations retired during the analysis pause")
+            return restored
+        except Exception:
+            await r.delete(flag)  # let the next boot try again
+            raise
+    except Exception as exc:
+        logger.error(f"[maintenance] restore_paused_expiries failed: {exc}")
+        return 0
+    finally:
+        await r.aclose()
+
+
 async def job_send_digests():
     """
     Every 30 min — for users in digest mode (EVERY_4_HOURS / DAILY), send one
