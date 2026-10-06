@@ -37,6 +37,9 @@ logger = logging.getLogger(__name__)
 # ─── Technical-signal alerting core ──────────────────────────────────────────
 
 ACTIONABLE = {"BUY_NOW", "STRONG_BUY", "SELL_NOW", "STRONG_SELL"}
+#: Signals that ask the reader to do the same thing. Moving within one of these
+#: changes strength, not direction, and is not alerted.
+SIDES = ({"BUY_NOW", "STRONG_BUY"}, {"SELL_NOW", "STRONG_SELL"})
 SIGNAL_COOLDOWN_SEC = 4 * 3600
 # A signal change must still hold on the next scan (scans run every 30 min)
 # before a holder is told about it.
@@ -145,6 +148,19 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
             else:
                 await r.delete(pending_key)
             await r.expire(last_signal_key, 7 * 24 * 3600)
+            return False
+
+        # A change of strength on the same side is not news. NVDA went SELL ->
+        # STRONG_SELL at 03:47 and back to SELL at 05:18 as its score moved
+        # between 27 and 35, and the holder got two alerts telling them, in
+        # effect, "sell" both times. The baseline follows the new strength
+        # silently, so a later move off this side still reports where it came
+        # from; only a change of direction reaches anyone.
+        same_side = any(prev_signal in side and signal in side for side in SIDES)
+        if same_side:
+            await r.delete(pending_key)
+            await r.set(last_signal_key, signal, ex=7 * 24 * 3600)
+            logger.info(f"[ta] {symbol}: {prev_signal} -> {signal} — same direction, no alert")
             return False
 
         downgraded = prev_signal in ACTIONABLE and signal not in ACTIONABLE
