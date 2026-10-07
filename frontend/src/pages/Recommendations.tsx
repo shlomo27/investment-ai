@@ -46,19 +46,33 @@ type SortKey =
   | "newest"
   | "symbol";
 
-/** Potential gain divided by potential loss. -1 when it cannot be computed. */
+/**
+ * The price both sorts measure from: today's, as the card does. Measuring
+ * from the price at recommendation ranked META by the 26% it had to go when
+ * it was recommended, after it had already reached its target — the sort and
+ * the card it was sorting disagreed about the same number.
+ */
+const basePriceOf = (r: Recommendation): number | null =>
+  typeof r.current_price === "number" ? r.current_price : r.current_price_at_recommendation ?? null;
+
+/** Potential gain divided by potential loss. -1 when it cannot be computed,
+ *  or once the price is past the target or the stop. */
 const riskRewardOf = (r: Recommendation): number => {
-  const entry = r.current_price_at_recommendation;
+  const entry = basePriceOf(r);
   if (!entry || !r.target_price || !r.stop_loss) return -1;
-  const risk = Math.abs(entry - r.stop_loss);
-  return risk > 0 ? Math.abs(r.target_price - entry) / risk : -1;
+  const short = isShort(r.recommendation_type);
+  const reward = short ? entry - r.target_price : r.target_price - entry;
+  const risk = short ? r.stop_loss - entry : entry - r.stop_loss;
+  return reward > 0 && risk > 0 ? reward / risk : -1;
 };
 
-/** Distance to the target, as a percentage of the entry price. */
+/** Distance to the target from today's price, in percent, in the
+ *  recommendation's direction. Negative once the target is passed. */
 const upsideOf = (r: Recommendation): number => {
-  const entry = r.current_price_at_recommendation;
+  const entry = basePriceOf(r);
   if (!entry || !r.target_price) return -Infinity;
-  return ((r.target_price - entry) / entry) * 100;
+  const pct = ((r.target_price - entry) / entry) * 100;
+  return isShort(r.recommendation_type) ? -pct : pct;
 };
 
 /**
