@@ -18,7 +18,7 @@ import ConfirmTradeModal from "../components/Trading/ConfirmTradeModal";
 import RecommendationCard from "../components/Recommendations/RecommendationCard";
 import SortMenu, { SortOption } from "../components/SortMenu";
 
-type DirectionFilter = "ALL" | "LONG" | "SHORT";
+type DirectionFilter = "ALL" | "LONG" | "SHORT" | "ENTRY";
 
 const recBadgeClass = (type: string) => {
   if (type === "STRONG_BUY") return "bg-green-500/20 text-green-300 border border-green-600/40";
@@ -38,7 +38,6 @@ const isShort = (type: RecommendationType) =>
 // ─── Sorting ─────────────────────────────────────────────────────────────────
 
 type SortKey =
-  | "entry"
   | "rr"
   | "confidence"
   | "upside"
@@ -72,13 +71,18 @@ const upsideOf = (r: Recommendation): number => {
  * one, and the card already says so.
  */
 /**
- * How ready a recommendation is to act on now, for the "enter now" sort.
+ * How ready a recommendation is to act on now, for the "enter now" filter.
  *   2  both analyses agree: a BUY at 60%+ confidence whose technical signal
  *      is BUY and whose stop has not broken — the card's "good entry" badge
  *   1  technical positive, but the recommendation is a weak buy (< 60%)
  *   0  everything else
- * Mirrors the card's badges, so the top of the list is exactly the cards that
- * say "good entry".
+ * Mirrors the card's badges, so the filter shows exactly the cards that say
+ * "good entry".
+ *
+ * A filter, not a sort. It was a sort first, and a sort keeps every card: a
+ * reader who chose "enter now" and scrolled reached AMZN at WAIT and fairly
+ * asked why it was there. The question is "which ones", so the answer is a
+ * list of only those, with its count on the button.
  */
 const entryRankOf = (r: Recommendation): number => {
   if (!isLong(r.recommendation_type) || r.level_hit) return 0;
@@ -90,7 +94,6 @@ const entryRankOf = (r: Recommendation): number => {
 };
 
 const SORTERS: Record<SortKey, (a: Recommendation, b: Recommendation) => number> = {
-  entry: (a, b) => entryRankOf(b) - entryRankOf(a) || b.confidence_score - a.confidence_score,
   // Confidence breaks ties: with a spread this narrow it is a tiebreaker,
   // not a ranking.
   rr: (a, b) => riskRewardOf(b) - riskRewardOf(a) || b.confidence_score - a.confidence_score,
@@ -111,8 +114,6 @@ const SORTERS: Record<SortKey, (a: Recommendation, b: Recommendation) => number>
 };
 
 const sortOptions = (t: TFunction): SortOption<SortKey>[] => [
-  { key: "entry", label: t("Enter now", "כניסה עכשיו"),
-    hint: t("Where both analyses agree right now come first", "המניות ששני הניתוחים מסכימים עליהן כרגע — ראשונות") },
   { key: "rr", label: t("Risk / reward", "סיכוי מול סיכון"),
     hint: t("Potential gain divided by potential loss", "הרווח הפוטנציאלי חלקי ההפסד הפוטנציאלי") },
   { key: "confidence", label: t("Confidence", "רמת ביטחון"),
@@ -130,7 +131,6 @@ const sortOptions = (t: TFunction): SortOption<SortKey>[] => [
 ];
 
 const SORT_SHORT: Record<SortKey, { he: string; en: string }> = {
-  entry: { he: "כניסה עכשיו", en: "Enter now" },
   rr: { he: "סיכוי/סיכון", en: "R/R" },
   confidence: { he: "ביטחון", en: "Conf" },
   upside: { he: "תשואה", en: "Upside" },
@@ -311,9 +311,11 @@ const Recommendations: React.FC = () => {
   const topSells = sorted.filter((r) => isShort(r.recommendation_type));
   const topPicks = [...topBuys, ...topSells].sort((a, b) => b.confidence_score - a.confidence_score);
 
+  const entryNow = topBuys.filter((r) => entryRankOf(r) === 2);
   const _byDir =
     dirFilter === "LONG" ? topBuys :
     dirFilter === "SHORT" ? topSells :
+    dirFilter === "ENTRY" ? entryNow :
     topPicks;
   const _q = symbolQuery.trim().toUpperCase();
   const _filtered = _q
@@ -835,7 +837,7 @@ const Recommendations: React.FC = () => {
               pushed the sort control off the edge entirely — reachable by
               nothing, since the page itself does not scroll sideways. */}
           <div className="flex flex-wrap items-center gap-2">
-            {(["ALL", "LONG", "SHORT"] as DirectionFilter[]).map((f) => (
+            {(["ALL", "LONG", "SHORT", "ENTRY"] as DirectionFilter[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setDirFilter(f)}
@@ -843,11 +845,15 @@ const Recommendations: React.FC = () => {
                   dirFilter === f
                     ? f === "LONG" ? "bg-green-900/40 text-green-300 border-green-700/40"
                     : f === "SHORT" ? "bg-red-900/40 text-red-300 border-red-700/40"
+                    : f === "ENTRY" ? "bg-emerald-800/60 text-emerald-200 border-emerald-500/60"
                     : "bg-blue-700 text-white border-blue-600"
                     : "bg-gray-900 text-gray-400 border-gray-800 hover:border-gray-600"
                 }`}
               >
-                {f === "LONG" ? `LONG (${longCount})` : f === "SHORT" ? `SHORT (${shortCount})` : `${t("All", "הכל")} (${topPicks.length})`}
+                {f === "LONG" ? `LONG (${longCount})`
+                  : f === "SHORT" ? `SHORT (${shortCount})`
+                  : f === "ENTRY" ? `🟢 ${t("Enter now", "כניסה עכשיו")} (${entryNow.length})`
+                  : `${t("All", "הכל")} (${topPicks.length})`}
               </button>
             ))}
             <div className="hidden md:block flex-1" />
@@ -878,6 +884,14 @@ const Recommendations: React.FC = () => {
                   <p>{t('No live recommendation for "{symbol}"', 'אין המלצה פעילה עבור "{symbol}"', { symbol: symbolQuery })}</p>
                   <p className="text-sm mt-1">
                     {t("Check the scan log — the analysis may have been rejected or superseded", "בדוק ביומן סריקה — ייתכן שהניתוח נדחה או הוחלף")}
+                  </p>
+                </>
+              ) : dirFilter === "ENTRY" ? (
+                <>
+                  <p>{t("No stock is at an entry point right now", "כרגע אין מניה בנקודת כניסה")}</p>
+                  <p className="text-sm mt-1">
+                    {t("This lists buy recommendations at 60%+ confidence whose technical signal is a buy too. Follow a stock to be alerted when it gets there.",
+                       "כאן מופיעות המלצות קנייה בביטחון 60% ומעלה, שגם הסיגנל הטכני שלהן הוא קנייה. עקוב אחרי מניה כדי לקבל התראה כשהיא מגיעה לשם.")}
                   </p>
                 </>
               ) : (

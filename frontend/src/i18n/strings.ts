@@ -898,6 +898,8 @@ export const UI_STRINGS: StringTable = {
     "Filter held back a sell (right = it then rose)": "Filtre : vente retenue (juste = l'action a ensuite monté)",
     "Enter now": "Entrer maintenant",
     "Where both analyses agree right now come first": "Les actions sur lesquelles les deux analyses s'accordent en ce moment d'abord",
+    "No stock is at an entry point right now": "Aucune action n'est à un point d'entrée pour le moment",
+    "This lists buy recommendations at 60%+ confidence whose technical signal is a buy too. Follow a stock to be alerted when it gets there.": "Cette liste montre les recommandations d'achat à 60 % de confiance ou plus dont le signal technique est aussi à l'achat. Suivez une action pour être alerté quand elle y arrive.",
   },
   "es": {
     "Signals": "Señales",
@@ -1770,6 +1772,8 @@ export const UI_STRINGS: StringTable = {
     "Filter held back a sell (right = it then rose)": "El filtro frenó una venta (acierto = después subió)",
     "Enter now": "Entrar ahora",
     "Where both analyses agree right now come first": "Primero las acciones en las que ambos análisis coinciden ahora",
+    "No stock is at an entry point right now": "Ahora mismo ninguna acción está en punto de entrada",
+    "This lists buy recommendations at 60%+ confidence whose technical signal is a buy too. Follow a stock to be alerted when it gets there.": "Aquí aparecen las recomendaciones de compra con 60 % o más de confianza cuya señal técnica también es de compra. Sigue una acción para recibir una alerta cuando llegue.",
   },
   "de": {
     "Signals": "Signale",
@@ -2642,6 +2646,8 @@ export const UI_STRINGS: StringTable = {
     "Filter held back a sell (right = it then rose)": "Filter hielt einen Verkauf zurück (richtig = sie stieg danach)",
     "Enter now": "Jetzt einsteigen",
     "Where both analyses agree right now come first": "Zuerst die Aktien, bei denen beide Analysen gerade übereinstimmen",
+    "No stock is at an entry point right now": "Derzeit ist keine Aktie an einem Einstiegspunkt",
+    "This lists buy recommendations at 60%+ confidence whose technical signal is a buy too. Follow a stock to be alerted when it gets there.": "Hier stehen Kaufempfehlungen mit mindestens 60 % Konfidenz, deren technisches Signal ebenfalls Kauf ist. Folgen Sie einer Aktie, um benachrichtigt zu werden, wenn es so weit ist.",
   },
   "it": {
     "Loading...": "Caricamento…",
@@ -3506,6 +3512,8 @@ export const UI_STRINGS: StringTable = {
     "Filter held back a sell (right = it then rose)": "Il filtro ha trattenuto una vendita (corretto = poi è salito)",
     "Enter now": "Entra ora",
     "Where both analyses agree right now come first": "Prima i titoli su cui entrambe le analisi concordano adesso",
+    "No stock is at an entry point right now": "Al momento nessun titolo è a un punto d'ingresso",
+    "This lists buy recommendations at 60%+ confidence whose technical signal is a buy too. Follow a stock to be alerted when it gets there.": "Qui compaiono le raccomandazioni di acquisto con fiducia del 60% o più il cui segnale tecnico è anch'esso d'acquisto. Segui un titolo per ricevere un avviso quando ci arriva.",
   },
   "pt-BR": {
     "Log out": "Sair",
@@ -4370,6 +4378,8 @@ export const UI_STRINGS: StringTable = {
     "Filter held back a sell (right = it then rose)": "O filtro segurou uma venda (acerto = depois subiu)",
     "Enter now": "Entrar agora",
     "Where both analyses agree right now come first": "Primeiro as ações em que as duas análises concordam agora",
+    "No stock is at an entry point right now": "No momento nenhuma ação está em ponto de entrada",
+    "This lists buy recommendations at 60%+ confidence whose technical signal is a buy too. Follow a stock to be alerted when it gets there.": "Aqui aparecem recomendações de compra com 60% ou mais de confiança cujo sinal técnico também é de compra. Siga uma ação para ser avisado quando ela chegar lá.",
   },
   "ar": {
     "Log out": "تسجيل الخروج",
@@ -5234,6 +5244,8 @@ export const UI_STRINGS: StringTable = {
     "Filter held back a sell (right = it then rose)": "المرشح أوقف بيعًا (صحيح = ارتفع السهم بعدها)",
     "Enter now": "ادخل الآن",
     "Where both analyses agree right now come first": "الأسهم التي يتفق عليها التحليلان الآن أولاً",
+    "No stock is at an entry point right now": "لا يوجد حاليًا سهم عند نقطة دخول",
+    "This lists buy recommendations at 60%+ confidence whose technical signal is a buy too. Follow a stock to be alerted when it gets there.": "تظهر هنا توصيات الشراء بثقة 60% أو أكثر والتي تكون إشارتها الفنية شراءً أيضًا. تابع سهمًا لتصلك تنبيه عندما يصل إلى ذلك.",
   },
   "ko": {
     "Log out": "로그아웃",
@@ -6098,6 +6110,8 @@ export const UI_STRINGS: StringTable = {
     "Filter held back a sell (right = it then rose)": "필터가 매도를 보류함(적중 = 이후 상승)",
     "Enter now": "지금 진입",
     "Where both analyses agree right now come first": "두 분석이 지금 일치하는 종목을 먼저",
+    "No stock is at an entry point right now": "지금은 진입 시점에 있는 종목이 없습니다",
+    "This lists buy recommendations at 60%+ confidence whose technical signal is a buy too. Follow a stock to be alerted when it gets there.": "신뢰도 60% 이상의 매수 추천 중 기술적 신호도 매수인 종목이 여기에 표시됩니다. 종목을 팔로우하면 그 시점에 알림을 받습니다.",
   },
   "ja": {
     "Log out": "ログアウト",
@@ -6962,5 +6976,7 @@ export const UI_STRINGS: StringTable = {
     "Filter held back a sell (right = it then rose)": "フィルターが売りを保留（的中 = その後上昇）",
     "Enter now": "今すぐエントリー",
     "Where both analyses agree right now come first": "2つの分析が今一致している銘柄を先に",
+    "No stock is at an entry point right now": "現在エントリーポイントにある銘柄はありません",
+    "This lists buy recommendations at 60%+ confidence whose technical signal is a buy too. Follow a stock to be alerted when it gets there.": "信頼度60%以上の買い推奨のうち、テクニカルシグナルも買いの銘柄がここに表示されます。銘柄をフォローすると、そこに達したときに通知が届きます。",
   },
 };
