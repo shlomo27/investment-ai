@@ -38,6 +38,7 @@ const isShort = (type: RecommendationType) =>
 // ─── Sorting ─────────────────────────────────────────────────────────────────
 
 type SortKey =
+  | "entry"
   | "rr"
   | "confidence"
   | "upside"
@@ -70,7 +71,24 @@ const upsideOf = (r: Recommendation): number => {
  * LAST in both directions instead — it is not a low risk, it is an unknown
  * one, and the card already says so.
  */
+/**
+ * How ready a recommendation is to act on now, for the "enter now" sort.
+ *   2  both analyses agree: a BUY at 60%+ confidence whose technical signal
+ *      is BUY and whose stop has not broken — the card's "good entry" badge
+ *   1  technical positive, but the recommendation is a weak buy (< 60%)
+ *   0  everything else
+ * Mirrors the card's badges, so the top of the list is exactly the cards that
+ * say "good entry".
+ */
+const entryRankOf = (r: Recommendation): number => {
+  if (!isLong(r.recommendation_type) || r.level_hit === "STOP") return 0;
+  const sig = (r.technical_analysis?.timing_signal || "").toUpperCase();
+  if (sig !== "BUY_NOW" && sig !== "STRONG_BUY") return 0;
+  return r.confidence_score >= 60 ? 2 : 1;
+};
+
 const SORTERS: Record<SortKey, (a: Recommendation, b: Recommendation) => number> = {
+  entry: (a, b) => entryRankOf(b) - entryRankOf(a) || b.confidence_score - a.confidence_score,
   // Confidence breaks ties: with a spread this narrow it is a tiebreaker,
   // not a ranking.
   rr: (a, b) => riskRewardOf(b) - riskRewardOf(a) || b.confidence_score - a.confidence_score,
@@ -91,6 +109,8 @@ const SORTERS: Record<SortKey, (a: Recommendation, b: Recommendation) => number>
 };
 
 const sortOptions = (t: TFunction): SortOption<SortKey>[] => [
+  { key: "entry", label: t("Enter now", "כניסה עכשיו"),
+    hint: t("Where both analyses agree right now come first", "המניות ששני הניתוחים מסכימים עליהן כרגע — ראשונות") },
   { key: "rr", label: t("Risk / reward", "סיכוי מול סיכון"),
     hint: t("Potential gain divided by potential loss", "הרווח הפוטנציאלי חלקי ההפסד הפוטנציאלי") },
   { key: "confidence", label: t("Confidence", "רמת ביטחון"),
@@ -108,6 +128,7 @@ const sortOptions = (t: TFunction): SortOption<SortKey>[] => [
 ];
 
 const SORT_SHORT: Record<SortKey, { he: string; en: string }> = {
+  entry: { he: "כניסה עכשיו", en: "Enter now" },
   rr: { he: "סיכוי/סיכון", en: "R/R" },
   confidence: { he: "ביטחון", en: "Conf" },
   upside: { he: "תשואה", en: "Upside" },

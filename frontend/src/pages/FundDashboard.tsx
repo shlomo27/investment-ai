@@ -1054,6 +1054,10 @@ const FundDashboard: React.FC = () => {
                           : k === "TA_WAIT" ? t("Wait (not scored)", "המתנה (לא נמדד)")
                           : k === "STOP" ? t("Stop broken", "סטופ נשבר")
                           : k === "TARGET" ? t("Target reached", "יעד הושג")
+                          // Shadow rows: scored for the trend filter, so
+                          // "right" here means the filter was right.
+                          : k === "GATED_BUY" ? t("Filter held back a buy (right = it then fell)", "המסנן חסם קנייה (צדק = המניה ירדה)")
+                          : k === "GATED_SELL" ? t("Filter held back a sell (right = it then rose)", "המסנן חסם מכירה (צדק = המניה עלתה)")
                           : k;
                         const cell = (s: any) => s?.measured
                           ? `${s.hit_rate_pct}% (${s.measured}) · ${s.avg_move_pct > 0 ? "+" : ""}${s.avg_move_pct}%`

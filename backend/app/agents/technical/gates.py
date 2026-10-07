@@ -65,11 +65,16 @@ def apply_signal_gates(
         downtrend = wyckoff == "MARKDOWN" or below_long
         uptrend = wyckoff == "MARKUP" or above_long
 
+        # `blocked` is the signal the gate replaced — what the shadow record
+        # (in_process_scheduler.job_daily_ta_scan) checks against the price
+        # later, to tell whether the gate was right to hold it back.
         if signal in BUY_SIDE and downtrend and not (ma_20 and price > ma_20):
+            gate = {"rule": "DOWNTREND", "blocked": signal,
+                    "confirm_above": round(ma_20, 2) if ma_20 else None}
             signal, strength = "WAIT", "WEAK"
-            gate = {"rule": "DOWNTREND", "confirm_above": round(ma_20, 2) if ma_20 else None}
         elif signal in SELL_SIDE and uptrend and not (ma_20 and price < ma_20):
+            gate = {"rule": "UPTREND", "blocked": signal,
+                    "confirm_below": round(ma_20, 2) if ma_20 else None}
             signal, strength = "WAIT", "WEAK"
-            gate = {"rule": "UPTREND", "confirm_below": round(ma_20, 2) if ma_20 else None}
 
     return signal, strength, gate

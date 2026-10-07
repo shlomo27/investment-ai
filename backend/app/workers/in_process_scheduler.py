@@ -669,9 +669,22 @@ async def job_daily_ta_scan():
                             else "sell" if sig in ("SELL_NOW", "STRONG_SELL")
                             else "wait")
                     tally[side] += 1
-                    rule = ((ta.get("signal_gate") or {}).get("rule") or "").lower()
+                    gate = ta.get("signal_gate") or {}
+                    rule = (gate.get("rule") or "").lower()
                     if rule:
                         tally[f"gate_{rule}"] = tally.get(f"gate_{rule}", 0) + 1
+                    # Shadow record: whether the trend gate is right can only
+                    # be judged by what the blocked stocks did next. Note the
+                    # blocked signal and the price, at most once a week per
+                    # stock and rule, and let the outcome job score it like
+                    # any alert. Nobody is notified.
+                    if gate.get("blocked") and ta.get("current_price"):
+                        if await redis_client.set(
+                            f"investment_ai:gated_shadow:{symbol}:{rule}", "1",
+                            ex=7 * 24 * 3600, nx=True,
+                        ):
+                            await record_alert_outcome(
+                                symbol, "GATED", gate["blocked"], ta["current_price"])
                 else:
                     errors += 1
                     logger.warning(f"[ta_scan] {symbol}: no analysis after retry")

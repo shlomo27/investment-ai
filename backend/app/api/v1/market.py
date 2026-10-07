@@ -1841,6 +1841,8 @@ async def alert_outcomes(
     def _group(o) -> str:
         if o.kind in ("STOP", "TARGET"):
             return o.kind
+        if o.kind == "GATED":
+            return "GATED_BUY" if _ALERT_DIRECTION.get(o.signal) == 1 else "GATED_SELL"
         d = _ALERT_DIRECTION.get(o.signal)
         side = "BUY" if d == 1 else "SELL" if d == -1 else "WAIT"
         return f"{o.kind}_{side}"
@@ -1854,6 +1856,11 @@ async def alert_outcomes(
         })
         g["alerts"] += 1
         d = _ALERT_DIRECTION.get(o.signal)
+        # A GATED row is a signal the trend gate held back. It is scored for
+        # the gate, not for the signal: holding back a buy was right if the
+        # price then fell.
+        if o.kind == "GATED" and d is not None:
+            d = -d
         for span, later in (("1w", o.price_1w), ("1m", o.price_1m)):
             if d is None or not later or not o.price_at_alert:
                 continue
