@@ -252,7 +252,8 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         async with AsyncSessionLocal() as db:
             live_rec = (await db.execute(
                 select(Recommendation.id, Recommendation.recommendation_type,
-                       Recommendation.confidence_score, Recommendation.stop_loss)
+                       Recommendation.confidence_score, Recommendation.stop_loss,
+                       Recommendation.target_price)
                 .where(
                     Recommendation.symbol == symbol,
                     Recommendation.status.in_([
@@ -266,9 +267,14 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
             )).first()
         live_buy = live_rec is not None and live_rec.recommendation_type in (
             RecommendationType.BUY, RecommendationType.STRONG_BUY)
-        stop_hit = False
+        stop_hit = past_target = False
         if live_rec is not None:
             stop_hit = bool(await r.get(f"{LEVEL_HIT_PREFIX}{live_rec.id}:STOP"))
+            # Past the target, by the close check or by the live price: the
+            # move the recommendation was about has happened, and a new buyer
+            # is not being offered it.
+            past_target = bool(await r.get(f"{LEVEL_HIT_PREFIX}{live_rec.id}:TARGET")) or bool(
+                live_buy and price and live_rec.target_price and price >= live_rec.target_price)
 
         # A BUY is not repeated lower down. BMRN was called a buy at $64, $60
         # and $56 on the way down: each bounce re-crossed the threshold and
@@ -291,7 +297,7 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         # is not an agreement anyone should be told to act on.
         weak_buy = live_buy and (live_rec.confidence_score or 0) < WEAK_BUY_BELOW
         entry_point = (signal in ("BUY_NOW", "STRONG_BUY") and live_buy
-                       and not weak_buy and not stop_hit)
+                       and not weak_buy and not stop_hit and not past_target)
 
         # Never claim agreement over a negative news read. The entry-point
         # message weighed the fundamental call against the technical signal and
@@ -380,9 +386,11 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         elif entry_point:
             title = (f"🟢 {symbol}{name_str}: נקודת הכניסה הגיעה — ההמלצה (קנייה) נפגשה עם סיגנל טכני חיובי. "
                      f"שני הצדדים מסכימים{price_str} (ציון טכני {score:.0f}/100). 👈 בדוק במערכת.")
-        elif signal in ("BUY_NOW", "STRONG_BUY") and live_buy and (weak_buy or stop_hit):
+        elif signal in ("BUY_NOW", "STRONG_BUY") and live_buy and (weak_buy or stop_hit or past_target):
             reason = (f"הסטופ לוס של ההמלצה כבר נשבר — היא אינה בתוקף עד ניתוח חדש"
                       if stop_hit else
+                      f"המניה כבר עברה את מחיר היעד (${live_rec.target_price:.2f}) — העלייה שההמלצה צפתה כבר קרתה"
+                      if past_target else
                       f"ההמלצה הכלכלית על המניה חלשה (ביטחון {live_rec.confidence_score:.0f}%)")
             title = (f"📈 {symbol}{name_str}: סיגנל טכני חיובי{price_str} (ציון {score:.0f}/100). "
                      f"שים לב: {reason}, ולכן זו אינה נקודת כניסה מאושרת. 👈 בדוק במערכת.")
@@ -469,7 +477,7 @@ async def notify_entry_state_on_follow(user_id: int, symbol: str) -> bool:
             exchange = asset.exchange.value if asset else "NASDAQ"
 
             live_buy = (await db.execute(
-                select(Recommendation.id).where(
+                select(Recommendation.id, Recommendation.target_price).where(
                     Recommendation.symbol == symbol,
                     Recommendation.recommendation_type.in_(
                         [RecommendationType.BUY, RecommendationType.STRONG_BUY]
@@ -499,6 +507,10 @@ async def notify_entry_state_on_follow(user_id: int, symbol: str) -> bool:
         signal = ta.get("timing_signal", "WAIT")
         if signal not in ACTIONABLE:
             return False
+        # Past its target: not an entry, whatever the technical says.
+        if (live_buy is not None and live_buy.target_price and ta.get("current_price")
+                and ta["current_price"] >= live_buy.target_price):
+            live_buy = None
 
         score = ta.get("technical_score", 0)
         price = ta.get("current_price")

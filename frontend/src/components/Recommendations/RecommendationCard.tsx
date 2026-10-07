@@ -62,7 +62,14 @@ const RecommendationCard: React.FC<Props> = ({
   // server, which also withholds entry-point alerts for these.
   const weakBuy = isBuy && rec.confidence_score < 60;
   const stopHit = rec.level_hit === "STOP";
-  const targetHit = rec.level_hit === "TARGET";
+  // Past the target by the live price too, not only once the daily close
+  // check has marked it: META sat at $723 against a $720 target still
+  // wearing "good entry", inviting a new buyer in after the move the
+  // recommendation was about had already happened.
+  const livePx = typeof rec.current_price === "number" ? rec.current_price : null;
+  const targetHit = rec.level_hit === "TARGET" || (
+    livePx !== null && !!rec.target_price && (isBuy ? livePx >= rec.target_price : isSell ? livePx <= rec.target_price : false)
+  );
 
   const recColor = isBuy ? "text-green-400 border-green-700/50" : isSell ? "text-red-400 border-red-700/50" : "text-yellow-400 border-yellow-700/50";
   const recBg = isBuy ? "bg-green-900/10" : isSell ? "bg-red-900/10" : "bg-yellow-900/10";
@@ -116,8 +123,9 @@ const RecommendationCard: React.FC<Props> = ({
             {(() => {
               // Entry readiness: combine the BUY thesis with the live technical
               // signal into one timing cue. Only for BUY recommendations, and
-              // not once the stop has broken: there is no thesis left to enter.
-              if (!isBuy || stopHit) return null;
+              // not once the stop has broken or the target has been reached:
+              // either way there is no thesis left to enter.
+              if (!isBuy || stopHit || targetHit) return null;
               const sig = (tech?.timing_signal || rec.technical_analysis?.timing_signal || "").toUpperCase();
               if (!sig) return null;
               if (sig === "BUY_NOW" || sig === "STRONG_BUY") {

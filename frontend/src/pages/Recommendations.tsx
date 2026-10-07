@@ -81,7 +81,9 @@ const upsideOf = (r: Recommendation): number => {
  * say "good entry".
  */
 const entryRankOf = (r: Recommendation): number => {
-  if (!isLong(r.recommendation_type) || r.level_hit === "STOP") return 0;
+  if (!isLong(r.recommendation_type) || r.level_hit) return 0;
+  // Past the target on the live price: the move is over, not an entry.
+  if (typeof r.current_price === "number" && r.target_price && r.current_price >= r.target_price) return 0;
   const sig = (r.technical_analysis?.timing_signal || "").toUpperCase();
   if (sig !== "BUY_NOW" && sig !== "STRONG_BUY") return 0;
   return r.confidence_score >= 60 ? 2 : 1;
