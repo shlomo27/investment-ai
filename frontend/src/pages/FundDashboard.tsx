@@ -104,6 +104,10 @@ const FundDashboard: React.FC = () => {
   const [schedState, setSchedState] = useState<any>(null);
   const [sigSymbol, setSigSymbol] = useState("");
   const [sigState, setSigState] = useState<any>(null);
+  const [outcomes, setOutcomes] = useState<any>(null);
+  useEffect(() => {
+    marketApi.getAlertOutcomes().then(setOutcomes).catch(() => { /* admin only */ });
+  }, []);
   const checkSignalState = async () => {
     if (!sigSymbol.trim()) return;
     try { setSigState(await marketApi.getSignalState(sigSymbol.trim().toUpperCase())); }
@@ -1000,6 +1004,64 @@ const FundDashboard: React.FC = () => {
                       </div>
                     </>
                   )}
+                </div>
+              )}
+            </div>
+
+            {/* Whether the alerts are any good, in numbers. One stock that
+                fell after a buy alert is an anecdote; this is the rate. */}
+            <div className="mt-4 pt-4 border-t border-gray-800">
+              <p className="text-sm text-gray-300">{t("Alert track record", "מעקב תוצאות התראות")}</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {t("Right = the price then moved the way the alert implied. Measured a week and a month after each alert.",
+                   "צדקה = המחיר זז אחר כך בכיוון שההתראה אמרה. נמדד שבוע וחודש אחרי כל התראה.")}
+              </p>
+              {!outcomes || !outcomes.total_alerts ? (
+                <p className="text-xs text-gray-500 mt-2">
+                  {t("No alerts recorded yet — results appear a week after the first alerts.",
+                     "עוד אין התראות רשומות — תוצאות יופיעו שבוע אחרי ההתראות הראשונות.")}
+                </p>
+              ) : (
+                <div className="mt-2 overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-gray-500">
+                        <th className="text-start font-normal py-1">{t("Alert", "התראה")}</th>
+                        <th className="font-normal">{t("Count", "כמות")}</th>
+                        <th className="font-normal">{t("Right after a week", "צדקה אחרי שבוע")}</th>
+                        <th className="font-normal">{t("Right after a month", "צדקה אחרי חודש")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(outcomes.groups as Record<string, any>).map(([k, g]) => {
+                        // Direct t() calls, not a table: the string scanner
+                        // only sees literals passed to t().
+                        const label =
+                          k === "ENTRY_BUY" ? t("Entry point (buy)", "נקודת כניסה (קנייה)")
+                          : k === "TA_BUY" ? t("Technical buy", "קנייה טכנית")
+                          : k === "TA_SELL" ? t("Technical sell", "מכירה טכנית")
+                          : k === "TA_WAIT" ? t("Wait (not scored)", "המתנה (לא נמדד)")
+                          : k === "STOP" ? t("Stop broken", "סטופ נשבר")
+                          : k === "TARGET" ? t("Target reached", "יעד הושג")
+                          : k;
+                        const cell = (s: any) => s?.measured
+                          ? `${s.hit_rate_pct}% (${s.measured}) · ${s.avg_move_pct > 0 ? "+" : ""}${s.avg_move_pct}%`
+                          : "—";
+                        return (
+                          <tr key={k} className="border-t border-gray-800 text-gray-300">
+                            <td className="py-1">{label}</td>
+                            <td className="text-center num">{g.alerts}</td>
+                            <td className="text-center num" dir="ltr">{cell(g["1w"])}</td>
+                            <td className="text-center num" dir="ltr">{cell(g["1m"])}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {t("Format: % right (alerts measured) · average move in the alert's direction.",
+                       "מבנה: אחוז צדקה (מספר התראות שנמדדו) · תזוזה ממוצעת בכיוון ההתראה.")}
+                  </p>
                 </div>
               )}
             </div>

@@ -74,6 +74,10 @@ class RecommendationResponse(BaseModel):
     #: is the only price that may be compared against a sibling listing's or
     #: used to size the risk someone is actually taking on.
     current_price: Optional[float] = None
+    #: "STOP" once the stop loss was broken at a close, "TARGET" once the
+    #: target was reached; None otherwise. Set by the daily level check, which
+    #: also alerts holders and watchers.
+    level_hit: Optional[str] = None
     created_at: datetime
     approved_at: Optional[datetime]
     presented_at: Optional[datetime]
@@ -344,6 +348,34 @@ def _apply_localized(payload: dict, rec: Recommendation, localized: dict) -> dic
     return payload
 
 
+async def _levels_hit(rec_ids: List[int]) -> Dict[int, str]:
+    """rec id -> "STOP" | "TARGET" for recommendations whose level was reached.
+    A broken stop wins over a reached target. Empty on any Redis failure: the
+    card then simply shows no badge."""
+    if not rec_ids:
+        return {}
+    from app.core.config import settings
+    from app.workers.in_process_scheduler import LEVEL_HIT_PREFIX
+    import redis.asyncio as aioredis
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        keys = [f"{LEVEL_HIT_PREFIX}{i}:{k}" for i in rec_ids for k in ("STOP", "TARGET")]
+        values = await r.mget(keys)
+    except Exception:
+        return {}
+    finally:
+        await r.aclose()
+    out: Dict[int, str] = {}
+    for i, rid in enumerate(rec_ids):
+        stop, target = values[2 * i], values[2 * i + 1]
+        if stop:
+            out[rid] = "STOP"
+        elif target:
+            out[rid] = "TARGET"
+    return out
+
+
 @router.get("/", response_model=List[RecommendationResponse])
 async def get_recommendations(
     status_filter: Optional[str] = None,
@@ -470,6 +502,7 @@ async def get_recommendations(
             detach(warm_translations(warm_jobs, target_lang))
 
     siblings_by_symbol = await siblings_for_many(db, list(assets.values()))
+    levels = await _levels_hit([r.id for r in recommendations])
 
     response = []
     for rec in recommendations:
@@ -487,6 +520,7 @@ async def get_recommendations(
             reasoning_locked=locked,
             sibling_listings=siblings_by_symbol.get(rec.symbol, []),
             current_price=asset.last_price if asset else None,
+            level_hit=levels.get(rec.id),
             **_apply_localized(
                 _lock_reasoning(rec, locked),
                 rec,
@@ -853,6 +887,7 @@ async def get_recommendation(
         reasoning_locked=reasoning_locked,
         sibling_listings=await siblings_for(db, rec.symbol),
         current_price=asset.last_price if asset else None,
+        level_hit=(await _levels_hit([rec.id])).get(rec.id),
         **_apply_localized(_lock_reasoning(rec, reasoning_locked), rec, localized),
         # Technical analysis stays visible: it is computed locally with no LLM
         # cost, and it is the part a free user needs to judge timing on the

@@ -40,6 +40,12 @@ ACTIONABLE = {"BUY_NOW", "STRONG_BUY", "SELL_NOW", "STRONG_SELL"}
 #: Signals that ask the reader to do the same thing. Moving within one of these
 #: changes strength, not direction, and is not alerted.
 SIDES = ({"BUY_NOW", "STRONG_BUY"}, {"SELL_NOW", "STRONG_SELL"})
+#: Below this committee confidence (0-100) a BUY is a "weak buy": shown as such,
+#: and never announced as an entry point.
+WEAK_BUY_BELOW = 60
+#: Redis key prefix marking that a recommendation's stop or target was reached:
+#: f"{LEVEL_HIT_PREFIX}{rec_id}:STOP" / ":TARGET".
+LEVEL_HIT_PREFIX = "investment_ai:rec_level_hit:"
 SIGNAL_COOLDOWN_SEC = 4 * 3600
 # A signal change must still hold on the next scan (scans run every 30 min)
 # before a holder is told about it.
@@ -241,27 +247,51 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
             )).scalar_one_or_none()
         name_str = f" ({company})" if company else ""
 
+        # The live recommendation, if any: its call, its confidence, its stop.
+        from app.db.models.recommendation import Recommendation, RecommendationStatus, RecommendationType
+        async with AsyncSessionLocal() as db:
+            live_rec = (await db.execute(
+                select(Recommendation.id, Recommendation.recommendation_type,
+                       Recommendation.confidence_score, Recommendation.stop_loss)
+                .where(
+                    Recommendation.symbol == symbol,
+                    Recommendation.status.in_([
+                        RecommendationStatus.APPROVED,
+                        RecommendationStatus.PRESENTED_TO_USER,
+                        RecommendationStatus.ACTIONED,
+                    ]),
+                )
+                .order_by(Recommendation.created_at.desc())
+                .limit(1)
+            )).first()
+        live_buy = live_rec is not None and live_rec.recommendation_type in (
+            RecommendationType.BUY, RecommendationType.STRONG_BUY)
+        stop_hit = False
+        if live_rec is not None:
+            stop_hit = bool(await r.get(f"{LEVEL_HIT_PREFIX}{live_rec.id}:STOP"))
+
+        # A BUY is not repeated lower down. BMRN was called a buy at $64, $60
+        # and $56 on the way down: each bounce re-crossed the threshold and
+        # re-sent the same message at a worse price, which reads as the system
+        # doubling down on a falling stock. Within 30 days of a BUY alert, a
+        # new one goes out only above the price of the last.
+        buy_alert_key = f"investment_ai:ta_last_buy_alert:{symbol}"
+        if signal in ("BUY_NOW", "STRONG_BUY") and price:
+            prev_buy = _load_pending(await r.get(buy_alert_key))
+            if prev_buy.get("price") and price < float(prev_buy["price"]):
+                logger.info(f"[ta] {symbol}: BUY at ${price:.2f} below last BUY alert "
+                            f"${float(prev_buy['price']):.2f} — not re-sent")
+                return False
+
         # Entry-point moment: the stock has a LIVE BUY recommendation
         # (fundamental YES) and its technical just turned positive. That's the
-        # "both agree" window a watcher waited for — frame it as such.
-        entry_point = False
-        if signal in ("BUY_NOW", "STRONG_BUY"):
-            from app.db.models.recommendation import Recommendation, RecommendationStatus, RecommendationType
-            async with AsyncSessionLocal() as db:
-                live_buy = (await db.execute(
-                    select(Recommendation.id).where(
-                        Recommendation.symbol == symbol,
-                        Recommendation.recommendation_type.in_(
-                            [RecommendationType.BUY, RecommendationType.STRONG_BUY]
-                        ),
-                        Recommendation.status.in_([
-                            RecommendationStatus.APPROVED,
-                            RecommendationStatus.PRESENTED_TO_USER,
-                            RecommendationStatus.ACTIONED,
-                        ]),
-                    ).limit(1)
-                )).first()
-            entry_point = live_buy is not None
+        # "both agree" window a watcher waited for — frame it as such. Only
+        # for a recommendation the committee was confident in, and only while
+        # its stop has not been broken: a 52%-confidence call or a broken stop
+        # is not an agreement anyone should be told to act on.
+        weak_buy = live_buy and (live_rec.confidence_score or 0) < WEAK_BUY_BELOW
+        entry_point = (signal in ("BUY_NOW", "STRONG_BUY") and live_buy
+                       and not weak_buy and not stop_hit)
 
         # Never claim agreement over a negative news read. The entry-point
         # message weighed the fundamental call against the technical signal and
@@ -319,12 +349,27 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
                 # plain instructions: buy means buy, sell means sell, and wait
                 # means do nothing. Say the last one out loud, because the
                 # reader will otherwise supply the scarier reading themselves.
+                #
+                # But "no action needed" was itself a promise the system could
+                # not keep: BMRN's holders were told it at $59 and then heard
+                # nothing as it fell to $56, because a sell signal never came
+                # and nothing watched the stop. What decides whether to keep
+                # holding is the stop, so say where it is.
+                gate_rule = ((ta or {}).get("signal_gate") or {}).get("rule")
+                why = (" המניה במגמת ירידה — הסיגנל יחזור לקנייה רק אחרי שהמחיר "
+                       "ייסגר מעל הממוצע ל-20 יום." if gate_rule == "DOWNTREND" else "")
+                stop = live_rec.stop_loss if live_rec is not None else None
+                if stop and price:
+                    gap = (price - stop) / price * 100
+                    hold_line = (f"מי שמחזיק — ההחלטה תלויה בסטופ לוס ${stop:.2f} "
+                                 f"({gap:.1f}% מתחת למחיר). אם המניה תיסגר מתחתיו, תישלח התראה.")
+                else:
+                    hold_line = "מי שמחזיק — זה הזמן לוודא שיש לך סטופ לוס."
                 title = (
                     f"⏸️ {symbol}{name_str}: הסיגנל הטכני נחלש — היה: {prev_label}, עכשיו: המתנה"
-                    f"{price_str} (ניתוח טכני, ציון {score:.0f}/100). "
-                    f"זה אינו סיגנל מכירה: מי שמחזיק — אין פעולה נדרשת. "
-                    f"מי שממתין לכניסה — כדאי להמתין. סיגנל מכירה יגיע בנפרד "
-                    f"ויאמר זאת במפורש."
+                    f"{price_str} (ניתוח טכני, ציון {score:.0f}/100).{why} "
+                    f"זה אינו סיגנל מכירה. {hold_line} "
+                    f"מי שממתין לכניסה — כדאי להמתין."
                 )
         elif entry_point and news_negative:
             title = (f"⚡ {symbol}{name_str}: הסיגנל הטכני חיובי וההמלצה עדיין קנייה, "
@@ -335,6 +380,12 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         elif entry_point:
             title = (f"🟢 {symbol}{name_str}: נקודת הכניסה הגיעה — ההמלצה (קנייה) נפגשה עם סיגנל טכני חיובי. "
                      f"שני הצדדים מסכימים{price_str} (ציון טכני {score:.0f}/100). 👈 בדוק במערכת.")
+        elif signal in ("BUY_NOW", "STRONG_BUY") and live_buy and (weak_buy or stop_hit):
+            reason = (f"הסטופ לוס של ההמלצה כבר נשבר — היא אינה בתוקף עד ניתוח חדש"
+                      if stop_hit else
+                      f"ההמלצה הכלכלית על המניה חלשה (ביטחון {live_rec.confidence_score:.0f}%)")
+            title = (f"📈 {symbol}{name_str}: סיגנל טכני חיובי{price_str} (ציון {score:.0f}/100). "
+                     f"שים לב: {reason}, ולכן זו אינה נקודת כניסה מאושרת. 👈 בדוק במערכת.")
         else:
             label = SIGNAL_LABELS.get(signal, signal)
             prev_str = f" (קודם: {SIGNAL_LABELS.get(prev_signal, 'המתנה')})" if prev_signal else ""
@@ -351,6 +402,13 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
                                      "current_price": price, "trigger": "TA_SCAN"},
                     db=db, notification_type=NotificationType.ALERT, title=title,
                 )
+        if signal in ("BUY_NOW", "STRONG_BUY") and price:
+            await r.set(buy_alert_key, _json.dumps({"price": price, "ts": _time.time()}),
+                        ex=30 * 24 * 3600)
+        await record_alert_outcome(
+            symbol, "ENTRY" if entry_point else "TA", signal, price,
+            recommendation_id=live_rec.id if live_rec is not None else None,
+        )
         logger.info(f"[ta_signal] {symbol}: {prev_signal or '—'}→{signal} (score={score}) → {len(user_ids)} users")
         return True
     finally:
@@ -421,8 +479,20 @@ async def notify_entry_state_on_follow(user_id: int, symbol: str) -> bool:
                         RecommendationStatus.PRESENTED_TO_USER,
                         RecommendationStatus.ACTIONED,
                     ]),
+                    # Same bar as the transition alert: a weak buy is never
+                    # announced as an entry point.
+                    Recommendation.confidence_score >= WEAK_BUY_BELOW,
                 ).limit(1)
             )).first()
+        if live_buy is not None:
+            r2 = aioredis.from_url(settings.REDIS_URL)
+            try:
+                if await r2.get(f"{LEVEL_HIT_PREFIX}{live_buy.id}:STOP"):
+                    live_buy = None  # stop broken: not an entry
+            except Exception:
+                pass
+            finally:
+                await r2.aclose()
 
         result = await run_technical_workflow(symbol=symbol, exchange=exchange)
         ta = (result or {}).get("technical_analysis") or {}
@@ -1207,6 +1277,240 @@ async def job_engine_health_check():
 
 # ─── Scheduler factory ────────────────────────────────────────────────────────
 
+async def record_alert_outcome(symbol: str, kind: str, signal: str, price,
+                               recommendation_id=None) -> None:
+    """Note an alert and its price, to be scored later. Never raises: losing
+    a measurement must not cost anyone the alert itself."""
+    if not price:
+        return
+    try:
+        from app.core.database import AsyncSessionLocal
+        from app.db.models.alert_outcome import AlertOutcome
+
+        async with AsyncSessionLocal() as db:
+            db.add(AlertOutcome(symbol=symbol, kind=kind, signal=signal,
+                                price_at_alert=float(price),
+                                recommendation_id=recommendation_id))
+            await db.commit()
+    except Exception as exc:
+        logger.warning(f"[outcomes] could not record {kind} alert for {symbol}: {exc}")
+
+
+async def _requeue_for_reanalysis(r, symbol: str) -> None:
+    """Put a symbol at the front of the analysis queue. While paid analyses
+    are paused it simply waits there."""
+    from app.workers.quarterly_scanner import REDIS_PREFIX, TTL_SECONDS
+
+    pending = {p.decode() if isinstance(p, bytes) else p
+               for p in await r.lrange(REDIS_PREFIX + "todo", 0, -1)}
+    await r.srem(REDIS_PREFIX + "done", symbol)
+    if symbol not in pending:
+        await r.rpush(REDIS_PREFIX + "todo", symbol)  # rpop'd first
+    if not await r.get(REDIS_PREFIX + "active"):
+        await r.set(REDIS_PREFIX + "active", "1", ex=TTL_SECONDS)
+
+
+async def check_recommendation_levels() -> dict:
+    """Tell holders and watchers when a live recommendation's stop or target
+    is reached at the close.
+
+    Every recommendation carries a stop loss and a target, and nothing watched
+    either. BMRN was bought on a recommendation with a $55 stop and fell from
+    $64.84 to $56.22 in a month; had it closed at $54, nobody would have been
+    told, and the card would still have shown a green BUY. A stop that nobody
+    watches is decoration.
+
+    Rules:
+      * Judged on the price after the close, not intraday: a stop is a
+        decision about where the stock settled, and a dip of a few minutes
+        that recovers by the bell must not tell anyone to sell.
+      * Once per recommendation per level. A stock that closes below its stop
+        and back above it is NOT announced as a buy again — that is the
+        whipsaw this replaces. The recommendation is queued for a fresh
+        analysis instead, and a new BUY, if it comes, comes from that.
+      * A broken stop marks the recommendation (Redis, see LEVEL_HIT_PREFIX):
+        the card shows it, and no "entry point" alert is sent for it again.
+    """
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import select
+    import redis.asyncio as aioredis
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.asset import Asset
+    from app.db.models.portfolio import Portfolio
+    from app.db.models.watchlist import Watchlist
+    from app.db.models.notification import NotificationType
+    from app.db.models.recommendation import (
+        Recommendation, RecommendationStatus, RecommendationType,
+    )
+    from app.services.notifications.service import NotificationService
+
+    LONG = (RecommendationType.BUY, RecommendationType.STRONG_BUY)
+    SHORT = (RecommendationType.SELL, RecommendationType.STRONG_SELL)
+    now = datetime.now(timezone.utc)
+    # The TA scan refreshes Asset.last_price every 30 minutes for every symbol
+    # with a live recommendation. A price older than this is not "the close".
+    fresh_after = now - timedelta(hours=3)
+
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(
+            select(Recommendation, Asset.last_price, Asset.updated_at, Asset.name)
+            .join(Asset, Asset.id == Recommendation.asset_id)
+            .where(
+                Recommendation.status.in_([
+                    RecommendationStatus.APPROVED,
+                    RecommendationStatus.PRESENTED_TO_USER,
+                    RecommendationStatus.ACTIONED,
+                ]),
+                Recommendation.recommendation_type.in_(LONG + SHORT),
+            )
+        )).all()
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    sent = checked = stale = 0
+    try:
+        for rec, price, updated_at, name in rows:
+            if not price:
+                continue
+            ts = updated_at if (updated_at is None or updated_at.tzinfo) else updated_at.replace(tzinfo=timezone.utc)
+            if ts is None or ts < fresh_after:
+                stale += 1
+                continue
+            checked += 1
+            long = rec.recommendation_type in LONG
+
+            hits = []
+            if rec.stop_loss and (price < rec.stop_loss if long else price > rec.stop_loss):
+                hits.append("STOP")
+            if rec.target_price and (price >= rec.target_price if long else price <= rec.target_price):
+                hits.append("TARGET")
+
+            for kind in hits:
+                key = f"{LEVEL_HIT_PREFIX}{rec.id}:{kind}"
+                if not await r.set(key, _json_dumps({"price": price, "at": now.isoformat()}),
+                                   ex=120 * 24 * 3600, nx=True):
+                    continue  # already announced for this recommendation
+
+                name_str = f" ({name})" if name else ""
+                since = rec.created_at.strftime("%d/%m") if rec.created_at else ""
+                entry = rec.current_price_at_recommendation
+                entry_str = f", כניסה ${entry:.2f}" if entry else ""
+                if kind == "STOP" and long:
+                    title = (f"🛑 {rec.symbol}{name_str}: נסגרה מתחת לסטופ לוס ${rec.stop_loss:.2f} "
+                             f"— מחיר סגירה ${price:.2f}. המלצת הקנייה (מ-{since}{entry_str}) כבר אינה בתוקף. "
+                             f"שקול לצאת מהפוזיציה. המניה תנותח מחדש, ואם תחזור להיות קנייה — תישלח המלצה חדשה.")
+                elif kind == "STOP":
+                    title = (f"🛑 {rec.symbol}{name_str}: נסגרה מעל הסטופ ${rec.stop_loss:.2f} של המלצת המכירה "
+                             f"— מחיר סגירה ${price:.2f}. ההמלצה (מ-{since}) כבר אינה בתוקף. "
+                             f"המניה תנותח מחדש.")
+                elif long:
+                    title = (f"🎯 {rec.symbol}{name_str}: הגיעה ליעד ${rec.target_price:.2f} "
+                             f"— מחיר סגירה ${price:.2f}. שקול לממש רווח, או לפחות להעלות את הסטופ לוס. "
+                             f"המניה תנותח מחדש כדי לקבוע אם יש לה יעד חדש.")
+                else:
+                    title = (f"🎯 {rec.symbol}{name_str}: ירדה ליעד ${rec.target_price:.2f} של המלצת המכירה "
+                             f"— מחיר סגירה ${price:.2f}. המניה תנותח מחדש.")
+
+                async with AsyncSessionLocal() as db:
+                    holders = {row[0] for row in (await db.execute(
+                        select(Portfolio.user_id).where(
+                            Portfolio.symbol == rec.symbol, Portfolio.quantity > 0).distinct()
+                    )).all()}
+                    watchers = {row[0] for row in (await db.execute(
+                        select(Watchlist.user_id).where(
+                            Watchlist.symbol == rec.symbol,
+                            Watchlist.alert_on_technical_signal == True,
+                        ).distinct()
+                    )).all()}
+                    svc = NotificationService()
+                    for uid in holders | watchers:
+                        await svc.send_notification(
+                            user_id=uid, recommendation_id=rec.id,
+                            internal_detail={"symbol": rec.symbol, "signal": kind,
+                                             "current_price": price,
+                                             "stop_loss": rec.stop_loss,
+                                             "target_price": rec.target_price,
+                                             "trigger": f"REC_{kind}"},
+                            db=db, notification_type=NotificationType.ALERT, title=title,
+                        )
+                sent += 1
+                await record_alert_outcome(rec.symbol, kind, f"{kind}_{'LONG' if long else 'SHORT'}",
+                                           price, recommendation_id=rec.id)
+                try:
+                    await _requeue_for_reanalysis(r, rec.symbol)
+                except Exception as exc:
+                    logger.warning(f"[levels] requeue {rec.symbol} failed: {exc}")
+                logger.info(f"[levels] {rec.symbol} #{rec.id} {kind} at ${price:.2f} "
+                            f"→ {len(holders | watchers)} users")
+    finally:
+        await r.aclose()
+
+    result = {"checked": checked, "stale_price": stale, "alerts": sent}
+    logger.info(f"[levels] done: {result}")
+    return result
+
+
+def _json_dumps(v) -> str:
+    import json
+    return json.dumps(v)
+
+
+async def job_check_recommendation_levels():
+    try:
+        await check_recommendation_levels()
+    except Exception as exc:
+        logger.error(f"[levels] failed: {exc}")
+
+
+async def evaluate_alert_outcomes() -> dict:
+    """Fill in the price a week and a month after each alert, from the
+    prices the TA scan keeps current."""
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import select, or_
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.alert_outcome import AlertOutcome
+    from app.db.models.asset import Asset
+
+    now = datetime.now(timezone.utc)
+    filled = 0
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(
+            select(AlertOutcome).where(
+                or_(
+                    (AlertOutcome.price_1w.is_(None)) & (AlertOutcome.created_at <= now - timedelta(days=7)),
+                    (AlertOutcome.price_1m.is_(None)) & (AlertOutcome.created_at <= now - timedelta(days=28)),
+                )
+            )
+        )).scalars().all()
+        if not rows:
+            return {"filled": 0}
+        prices = {s: p for s, p in (await db.execute(
+            select(Asset.symbol, Asset.last_price).where(
+                Asset.symbol.in_({o.symbol for o in rows}))
+        )).all() if p}
+        for o in rows:
+            p = prices.get(o.symbol)
+            if not p:
+                continue
+            created = o.created_at if o.created_at.tzinfo else o.created_at.replace(tzinfo=timezone.utc)
+            if o.price_1w is None and created <= now - timedelta(days=7):
+                o.price_1w = p
+                filled += 1
+            if o.price_1m is None and created <= now - timedelta(days=28):
+                o.price_1m = p
+                filled += 1
+        await db.commit()
+    return {"filled": filled}
+
+
+async def job_evaluate_alert_outcomes():
+    try:
+        result = await evaluate_alert_outcomes()
+        logger.info(f"[outcomes] {result}")
+    except Exception as exc:
+        logger.error(f"[outcomes] evaluation failed: {exc}")
+
+
 def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
     """
     Build an AsyncIOScheduler with a PostgreSQL job store.
@@ -1260,6 +1564,23 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         job_retire_stale_recommendations,
         CronTrigger(hour=6, minute=0, timezone="Asia/Jerusalem"),
         id="scheduled_stale_recommendations",
+        replace_existing=True,
+    )
+
+    # Stop / target check — weekdays 16:45 New York, after the close and after
+    # the TA scan has refreshed every live recommendation's price with it.
+    scheduler.add_job(
+        job_check_recommendation_levels,
+        CronTrigger(day_of_week="mon-fri", hour=16, minute=45, timezone="America/New_York"),
+        id="scheduled_rec_levels",
+        replace_existing=True,
+    )
+
+    # Alert outcomes — weekdays 17:15 New York, on the same closing prices.
+    scheduler.add_job(
+        job_evaluate_alert_outcomes,
+        CronTrigger(day_of_week="mon-fri", hour=17, minute=15, timezone="America/New_York"),
+        id="scheduled_alert_outcomes",
         replace_existing=True,
     )
 
@@ -1447,6 +1768,8 @@ KNOWN_JOB_IDS = {
     "scheduled_cik_backfill",
     "scheduled_beta_backfill",
     "scheduled_stale_recommendations",
+    "scheduled_rec_levels",
+    "scheduled_alert_outcomes",
     "scheduled_prescreener",
     "scheduled_weekly_full_scan",
     "scheduled_earnings_watcher",

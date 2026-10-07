@@ -32,6 +32,8 @@ REQUIRED_JOBS = {
     "scheduled_earnings_watcher",
     "scheduled_digest_sender",
     "scheduled_stale_recommendations",
+    "scheduled_rec_levels",
+    "scheduled_alert_outcomes",
 }
 
 

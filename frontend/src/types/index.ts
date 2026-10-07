@@ -427,6 +427,14 @@ export interface TechnicalAnalysis {
   fibonacci_levels?: FibonacciLevels;
   analysis_breakdown?: AnalysisModule[];
   timing_signal: TechnicalSignal;
+  /** The server rule that changed the raw signal, if any (gates.py). */
+  signal_gate?: {
+    rule: "HOLD_BUY" | "HOLD_SELL" | "DOWNTREND" | "UPTREND";
+    exit_below?: number;
+    exit_above?: number;
+    confirm_above?: number | null;
+    confirm_below?: number | null;
+  } | null;
   entry_price?: number;
   technical_score: number;
   signal_strength: "WEAK" | "MODERATE" | "STRONG";
@@ -501,6 +509,8 @@ export interface Recommendation {
    * be compared against them.
    */
   current_price?: number | null;
+  /** "STOP" once the stop broke at a close, "TARGET" once the target was reached. */
+  level_hit?: "STOP" | "TARGET" | null;
   asset_name?: string;
   sector?: string;
   risk_level?: string;

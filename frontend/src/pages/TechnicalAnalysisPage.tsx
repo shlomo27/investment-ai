@@ -5,7 +5,7 @@ import {
   ReferenceLine, Cell,
 } from "recharts";
 import { useAppSelector } from "../store";
-import { useLocale } from "../i18n/t";
+import { useLocale, useT } from "../i18n/t";
 import { recommendationsApi, ordersApi } from "../api/client";
 import {
   Recommendation, RecommendationType, TechnicalAnalysis,
@@ -222,6 +222,7 @@ const TechnicalAnalysisPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const locale = useLocale();
+  const t = useT();
   const { user } = useAppSelector(s => s.auth);
   const isHe = user?.preferred_language === "he";
 
@@ -362,8 +363,8 @@ const TechnicalAnalysisPage: React.FC = () => {
   // price on 1 September — beside an analysis stamped 5 October, and the
   // risk/reward beside it (1.7×) was computed from that September price
   // rather than from what a buyer pays today. Same correction as the feed
-  // card: measure from the analysed price, say "at the stop" when it is
-  // within 2%, and cap the figure where it stops meaning anything.
+  // card: measure from the analysed price, say "near the stop" when it is
+  // within 3%, and cap the figure where it stops meaning anything.
   const analysedPrice = ta?.current_price ?? entry;
   const rrRatio = (() => {
     const tgt = rec.target_price, stp = rec.stop_loss, px = analysedPrice;
@@ -373,7 +374,7 @@ const TechnicalAnalysisPage: React.FC = () => {
     if (hitTarget) return "TARGET";
     if (hitStop) return "STOP";
     const risk = Math.abs(px - stp);
-    if (risk / px < 0.02) return "AT_STOP";
+    if (risk / px < 0.03) return "AT_STOP";
     const r = Math.abs(tgt - px) / risk;
     return r > 10 ? "10+" : r.toFixed(1);
   })();
@@ -436,7 +437,7 @@ const TechnicalAnalysisPage: React.FC = () => {
                 <p className="text-xs text-gray-600 tracking-widest">RISK / REWARD</p>
                 {rrRatio === "TARGET" || rrRatio === "STOP" || rrRatio === "AT_STOP" ? (
                   <p className="text-sm font-bold text-orange-400 mt-1">
-                    {rrRatio === "TARGET" ? "TARGET HIT" : rrRatio === "STOP" ? "PAST STOP" : "AT STOP"}
+                    {rrRatio === "TARGET" ? "TARGET HIT" : rrRatio === "STOP" ? "PAST STOP" : "NEAR STOP"}
                   </p>
                 ) : (
                   <p className="text-2xl font-bold text-white">{rrRatio}<span className="text-gray-500 text-base">×</span></p>
@@ -463,6 +464,37 @@ const TechnicalAnalysisPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Why the signal is not what the score alone would say. The score
+          and the label can disagree on purpose (gates.py on the server):
+          without this line a reader sees "60/100 · WAIT" and assumes a bug. */}
+      {ta?.signal_gate && (() => {
+        const g = ta.signal_gate;
+        const text =
+          g.rule === "DOWNTREND"
+            ? t("The stock is in a downtrend, so oversold readings alone do not make a buy. The signal turns to buy once the price closes above its 20-day average{level}.",
+                "המניה במגמת ירידה, ולכן \"ירדה יותר מדי\" לבד אינו סיבה לקנות. הסיגנל יחזור לקנייה אחרי שהמחיר ייסגר מעל הממוצע ל-20 יום{level}.",
+                { level: g.confirm_above ? ` ($${g.confirm_above.toFixed(2)})` : "" })
+          : g.rule === "UPTREND"
+            ? t("The stock is in an uptrend, so overbought readings alone do not make a sell. The signal turns to sell once the price closes below its 20-day average{level}.",
+                "המניה במגמת עלייה, ולכן \"עלתה יותר מדי\" לבד אינו סיבה למכור. הסיגנל יעבור למכירה אחרי שהמחיר ייסגר מתחת לממוצע ל-20 יום{level}.",
+                { level: g.confirm_below ? ` ($${g.confirm_below.toFixed(2)})` : "" })
+          : g.rule === "HOLD_BUY"
+            ? t("The buy signal stays until the score falls below {n}, so small moves around the threshold do not flip it.",
+                "סיגנל הקנייה נשמר עד שהציון יורד מתחת ל-{n}, כדי שתזוזות קטנות סביב הסף לא יהפכו אותו.",
+                { n: g.exit_below ?? 55 })
+          : g.rule === "HOLD_SELL"
+            ? t("The sell signal stays until the score rises above {n}, so small moves around the threshold do not flip it.",
+                "סיגנל המכירה נשמר עד שהציון עולה מעל {n}, כדי שתזוזות קטנות סביב הסף לא יהפכו אותו.",
+                { n: g.exit_above ?? 45 })
+          : null;
+        if (!text) return null;
+        return (
+          <div className="bg-orange-950/20 border border-orange-800/30 rounded-xl px-5 py-3 text-xs text-orange-300 leading-relaxed font-sans" dir="auto">
+            {text}
+          </div>
+        );
+      })()}
 
       {running && (
         <div className="bg-blue-950/30 border border-blue-800/30 rounded-xl px-5 py-3 text-xs text-blue-400 tracking-wider flex items-center gap-3">

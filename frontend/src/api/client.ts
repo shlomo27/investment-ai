@@ -650,6 +650,12 @@ export const marketApi = {
     return response.data;
   },
 
+  /** How often each kind of alert was right, a week and a month later. */
+  getAlertOutcomes: async (): Promise<any> => {
+    const response = await api.get("/market/diagnostics/alert-outcomes");
+    return response.data;
+  },
+
   getSignalState: async (symbol: string): Promise<any> => {
     const response = await api.get(`/market/diagnostics/signal-state/${symbol}`);
     return response.data;

@@ -1805,6 +1805,87 @@ async def signal_state(
     }
 
 
+#: Which way the price must move after an alert for the alert to have been
+#: right. +1: up. -1: down. Absent: the alert is not a call on direction
+#: (a WAIT), and is reported but not scored.
+_ALERT_DIRECTION = {
+    "BUY_NOW": 1, "STRONG_BUY": 1,
+    "SELL_NOW": -1, "STRONG_SELL": -1,
+    # Leaving a long at its stop or target was right if it then fell.
+    "STOP_LONG": -1, "TARGET_LONG": -1,
+    "STOP_SHORT": 1, "TARGET_SHORT": 1,
+}
+
+
+@router.get("/diagnostics/alert-outcomes")
+async def alert_outcomes(
+    current_user: User = Depends(get_current_active_user),
+):
+    """How often each kind of alert was right, a week and a month later.
+
+    "Right" means the price then moved the way the alert implied: up after a
+    buy, down after a sell or after leaving at a stop. The average move is in
+    the alert's direction, so a positive number is good for every kind.
+    """
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.alert_outcome import AlertOutcome
+    from sqlalchemy import select as _sel
+
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(
+            _sel(AlertOutcome).order_by(AlertOutcome.created_at.desc())
+        )).scalars().all()
+
+    def _group(o) -> str:
+        if o.kind in ("STOP", "TARGET"):
+            return o.kind
+        d = _ALERT_DIRECTION.get(o.signal)
+        side = "BUY" if d == 1 else "SELL" if d == -1 else "WAIT"
+        return f"{o.kind}_{side}"
+
+    groups: Dict[str, Dict[str, Any]] = {}
+    for o in rows:
+        g = groups.setdefault(_group(o), {
+            "alerts": 0,
+            "1w": {"measured": 0, "right": 0, "move_sum": 0.0},
+            "1m": {"measured": 0, "right": 0, "move_sum": 0.0},
+        })
+        g["alerts"] += 1
+        d = _ALERT_DIRECTION.get(o.signal)
+        for span, later in (("1w", o.price_1w), ("1m", o.price_1m)):
+            if d is None or not later or not o.price_at_alert:
+                continue
+            move = (later - o.price_at_alert) / o.price_at_alert * 100 * d
+            g[span]["measured"] += 1
+            g[span]["right"] += 1 if move > 0 else 0
+            g[span]["move_sum"] += move
+
+    for g in groups.values():
+        for span in ("1w", "1m"):
+            s = g[span]
+            n = s.pop("measured")
+            right = s.pop("right")
+            total = s.pop("move_sum")
+            s.update({
+                "measured": n,
+                "hit_rate_pct": round(right / n * 100, 1) if n else None,
+                "avg_move_pct": round(total / n, 2) if n else None,
+            })
+
+    return {
+        "groups": groups,
+        "total_alerts": len(rows),
+        "recent": [
+            {"symbol": o.symbol, "kind": o.kind, "signal": o.signal,
+             "price": o.price_at_alert, "price_1w": o.price_1w, "price_1m": o.price_1m,
+             "at": o.created_at.isoformat() if o.created_at else None}
+            for o in rows[:15]
+        ],
+    }
+
+
 @router.get("/analyses/pause")
 async def get_analyses_pause(
     current_user: User = Depends(get_current_active_user),

@@ -56,6 +56,13 @@ const RecommendationCard: React.FC<Props> = ({
 
   const isBuy = rec.recommendation_type.includes("BUY");
   const isSell = rec.recommendation_type.includes("SELL");
+  // Below 60% the committee itself is unconvinced — BMRN was approved at 52%
+  // "with low confidence and clear limitations" and still wore the same green
+  // BUY and "good entry" badge as a 75% call. Matches WEAK_BUY_BELOW on the
+  // server, which also withholds entry-point alerts for these.
+  const weakBuy = isBuy && rec.confidence_score < 60;
+  const stopHit = rec.level_hit === "STOP";
+  const targetHit = rec.level_hit === "TARGET";
 
   const recColor = isBuy ? "text-green-400 border-green-700/50" : isSell ? "text-red-400 border-red-700/50" : "text-yellow-400 border-yellow-700/50";
   const recBg = isBuy ? "bg-green-900/10" : isSell ? "bg-red-900/10" : "bg-yellow-900/10";
@@ -73,19 +80,56 @@ const RecommendationCard: React.FC<Props> = ({
           <div>
             <div className="flex items-center gap-3 mb-1">
               <span className="text-2xl font-bold">{rec.symbol}</span>
-              <span className={`text-sm font-bold px-2 py-0.5 rounded ${isBuy ? "bg-green-800/50" : isSell ? "bg-red-800/50" : "bg-yellow-800/50"} ${recColor.split(" ")[0]}`}>
-                {rec.recommendation_type}
-              </span>
+              {weakBuy ? (
+                <span className="text-sm font-bold px-2 py-0.5 rounded bg-amber-800/40 text-amber-300">
+                  {t("Weak buy", "קנייה חלשה")}
+                </span>
+              ) : (
+                <span className={`text-sm font-bold px-2 py-0.5 rounded ${isBuy ? "bg-green-800/50" : isSell ? "bg-red-800/50" : "bg-yellow-800/50"} ${recColor.split(" ")[0]}`}>
+                  {rec.recommendation_type}
+                </span>
+              )}
             </div>
             {rec.asset_name && <p className="text-sm text-gray-400">{rec.asset_name}</p>}
+            {weakBuy && (
+              <p className="mt-1 text-[11px] text-amber-300/90 leading-relaxed">
+                {t(
+                  "The analysis leans positive, but not convincingly ({confidence}% confidence). Suited only to a small position, or to waiting for it to strengthen.",
+                  "הניתוח מצא יותר יתרונות מחסרונות, אבל לא באופן משכנע (ביטחון {confidence}%). מתאים רק לפוזיציה קטנה, או להמתנה לחיזוק.",
+                  { confidence: rec.confidence_score.toFixed(0) }
+                )}
+              </p>
+            )}
+            {/* A level reached at a close, from the server's daily check — the
+                same event that alerted holders and watchers. Shown first:
+                once the stop has broken, nothing else on the card is current. */}
+            {stopHit && (
+              <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-300 border border-red-600/50">
+                🛑 {t("Stop broken — not valid until re-analysed", "הסטופ נשבר — ההמלצה לא בתוקף עד ניתוח חדש")}
+              </span>
+            )}
+            {targetHit && !stopHit && (
+              <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-green-900/50 text-green-300 border border-green-600/50">
+                🎯 {t("Target reached — consider taking profit", "היעד הושג — שקול לממש רווח")}
+              </span>
+            )}
             {(() => {
               // Entry readiness: combine the BUY thesis with the live technical
-              // signal into one timing cue. Only for BUY recommendations.
-              if (!isBuy) return null;
+              // signal into one timing cue. Only for BUY recommendations, and
+              // not once the stop has broken: there is no thesis left to enter.
+              if (!isBuy || stopHit) return null;
               const sig = (tech?.timing_signal || rec.technical_analysis?.timing_signal || "").toUpperCase();
               if (!sig) return null;
               if (sig === "BUY_NOW" || sig === "STRONG_BUY") {
+                // A weak buy with a positive technical is not "both sides
+                // agree" — the fundamental side barely agrees with itself.
+                if (weakBuy) {
+                  return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-gray-800/80 text-gray-300 border border-gray-700">📈 {t("Technical positive", "הסיגנל הטכני חיובי")}</span>;
+                }
                 return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-green-900/50 text-green-300 border border-green-600/50">🟢 {t("Good entry", "נקודת כניסה טובה")}</span>;
+              }
+              if (sig === "WAIT" && (tech?.signal_gate || rec.technical_analysis?.signal_gate)?.rule === "DOWNTREND") {
+                return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-orange-900/40 text-orange-300 border border-orange-700/40">↘ {t("Downtrend — wait for it to turn", "מגמת ירידה — המתן להתהפכות")}</span>;
               }
               // WAIT and SELL are NOT the same state and must not share a
               // badge. WAIT means the technical has not confirmed entry yet.
@@ -406,12 +450,17 @@ const RecommendationCard: React.FC<Props> = ({
               // number this close to zero produces a figure whose size comes
               // from the denominator, not from the opportunity, and no amount
               // of colour makes that honest.
-              if (downPct < 2) {
+              //
+              // 3%, not 2%: BMRN at $56.22 against a $55.00 stop was 2.2% away
+              // and read "1 : 10+" in green — the best-looking ratio on the
+              // screen, on a stock one bad day from being stopped out after a
+              // 13% fall.
+              if (downPct < 3) {
                 return (
                   <>
                     <p className="text-xs text-gray-400">{t("Risk / reward", "סיכוי מול סיכון")}</p>
                     <p className="font-bold text-orange-400 text-xs leading-tight">
-                      {t("At the stop", "צמוד לסטופ")}
+                      {t("Near the stop", "קרוב לסטופ")}
                     </p>
                     <p className="text-[10px] text-gray-500 num" dir="ltr">
                       −{downPct.toFixed(1)}%

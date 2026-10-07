@@ -54,6 +54,21 @@ class TechnicalAnalystAgent:
             logger.warning("Alpaca bars fallback failed", symbol=symbol, error=str(exc))
             return None
 
+    async def _confirmed_signal(self, symbol: str) -> Optional[str]:
+        """The last signal the alerting core confirmed for this symbol — what
+        hysteresis holds on to. None when unknown or Redis is unreachable."""
+        import redis.asyncio as aioredis
+        from app.core.config import settings
+
+        r = aioredis.from_url(settings.REDIS_URL)
+        try:
+            v = await r.get(f"investment_ai:ta_last_signal:{symbol}")
+            return v.decode() if isinstance(v, bytes) else v
+        except Exception:
+            return None
+        finally:
+            await r.aclose()
+
     async def analyze(self, symbol: str, exchange: str, period: str = "1y", fallback_price: float | None = None) -> Dict[str, Any]:
         """
         Main analysis method. Fetches historical data and computes all technical indicators.
@@ -178,6 +193,22 @@ class TechnicalAnalystAgent:
             elif _s <= 40: signal["signal"], signal["strength"] = "SELL_NOW",    "MODERATE"
             else:          signal["signal"], signal["strength"] = "WAIT",        "WEAK"
 
+            # Hysteresis and the trend gate (see gates.py). Applied here, in
+            # the analysis itself, so the research page and the alerts read
+            # the same signal.
+            from app.agents.technical.gates import apply_signal_gates
+            signal_gate = None
+            try:
+                signal["signal"], signal["strength"], signal_gate = apply_signal_gates(
+                    score=_s, signal=signal["signal"], strength=signal["strength"],
+                    price=float(df["Close"].iloc[-1]),
+                    ma_20=indicators.get("ma_20"), ma_50=indicators.get("ma_50"),
+                    ma_200=indicators.get("ma_200"), wyckoff=wyckoff,
+                    prev_confirmed=await self._confirmed_signal(symbol),
+                )
+            except Exception as e:
+                logger.warning("signal gates failed — raw signal kept", symbol=symbol, error=str(e))
+
             result = {
                 "symbol": symbol,
                 "exchange": exchange,
@@ -229,7 +260,10 @@ class TechnicalAnalystAgent:
                 "dividend_amount": exdiv.get("dividend_amount"),
                 # Overall Signal
                 "timing_signal": signal["signal"],   # BUY_NOW | SELL_NOW | WAIT | STRONG_BUY | STRONG_SELL
-                "entry_price": signal.get("entry_price"),
+                #: The rule that changed the raw signal, if any — HOLD_BUY,
+                #: HOLD_SELL, DOWNTREND or UPTREND (see gates.py).
+                "signal_gate": signal_gate,
+                "entry_price": signal.get("entry_price") if signal["signal"] != "WAIT" else None,
                 "technical_score": signal["score"],  # 0-100
                 "signal_strength": signal["strength"],  # WEAK | MODERATE | STRONG
                 "signal_reasoning": signal["reasoning"],
