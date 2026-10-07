@@ -79,19 +79,41 @@ class NotificationService:
                 else EXTERNAL_MESSAGE_EN
             )
 
-            notification = Notification(
-                user_id=user_id,
-                recommendation_id=recommendation_id,
-                notification_type=notification_type,
-                external_message=external_msg,
-                internal_detail=internal_detail,
-                title=title or ("עדכון השקעות" if user.preferred_language == "he" else "Investment Update"),
-                channels_sent=[],
-                is_read=False,
-                sent_at=datetime.now(timezone.utc),
-            )
+            full_title = title or ("עדכון השקעות" if user.preferred_language == "he" else "Investment Update")
+
+            def _row(t: str) -> Notification:
+                return Notification(
+                    user_id=user_id,
+                    recommendation_id=recommendation_id,
+                    notification_type=notification_type,
+                    external_message=external_msg,
+                    internal_detail=internal_detail,
+                    title=t,
+                    channels_sent=[],
+                    is_read=False,
+                    sent_at=datetime.now(timezone.utc),
+                )
+
+            notification = _row(full_title)
             db.add(notification)
-            await db.flush()
+            try:
+                await db.flush()
+            except Exception as exc:
+                # The inbox row must never be what stops an alert. A title
+                # longer than the column (String(255) until migration 019)
+                # failed this flush, the whole send was abandoned, and the
+                # alert reached neither the inbox nor Telegram. Store a
+                # shortened title and carry on; Telegram still gets the
+                # full text below.
+                logger.warning("Inbox insert failed — retrying with a short title",
+                               user_id=user_id, error=str(exc)[:200])
+                await db.rollback()
+                # A rollback expires every loaded object, and reading an
+                # expired attribute in an async session raises — reload.
+                user = (await db.execute(select(User).where(User.id == user_id))).scalar_one()
+                notification = _row(full_title[:240] + "…")
+                db.add(notification)
+                await db.flush()
 
             channels_sent: List[str] = []
 
@@ -154,7 +176,7 @@ class NotificationService:
             # (email/push/SMS stay generic by design).
             if realtime and personal_chat:
                 sent_personal = await tg.send_message(
-                    f"🤖 <b>InvestAI</b>\n\n{notification.title}\n\n"
+                    f"🤖 <b>InvestAI</b>\n\n{full_title}\n\n"
                     f"⚠️ כנס למערכת לצפייה בניתוח המלא",
                     chat_id=personal_chat,
                 )
@@ -170,7 +192,7 @@ class NotificationService:
             dedup_key = (
                 recommendation_id
                 if recommendation_id is not None
-                else f"{symbol}|{notification.title}"
+                else f"{symbol}|{full_title}"
             )
             if dedup_key not in self._telegram_sent_rec_ids:
                 self._telegram_sent_rec_ids.add(dedup_key)
@@ -211,7 +233,7 @@ class NotificationService:
                             else "עדכון חדשות"
                         )
                         tg_success = await tg.send_message(
-                            f"🤖 <b>InvestAI — {header}</b>\n\n{notification.title}\n\n"
+                            f"🤖 <b>InvestAI — {header}</b>\n\n{full_title}\n\n"
                             f"⚠️ כנס למערכת לצפייה בניתוח המלא"
                         )
                 if tg_success:

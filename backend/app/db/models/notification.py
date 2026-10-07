@@ -37,7 +37,11 @@ class Notification(Base):
     )
     # Full internal detail - only visible after login
     internal_detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Text, not String(255). The alert titles are the whole message — the
+    # Telegram text and the inbox line both come from here — and a 359-char
+    # "the signal weakened, here is your stop" alert overflowed 255 on
+    # Postgres, failed the insert, and was never delivered anywhere.
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
     channels_sent: Mapped[list | None] = mapped_column(JSON, nullable=True)  # ["push", "sms", "email"]
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
