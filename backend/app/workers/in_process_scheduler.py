@@ -562,6 +562,7 @@ async def job_daily_ta_scan():
     # including when the failure happens before the loop starts.
     alerted = success = errors = 0
     ran_out_of_time = False
+    tally = {"buy": 0, "sell": 0, "wait": 0}
     try:
         async with AsyncSessionLocal() as db:
             # Every stock users actually HOLD — a position bought
@@ -658,6 +659,19 @@ async def job_daily_ta_scan():
                 # is worse than one that crashes.
                 if ta:
                     success += 1
+                    # What the pass found, not only that it ran: how many
+                    # stocks read buy, sell and wait, and how many of those
+                    # the gates (gates.py) moved. "Everything says WAIT" is
+                    # either a quiet market or a gate that is too strict, and
+                    # only these counts tell the two apart.
+                    sig = ta.get("timing_signal") or "NONE"
+                    side = ("buy" if sig in ("BUY_NOW", "STRONG_BUY")
+                            else "sell" if sig in ("SELL_NOW", "STRONG_SELL")
+                            else "wait")
+                    tally[side] += 1
+                    rule = ((ta.get("signal_gate") or {}).get("rule") or "").lower()
+                    if rule:
+                        tally[f"gate_{rule}"] = tally.get(f"gate_{rule}", 0) + 1
                 else:
                     errors += 1
                     logger.warning(f"[ta_scan] {symbol}: no analysis after retry")
@@ -718,7 +732,8 @@ async def job_daily_ta_scan():
         await redis_client.set(
             "investment_ai:ta_scan:heartbeat",
             f"{datetime.now(timezone.utc).isoformat()}|scanned={success + errors}|"
-            f"success={success}|alerted={alerted}|errors={errors}"
+            f"success={success}|alerted={alerted}|errors={errors}|"
+            + "|".join(f"{k}={v}" for k, v in tally.items())
             + ("|truncated=1" if ran_out_of_time else ""),
             ex=7 * 24 * 3600,
         )

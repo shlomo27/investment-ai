@@ -849,6 +849,17 @@ const FundDashboard: React.FC = () => {
                         { scanned: taScan.scanned ?? 0, ok: taScan.success ?? 0,
                           errors: taScan.errors ?? 0, alerts: taScan.alerted ?? 0 })}
                   </p>
+                  {/* What the pass found. "Everything says WAIT" is either a
+                      quiet market or a gate that is too strict; these counts
+                      tell the two apart. */}
+                  {typeof (taScan as any).wait === "number" && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {t("Signals now: {buy} buy · {sell} sell · {wait} wait. Moved to wait by the trend filter: {down} (downtrend) · {up} (uptrend).",
+                         "סיגנלים כרגע: {buy} קנייה · {sell} מכירה · {wait} המתנה. הועברו להמתנה ע\"י מסנן המגמה: {down} (מגמת ירידה) · {up} (מגמת עלייה).",
+                         { buy: (taScan as any).buy ?? 0, sell: (taScan as any).sell ?? 0, wait: (taScan as any).wait ?? 0,
+                           down: (taScan as any).gate_downtrend ?? 0, up: (taScan as any).gate_uptrend ?? 0 })}
+                    </p>
+                  )}
                   {(taScan.errors ?? 0) > 0 && (taScan.errors ?? 0) >= (taScan.success ?? 0) && (
                     <p className="text-xs text-red-400 mt-1">
                       {t("Most scans are failing — this is a price-data problem, not an alerting one.", "רוב הסריקות נכשלות — כנראה בעיית נתוני מחיר, לא בעיית התראות.")}

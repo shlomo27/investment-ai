@@ -893,6 +893,7 @@ export const UI_STRINGS: StringTable = {
     "The stock is in an uptrend, so overbought readings alone do not make a sell. The signal turns to sell once the price closes below its 20-day average{level}.": "L'action est en tendance haussière : être surachetée ne suffit pas pour vendre. Le signal passera à la vente quand le cours clôturera sous sa moyenne sur 20 jours{level}.",
     "The buy signal stays until the score falls below {n}, so small moves around the threshold do not flip it.": "Le signal d'achat est maintenu tant que le score ne passe pas sous {n}, pour que de petits mouvements autour du seuil ne l'inversent pas.",
     "The sell signal stays until the score rises above {n}, so small moves around the threshold do not flip it.": "Le signal de vente est maintenu tant que le score ne dépasse pas {n}, pour que de petits mouvements autour du seuil ne l'inversent pas.",
+    "Signals now: {buy} buy · {sell} sell · {wait} wait. Moved to wait by the trend filter: {down} (downtrend) · {up} (uptrend).": "Signaux actuels : {buy} achat · {sell} vente · {wait} attente. Mis en attente par le filtre de tendance : {down} (baisse) · {up} (hausse).",
   },
   "es": {
     "Signals": "Señales",
@@ -1760,6 +1761,7 @@ export const UI_STRINGS: StringTable = {
     "The stock is in an uptrend, so overbought readings alone do not make a sell. The signal turns to sell once the price closes below its 20-day average{level}.": "La acción está en tendencia alcista, así que estar sobrecomprada no basta para vender. La señal pasará a venta cuando el precio cierre por debajo de su media de 20 días{level}.",
     "The buy signal stays until the score falls below {n}, so small moves around the threshold do not flip it.": "La señal de compra se mantiene hasta que la puntuación baje de {n}, para que pequeños movimientos alrededor del umbral no la inviertan.",
     "The sell signal stays until the score rises above {n}, so small moves around the threshold do not flip it.": "La señal de venta se mantiene hasta que la puntuación supere {n}, para que pequeños movimientos alrededor del umbral no la inviertan.",
+    "Signals now: {buy} buy · {sell} sell · {wait} wait. Moved to wait by the trend filter: {down} (downtrend) · {up} (uptrend).": "Señales ahora: {buy} compra · {sell} venta · {wait} espera. Pasadas a espera por el filtro de tendencia: {down} (bajista) · {up} (alcista).",
   },
   "de": {
     "Signals": "Signale",
@@ -2627,6 +2629,7 @@ export const UI_STRINGS: StringTable = {
     "The stock is in an uptrend, so overbought readings alone do not make a sell. The signal turns to sell once the price closes below its 20-day average{level}.": "Die Aktie ist im Aufwärtstrend, überkauft zu sein reicht daher nicht für einen Verkauf. Das Signal wechselt zu Verkauf, sobald der Kurs unter seinem 20-Tage-Durchschnitt schließt{level}.",
     "The buy signal stays until the score falls below {n}, so small moves around the threshold do not flip it.": "Das Kaufsignal bleibt, bis der Wert unter {n} fällt, damit kleine Bewegungen um die Schwelle es nicht umkehren.",
     "The sell signal stays until the score rises above {n}, so small moves around the threshold do not flip it.": "Das Verkaufssignal bleibt, bis der Wert über {n} steigt, damit kleine Bewegungen um die Schwelle es nicht umkehren.",
+    "Signals now: {buy} buy · {sell} sell · {wait} wait. Moved to wait by the trend filter: {down} (downtrend) · {up} (uptrend).": "Signale jetzt: {buy} Kauf · {sell} Verkauf · {wait} Abwarten. Vom Trendfilter auf Abwarten gesetzt: {down} (Abwärtstrend) · {up} (Aufwärtstrend).",
   },
   "it": {
     "Loading...": "Caricamento…",
@@ -3486,6 +3489,7 @@ export const UI_STRINGS: StringTable = {
     "The stock is in an uptrend, so overbought readings alone do not make a sell. The signal turns to sell once the price closes below its 20-day average{level}.": "Il titolo è in trend rialzista, quindi essere ipercomprato non basta per vendere. Il segnale passerà a vendita quando il prezzo chiuderà sotto la media a 20 giorni{level}.",
     "The buy signal stays until the score falls below {n}, so small moves around the threshold do not flip it.": "Il segnale di acquisto resta finché il punteggio non scende sotto {n}, così piccoli movimenti intorno alla soglia non lo invertono.",
     "The sell signal stays until the score rises above {n}, so small moves around the threshold do not flip it.": "Il segnale di vendita resta finché il punteggio non supera {n}, così piccoli movimenti intorno alla soglia non lo invertono.",
+    "Signals now: {buy} buy · {sell} sell · {wait} wait. Moved to wait by the trend filter: {down} (downtrend) · {up} (uptrend).": "Segnali ora: {buy} acquisto · {sell} vendita · {wait} attesa. Messi in attesa dal filtro di tendenza: {down} (ribasso) · {up} (rialzo).",
   },
   "pt-BR": {
     "Log out": "Sair",
@@ -4345,6 +4349,7 @@ export const UI_STRINGS: StringTable = {
     "The stock is in an uptrend, so overbought readings alone do not make a sell. The signal turns to sell once the price closes below its 20-day average{level}.": "A ação está em tendência de alta, então estar sobrecomprada não basta para vender. O sinal passará a venda quando o preço fechar abaixo da média de 20 dias{level}.",
     "The buy signal stays until the score falls below {n}, so small moves around the threshold do not flip it.": "O sinal de compra se mantém até a pontuação cair abaixo de {n}, para que pequenas oscilações em torno do limite não o invertam.",
     "The sell signal stays until the score rises above {n}, so small moves around the threshold do not flip it.": "O sinal de venda se mantém até a pontuação subir acima de {n}, para que pequenas oscilações em torno do limite não o invertam.",
+    "Signals now: {buy} buy · {sell} sell · {wait} wait. Moved to wait by the trend filter: {down} (downtrend) · {up} (uptrend).": "Sinais agora: {buy} compra · {sell} venda · {wait} espera. Postos em espera pelo filtro de tendência: {down} (queda) · {up} (alta).",
   },
   "ar": {
     "Log out": "تسجيل الخروج",
@@ -5204,6 +5209,7 @@ export const UI_STRINGS: StringTable = {
     "The stock is in an uptrend, so overbought readings alone do not make a sell. The signal turns to sell once the price closes below its 20-day average{level}.": "السهم في اتجاه صاعد، لذا فإن كونه في منطقة تشبع شرائي لا يكفي للبيع. ستتحول الإشارة إلى البيع عندما يغلق السعر تحت متوسط 20 يومًا{level}.",
     "The buy signal stays until the score falls below {n}, so small moves around the threshold do not flip it.": "تبقى إشارة الشراء حتى تنخفض النتيجة تحت {n}، كي لا تقلبها التحركات الصغيرة حول العتبة.",
     "The sell signal stays until the score rises above {n}, so small moves around the threshold do not flip it.": "تبقى إشارة البيع حتى ترتفع النتيجة فوق {n}، كي لا تقلبها التحركات الصغيرة حول العتبة.",
+    "Signals now: {buy} buy · {sell} sell · {wait} wait. Moved to wait by the trend filter: {down} (downtrend) · {up} (uptrend).": "الإشارات الآن: {buy} شراء · {sell} بيع · {wait} انتظار. نقلها مرشح الاتجاه إلى الانتظار: {down} (هابط) · {up} (صاعد).",
   },
   "ko": {
     "Log out": "로그아웃",
@@ -6063,6 +6069,7 @@ export const UI_STRINGS: StringTable = {
     "The stock is in an uptrend, so overbought readings alone do not make a sell. The signal turns to sell once the price closes below its 20-day average{level}.": "이 종목은 상승 추세이므로 과매수만으로는 매도 근거가 되지 않습니다. 가격이 20일 평균 아래에서 마감하면 신호가 매도로 바뀝니다{level}.",
     "The buy signal stays until the score falls below {n}, so small moves around the threshold do not flip it.": "점수가 {n} 아래로 떨어질 때까지 매수 신호가 유지되어, 기준선 주변의 작은 움직임으로 뒤집히지 않습니다.",
     "The sell signal stays until the score rises above {n}, so small moves around the threshold do not flip it.": "점수가 {n} 위로 올라갈 때까지 매도 신호가 유지되어, 기준선 주변의 작은 움직임으로 뒤집히지 않습니다.",
+    "Signals now: {buy} buy · {sell} sell · {wait} wait. Moved to wait by the trend filter: {down} (downtrend) · {up} (uptrend).": "현재 신호: 매수 {buy} · 매도 {sell} · 대기 {wait}. 추세 필터로 대기 전환: {down}(하락 추세) · {up}(상승 추세).",
   },
   "ja": {
     "Log out": "ログアウト",
@@ -6922,5 +6929,6 @@ export const UI_STRINGS: StringTable = {
     "The stock is in an uptrend, so overbought readings alone do not make a sell. The signal turns to sell once the price closes below its 20-day average{level}.": "この銘柄は上昇トレンドにあるため、買われ過ぎだけでは売りの理由になりません。価格が20日平均を下回って引けると、シグナルは売りに変わります{level}。",
     "The buy signal stays until the score falls below {n}, so small moves around the threshold do not flip it.": "スコアが{n}を下回るまで買いシグナルは維持され、しきい値付近の小さな動きで反転しません。",
     "The sell signal stays until the score rises above {n}, so small moves around the threshold do not flip it.": "スコアが{n}を上回るまで売りシグナルは維持され、しきい値付近の小さな動きで反転しません。",
+    "Signals now: {buy} buy · {sell} sell · {wait} wait. Moved to wait by the trend filter: {down} (downtrend) · {up} (uptrend).": "現在のシグナル：買い {buy}・売り {sell}・待機 {wait}。トレンドフィルターで待機に変更：{down}（下降トレンド）・{up}（上昇トレンド）。",
   },
 };
