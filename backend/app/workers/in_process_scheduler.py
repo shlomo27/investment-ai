@@ -1198,7 +1198,17 @@ async def job_engine_health_check():
 
     from app.core.config import settings
     from app.services.notifications.telegram_service import get_telegram_service
+    from app.workers.cost_guard import is_analysis_paused
     import redis.asyncio as aioredis
+
+    # Not while paid analyses are paused. The pings are cheap but they are
+    # paid calls all the same, and a pause means "stop spending, I mean it";
+    # an engine nobody is using cannot hurt anyone by being down, and the
+    # alerts it produced — a Grok capacity error at 22:10 during a pause —
+    # read as the system spending money it had been told not to.
+    if await is_analysis_paused():
+        logger.info("[engine_health] skipped — analyses paused")
+        return
 
     async def _ping_claude() -> str | None:
         if not (settings.ANTHROPIC_API_KEY or "").strip():
@@ -1264,6 +1274,14 @@ async def job_engine_health_check():
             return "💳 נגמרו הקרדיטים או בעיית חיוב — היכנס לחשבון הספק וטען/עדכן אמצעי תשלום"
         if any(k in e for k in ("invalid api key", "invalid x-api-key", "unauthorized", "authentication", "401", "403", "permission")):
             return "🔑 מפתח ה-API לא תקין או נחסם — בדוק את המשתנה ב-Railway מול המפתח אצל הספק"
+        # Checked before the generic 429: xAI answers 429 "resource-exhausted"
+        # with "the model is currently at capacity due to high demand" when
+        # its own servers are full. That is the provider overloaded, not this
+        # account over a limit, and blaming another app on the account sent
+        # the reader looking in the wrong place.
+        if any(k in e for k in ("at capacity", "high demand", "overloaded")):
+            return ("🌐 עומס זמני אצל הספק עצמו (השרתים שלו מלאים) — לא בעיה בחשבון שלך. "
+                    "חולף לרוב תוך דקות; אין מה לעשות.")
         if any(k in e for k in ("429", "rate limit", "quota", "resource_exhausted", "resource exhausted")):
             return ("⏳ חריגת קצב זמנית (בקשות/טוקנים לדקה) — חולף תוך שניות עד דקות. "
                     "הקצב משותף לכל האפליקציות באותו חשבון, אז אפליקציה אחרת עמוסה יכולה לגרום לזה.")
