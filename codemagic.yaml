@@ -8,7 +8,8 @@
 # Before the first run, set these in the Codemagic UI:
 #
 #   Environment variable group "investment_ai" (mark all as secure):
-#     VITE_API_URL                 https://<your-backend>.up.railway.app
+#     VITE_API_URL                 https://eloquent-optimism-production-52cd.up.railway.app
+#                                  (the web front; it proxies /api to the backend)
 #     VITE_FIREBASE_API_KEY        from Firebase console → Project settings
 #     VITE_FIREBASE_AUTH_DOMAIN
 #     VITE_FIREBASE_PROJECT_ID
@@ -26,7 +27,9 @@
 #   belong in CI secrets, not in git.
 #
 #   Integrations:
-#     App Store Connect API key  → ios_signing + publishing
+#     App Store Connect API key, named "investment_ai_asc" → ios_signing + publishing
+#   (iOS needs only VITE_API_URL, VITE_REVENUECAT_IOS_KEY and
+#   GOOGLE_SERVICE_INFO_PLIST; the VITE_FIREBASE_* values are for web push.)
 #     Google Play service account JSON → GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
 #
 # VITE_API_URL is the one that silently breaks everything if forgotten: the
@@ -129,6 +132,13 @@ workflows:
     name: iOS — App Store (TestFlight)
     max_build_duration: 60
     instance_type: mac_mini_m2
+    # The App Store Connect API key added in Codemagic (Team settings →
+    # Integrations → Developer Portal) under exactly this name. Both the
+    # automatic signing below and the TestFlight upload authenticate with it;
+    # without this line `auth: integration` has nothing to use and the build
+    # fails at signing.
+    integrations:
+      app_store_connect: investment_ai_asc
     environment:
       <<: *env_versions
       xcode: latest
@@ -167,12 +177,13 @@ workflows:
             exit 1
           fi
       - *install_web
-      - name: Fetch signing files
+      - name: Apply signing profiles
         script: |
-          keychain initialize
-          app-store-connect fetch-signing-files "$BUNDLE_ID" \
-            --type IOS_APP_STORE --create
-          keychain add-certificates
+          # ios_signing (environment, above) has Codemagic fetch or create the
+          # distribution certificate and profile through the integration. The
+          # manual fetch-signing-files call that stood here needed separate
+          # APP_STORE_CONNECT_* and CERTIFICATE_PRIVATE_KEY variables that
+          # nothing set.
           xcode-project use-profiles
       - name: Set build number
         script: |
