@@ -321,6 +321,26 @@ const RecommendationCard: React.FC<Props> = ({
               {rec.confidence_score.toFixed(0)}%
             </div>
             <p className="text-xs text-gray-400">{t("Confidence", "ביטחון")}</p>
+            {/* What the number has meant in practice. Quoted only once enough
+                calls at this level have a 30-day outcome; a rate built on
+                five calls would be noise presented as a fact. */}
+            {rec.confidence_track_record && (
+              rec.confidence_track_record.win_rate_pct != null ? (
+                <p className="text-[10px] text-gray-400 leading-tight"
+                   title={t("Of {n} recommendations at this confidence level, this share were winners 30 days later (up for a buy, down for a short).",
+                            "מתוך {n} המלצות ברמת ביטחון זו, זה האחוז שהצליחו אחרי 30 יום (עלו בקנייה, ירדו בשורט).",
+                            { n: rec.confidence_track_record.measured })}>
+                  {t("Succeeded {rate}% ({n})", "הצליחו {rate}% ({n})",
+                     { rate: rec.confidence_track_record.win_rate_pct, n: rec.confidence_track_record.measured })}
+                </p>
+              ) : (
+                <p className="text-[10px] text-gray-600 leading-tight"
+                   title={t("The success rate for this confidence level is shown once at least 30 such recommendations have a 30-day result.",
+                            "אחוז ההצלחה לרמת ביטחון זו יוצג כשיהיו לפחות 30 המלצות כאלה עם תוצאה אחרי 30 יום.")}>
+                  {t("Track record: being measured", "הצלחה בעבר: בבדיקה")}
+                </p>
+              )
+            )}
             {(() => {
               const alloc = (rec.fundamental_analysis as any)?.allocation_recommendation;
               if (!alloc || alloc === "NONE") return null;

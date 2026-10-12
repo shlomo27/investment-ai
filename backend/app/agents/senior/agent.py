@@ -19,6 +19,37 @@ from app.agents.state import MarketDataState
 
 logger = structlog.get_logger(__name__)
 
+#: Below this committee confidence a recommendation is not published. It was
+#: 30, and the feed filled with calls the committee itself barely believed:
+#: 106 BUYs, most at 50-60%, each wearing a "weak buy — small position or
+#: wait" note that told the reader the system did not trust its own advice.
+#: Fewer, stronger calls are worth more than many marginal ones. A call under
+#: the bar is still recorded (scan log), just not shown as a recommendation.
+PUBLISH_MIN_CONFIDENCE = 60
+
+#: The scoring method given to the committee for decision_confidence. Without
+#: one the number was a feeling: it clustered between 50 and 65 whatever the
+#: stock, so it could not separate a strong call from a marginal one. The
+#: bar is deliberately NOT mentioned to the model — a committee told "60 gets
+#: published" learns to answer 61.
+CONFIDENCE_RUBRIC = """
+=== HOW TO SCORE decision_confidence (follow this exactly) ===
+Start at 50 and adjust, then clamp to 0-100. Score the evidence, not your
+enthusiasm. Most stocks should land between 40 and 70; above 80 is rare.
+
+1. Valuation margin (expected value / target vs price, risk-reward):  -15 .. +15
+   +15 only with a large, well-supported gap and reward >= 2.5x the risk.
+2. Business quality and balance sheet (margins, FCF, debt, moat):     -10 .. +10
+3. Catalyst: a specific, dated event that can move the price within
+   the investment horizon. None identifiable = 0.                      0 .. +10
+4. Agreement of the evidence: fundamentals, news, sentiment, macro and
+   the price trend all point the same way = +10; they conflict = -10. -10 .. +10
+5. Data completeness: key figures missing or stale.                    -10 .. 0
+6. Red flags: accounting, legal, dilution, guidance cuts, squeeze risk. -15 .. 0
+
+Report each component in "confidence_breakdown" so the score can be checked.
+"""
+
 SENIOR_SYSTEM_PROMPT = """You are הבכיר (The Senior), the chief investment committee authority at a $10B institutional equity fund.
 
 Your role is the FINAL DECISION MAKER. You receive:
@@ -428,12 +459,14 @@ Total Mentions: {v(sentiment.get('mentions'), 0):,}
 Total News Analyzed: {len(news_items)}
 {news_section}{macro_section}{risk_section}
 
+{CONFIDENCE_RUBRIC}
 Respond ONLY with valid JSON:
 {{
   "approved": true|false,
   "final_recommendation": "BUY|SELL|HOLD|STRONG_BUY|STRONG_SELL",
   "direction_bias": "{direction_bias or 'NEUTRAL'}",
   "decision_confidence": 0-100,
+  "confidence_breakdown": {{"valuation": <int>, "quality": <int>, "catalyst": <int>, "agreement": <int>, "data": <int>, "red_flags": <int>}},
   "final_target_price": <float or null>,
   "final_stop_loss": <float or null>,
   "expected_return_pct": <float — negative for shorts>,
@@ -485,13 +518,16 @@ Respond ONLY with valid JSON:
             )
             decision["decision_confidence"] = 0.0
 
-        # Hard gate: approved with too-low confidence
-        elif decision["approved"] and decision["decision_confidence"] < 30:
+        # Publication bar: approved, but not convincingly enough to publish.
+        elif decision["approved"] and decision["decision_confidence"] < PUBLISH_MIN_CONFIDENCE:
             decision["approved"] = False
+            decision["below_publication_bar"] = True
             decision["rejection_reasoning"] = (
-                (decision.get("rejection_reasoning") or "") +
-                " Auto-rejected: confidence score below 30 threshold."
-            )
+                f"הביטחון ({decision['decision_confidence']:.0f}%) מתחת לרף הפרסום "
+                f"({PUBLISH_MIN_CONFIDENCE}%) — הניתוח נוטה ל-{decision.get('final_recommendation')}, "
+                f"אבל לא באופן משכנע מספיק כדי להמליץ. "
+                + (decision.get("rejection_reasoning") or "")
+            ).strip()
 
         # Pass through scenario analysis and allocation info from fundamental analyst
         decision["expected_value"] = analysis.get("expected_value")

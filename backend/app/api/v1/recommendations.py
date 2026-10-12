@@ -4,7 +4,7 @@ GET /recommendations, GET /recommendations/{id}, POST /recommendations/{id}/ackn
 GET /inbox (notification inbox with full AI details)
 """
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -78,6 +78,12 @@ class RecommendationResponse(BaseModel):
     #: target was reached; None otherwise. Set by the daily level check, which
     #: also alerts holders and watchers.
     level_hit: Optional[str] = None
+    #: How recommendations at this confidence level have done, once enough of
+    #: them have been measured: {"band", "measured", "win_rate_pct"}.
+    #: win_rate_pct is None until MIN_TRACK_RECORD calls in the band have a
+    #: 30-day outcome — the card then says "being measured" rather than
+    #: quoting a rate built on a handful of calls.
+    confidence_track_record: Optional[Dict[str, Any]] = None
     created_at: datetime
     approved_at: Optional[datetime]
     presented_at: Optional[datetime]
@@ -348,6 +354,54 @@ def _apply_localized(payload: dict, rec: Recommendation, localized: dict) -> dic
     return payload
 
 
+#: The committee was given a scoring method for its confidence on this date
+#: (senior/agent.py, CONFIDENCE_RUBRIC). Confidence before it was a free-form
+#: number, so calls from before it are neither measured nor quoted: their
+#: "70%" and a rubric "70%" are not the same claim.
+RUBRIC_SINCE = datetime(2026, 10, 12, tzinfo=timezone.utc)
+#: Calls with an outcome needed in a band before its success rate is shown.
+MIN_TRACK_RECORD = 30
+
+
+def _confidence_band(conf: float) -> str:
+    return "80+" if conf >= 80 else "70-79" if conf >= 70 else "60-69" if conf >= 60 else "<60"
+
+
+async def _track_records(db: AsyncSession) -> Dict[str, Dict[str, int]]:
+    """band -> {"measured", "wins"} over rubric-era BUY/SELL calls whose
+    30-day outcome is known (performance_service.track_pending_outcomes)."""
+    rows = (await db.execute(
+        select(Recommendation.confidence_score, Recommendation.outcome_result).where(
+            Recommendation.created_at >= RUBRIC_SINCE,
+            Recommendation.outcome_result.isnot(None),
+            Recommendation.recommendation_type.in_([
+                RecommendationType.BUY, RecommendationType.STRONG_BUY,
+                RecommendationType.SELL, RecommendationType.STRONG_SELL,
+            ]),
+        )
+    )).all()
+    out: Dict[str, Dict[str, int]] = {}
+    for conf, result in rows:
+        b = out.setdefault(_confidence_band(conf or 0), {"measured": 0, "wins": 0})
+        b["measured"] += 1
+        b["wins"] += 1 if result == "WIN" else 0
+    return out
+
+
+def _track_record_for(rec, records: Dict[str, Dict[str, int]]) -> Dict[str, Any]:
+    created = rec.created_at if rec.created_at.tzinfo else rec.created_at.replace(tzinfo=timezone.utc)
+    band = _confidence_band(rec.confidence_score or 0)
+    if created < RUBRIC_SINCE:
+        return {"band": band, "measured": 0, "win_rate_pct": None, "legacy": True}
+    stats = records.get(band, {"measured": 0, "wins": 0})
+    n = stats["measured"]
+    return {
+        "band": band,
+        "measured": n,
+        "win_rate_pct": round(stats["wins"] / n * 100, 0) if n >= MIN_TRACK_RECORD else None,
+    }
+
+
 async def _levels_hit(rec_ids: List[int]) -> Dict[int, str]:
     """rec id -> "STOP" | "TARGET" for recommendations whose level was reached.
     A broken stop wins over a reached target. Empty on any Redis failure: the
@@ -503,6 +557,7 @@ async def get_recommendations(
 
     siblings_by_symbol = await siblings_for_many(db, list(assets.values()))
     levels = await _levels_hit([r.id for r in recommendations])
+    records = await _track_records(db)
 
     response = []
     for rec in recommendations:
@@ -521,6 +576,7 @@ async def get_recommendations(
             sibling_listings=siblings_by_symbol.get(rec.symbol, []),
             current_price=asset.last_price if asset else None,
             level_hit=levels.get(rec.id),
+            confidence_track_record=_track_record_for(rec, records),
             **_apply_localized(
                 _lock_reasoning(rec, locked),
                 rec,
@@ -888,6 +944,7 @@ async def get_recommendation(
         sibling_listings=await siblings_for(db, rec.symbol),
         current_price=asset.last_price if asset else None,
         level_hit=(await _levels_hit([rec.id])).get(rec.id),
+        confidence_track_record=_track_record_for(rec, await _track_records(db)),
         **_apply_localized(_lock_reasoning(rec, reasoning_locked), rec, localized),
         # Technical analysis stays visible: it is computed locally with no LLM
         # cost, and it is the part a free user needs to judge timing on the

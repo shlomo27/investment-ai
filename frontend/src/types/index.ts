@@ -511,6 +511,14 @@ export interface Recommendation {
   current_price?: number | null;
   /** "STOP" once the stop broke at a close, "TARGET" once the target was reached. */
   level_hit?: "STOP" | "TARGET" | null;
+  /** How calls at this confidence band have done after 30 days. win_rate_pct
+   *  is null until enough of them have been measured. */
+  confidence_track_record?: {
+    band: string;
+    measured: number;
+    win_rate_pct: number | null;
+    legacy?: boolean;
+  } | null;
   asset_name?: string;
   sector?: string;
   risk_level?: string;
