@@ -36,9 +36,12 @@
 # app builds and installs cleanly and then cannot reach the backend at all.
 
 definitions:
+  # The versions the account's other iOS app (appify) builds with, as its
+  # build log reports them. Pinned rather than "latest": with xcode: latest the
+  # build sat "queued" on the free Mac mini M2 for half an hour, twice, while
+  # appify builds on the same account run on these.
   env_versions: &env_versions
-    node: 22.22.2
-    npm: 10
+    node: 22
 
   # Codemagic takes the paths under a `cache:` key. They were merged into the
   # workflow at top level as `cache_paths:`, which the schema rejects
@@ -144,7 +147,7 @@ workflows:
       app_store_connect: ilmariai
     environment:
       <<: *env_versions
-      xcode: latest
+      xcode: "26.6"
       # No cocoapods entry on purpose: Capacitor 8 resolves its plugins through
       # Swift Package Manager (ios/App/CapApp-SPM), so this project has no
       # Podfile and no .xcworkspace — only App.xcodeproj.
