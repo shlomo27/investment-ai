@@ -36,10 +36,11 @@
 # app builds and installs cleanly and then cannot reach the backend at all.
 
 definitions:
-  # The versions the account's other iOS app (appify) builds with, as its
-  # build log reports them. Pinned rather than "latest": with xcode: latest the
-  # build sat "queued" on the free Mac mini M2 for half an hour, twice, while
-  # appify builds on the same account run on these.
+  # Pinned rather than "latest". Codemagic keeps a separate machine pool per
+  # Xcode version, and the newest one (26.6, which "latest" resolved to) was
+  # overloaded: builds sat "queued" for over half an hour, and their support
+  # confirmed a load spike on that pool and suggested another version. 26.5
+  # is the previous release; move forward once the newer pool has capacity.
   env_versions: &env_versions
     node: 22
 
@@ -147,7 +148,7 @@ workflows:
       app_store_connect: ilmariai
     environment:
       <<: *env_versions
-      xcode: "26.6"
+      xcode: "26.5"
       # No cocoapods entry on purpose: Capacitor 8 resolves its plugins through
       # Swift Package Manager (ios/App/CapApp-SPM), so this project has no
       # Podfile and no .xcworkspace — only App.xcodeproj.
