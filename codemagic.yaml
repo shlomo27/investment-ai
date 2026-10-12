@@ -27,7 +27,7 @@
 #   belong in CI secrets, not in git.
 #
 #   Integrations:
-#     App Store Connect API key, named "investment_ai_asc" → ios_signing + publishing
+#     App Store Connect API key, named "ilmariai" (the team key, shared with the other apps) → ios_signing + publishing
 #   (iOS needs only VITE_API_URL, VITE_REVENUECAT_IOS_KEY and
 #   GOOGLE_SERVICE_INFO_PLIST; the VITE_FIREBASE_* values are for web push.)
 #     Google Play service account JSON → GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
@@ -138,7 +138,7 @@ workflows:
     # without this line `auth: integration` has nothing to use and the build
     # fails at signing.
     integrations:
-      app_store_connect: investment_ai_asc
+      app_store_connect: ilmariai
     environment:
       <<: *env_versions
       xcode: latest
