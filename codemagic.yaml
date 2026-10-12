@@ -40,7 +40,10 @@ definitions:
     node: 22.22.2
     npm: 10
 
-  cache_paths: &cache_paths
+  # Codemagic takes the paths under a `cache:` key. They were merged into the
+  # workflow at top level as `cache_paths:`, which the schema rejects
+  # ("android -> cache_paths: extra fields not permitted") before any build.
+  cache: &cache
     cache_paths:
       - $HOME/.npm
       - $CM_BUILD_DIR/frontend/node_modules
@@ -76,7 +79,7 @@ workflows:
         - investment_ai_keystore
       vars:
         PACKAGE_NAME: "com.investmentai.app"
-    <<: *cache_paths
+    cache: *cache
     scripts:
       - name: Place google-services.json
         script: |
@@ -155,7 +158,7 @@ workflows:
         BUNDLE_ID: "com.investmentai.app"
         XCODE_PROJECT: "frontend/ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
-    <<: *cache_paths
+    cache: *cache
     scripts:
       - name: Place GoogleService-Info.plist
         script: |
