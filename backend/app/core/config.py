@@ -84,6 +84,14 @@ class Settings(BaseSettings):
     XAI_API_KEY: str = ""
     XAI_MODEL: str = "grok-4-fast"
 
+    # Sign in with Google / Apple. The audiences an ID token may be issued for:
+    # Google — the OAuth client IDs, comma-separated (web, iOS, Android);
+    # Apple — the bundle ID for the iOS app (plus a Services ID if the web
+    # ever offers it). A token for any other audience is rejected, which is
+    # what stops a token minted for someone else's app being replayed here.
+    GOOGLE_CLIENT_IDS: str = ""
+    APPLE_CLIENT_IDS: str = "com.investmentai.app"
+
     # Twitter/X API v2
     TWITTER_BEARER_TOKEN: str = ""
     TWITTER_API_KEY: str = ""

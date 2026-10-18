@@ -139,6 +139,12 @@ class UserResponse(BaseModel):
     alert_frequency: str = "REALTIME"
     totp_enabled: bool = False
     telegram_linked: bool = False
+    #: "apple" / "google" when the account was created by social sign-in.
+    auth_provider: Optional[str] = None
+    #: False only for a social sign-up that has not yet accepted the terms —
+    #: the app then shows the terms (and an optional phone) before anything
+    #: else. Accounts that predate recorded acceptance are not re-prompted.
+    terms_accepted: bool = True
 
     # ── Subscription ────────────────────────────────────────────────────────
     # Sent on every /auth/me so the app renders the right state on launch
@@ -177,6 +183,7 @@ class UserResponse(BaseModel):
         obj.subscription_expires_at = user.subscription_expires_at
         obj.watchlist_limit = ent.watchlist_limit
         obj.recommendation_limit = ent.recommendation_limit
+        obj.terms_accepted = not (user.auth_provider and user.accepted_terms_at is None)
         return obj
 
 
@@ -386,6 +393,133 @@ async def login(
         user=UserResponse.from_user(user),
         tokens=tokens,
     )
+
+
+class SocialLoginRequest(BaseModel):
+    provider: str = Field(..., pattern="^(apple|google)$")
+    id_token: str = Field(..., min_length=20, max_length=8192)
+    #: Apple sends the user's name to the device once, on first sign-in, and
+    #: never in the token; the app forwards it here so the account has one.
+    full_name: Optional[str] = Field(None, max_length=255)
+    preferred_language: Optional[str] = None
+
+
+@router.post("/social")
+async def social_login(
+    request: SocialLoginRequest,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Sign in (or sign up) with Apple or Google.
+
+    Finds the account by the provider's stable user id; failing that, links
+    an existing account with the same address — but only when the provider
+    attests the address is verified, or one person's Google login could open
+    another person's password account. Otherwise creates one, which then
+    accepts the terms in the app before anything else (terms_accepted=False).
+    """
+    import secrets as _secrets
+    from app.core.social_auth import SocialTokenError, verify_id_token
+
+    await _rate_limit("social", _client_ip(http_request), limit=30, window_sec=900)
+    try:
+        ident = await verify_id_token(request.provider, request.id_token)
+    except SocialTokenError as exc:
+        logger.warning("Social sign-in rejected", provider=request.provider, reason=str(exc))
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Sign-in could not be verified")
+
+    sub_col = User.apple_sub if ident.provider == "apple" else User.google_sub
+    user = (await db.execute(select(User).where(sub_col == ident.sub))).scalar_one_or_none()
+    created = False
+
+    if user is None and ident.email:
+        existing = (await db.execute(
+            select(User).where(User.email == ident.email.lower())
+        )).scalar_one_or_none()
+        if existing is not None:
+            if not ident.email_verified:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="An account with this email already exists — sign in with your password",
+                )
+            setattr(existing, f"{ident.provider}_sub", ident.sub)
+            user = existing
+            logger.info("Social identity linked", user_id=user.id, provider=ident.provider)
+
+    if user is None:
+        if not ident.email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The provider did not share an email address",
+            )
+        name = (request.full_name or ident.name or ident.email.split("@")[0]).strip()[:255]
+        user = User(
+            email=ident.email.lower(),
+            # Never used to sign in: the owner does not know it. It exists
+            # because the column is required; a password can be set later
+            # through the reset flow.
+            hashed_password=get_password_hash(_secrets.token_urlsafe(32)),
+            full_name=name or "—",
+            phone=None,
+            preferred_language=normalize(request.preferred_language),
+            risk_profile=RiskProfile.PASSIVE,
+            risk_score=50,
+            cash_balance=0.0,
+            is_active=True,
+            is_onboarded=False,
+            accepted_terms_at=None,
+            auth_provider=ident.provider,
+        )
+        setattr(user, f"{ident.provider}_sub", ident.sub)
+        db.add(user)
+        created = True
+        logger.info("New user registered via social sign-in", provider=ident.provider)
+
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
+
+    if getattr(user, "totp_enabled", False):
+        await db.flush()
+        return {"requires_2fa": True, "pre_auth_token": create_pre_auth_token(user.id)}
+
+    user.last_login_at = datetime.now(timezone.utc)
+    user.login_count = (user.login_count or 0) + 1
+    await db.flush()
+
+    return {
+        "user": UserResponse.from_user(user),
+        "tokens": create_token_pair(user.id, user.email),
+        "created": created,
+    }
+
+
+class AcceptTermsRequest(BaseModel):
+    accepted_terms: bool
+    accepted_terms_version: str = TERMS_VERSION
+    phone: Optional[str] = Field(None, max_length=20)
+
+    @validator("accepted_terms")
+    def must_accept(cls, v):
+        if not v:
+            raise ValueError("You must accept the terms of use and risk disclosure")
+        return v
+
+
+@router.post("/accept-terms", response_model=UserResponse)
+async def accept_terms(
+    request: AcceptTermsRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Record a social sign-up's acceptance of the terms — the step a
+    password registration does on its own form."""
+    current_user.accepted_terms_at = datetime.now(timezone.utc)
+    current_user.accepted_terms_version = request.accepted_terms_version or TERMS_VERSION
+    if request.phone:
+        current_user.phone = request.phone.strip()
+    await db.flush()
+    return UserResponse.from_user(current_user)
 
 
 @router.post("/token", response_model=Token)
@@ -860,7 +994,9 @@ async def revoke_demo_account(
 
 
 class DeleteAccountRequest(BaseModel):
-    password: str = Field(..., description="Current password, to confirm intent")
+    #: Required for password accounts. An account created by Apple/Google
+    #: sign-in has no password its owner knows, so it confirms with DELETE.
+    password: Optional[str] = Field(None, description="Current password, to confirm intent")
     confirm: str = Field(..., description='Must be the literal string "DELETE"')
 
 
@@ -878,7 +1014,9 @@ async def delete_account(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail='Type DELETE to confirm account deletion',
         )
-    if not verify_password(request.password, current_user.hashed_password):
+    if not current_user.auth_provider and not verify_password(
+        request.password or "", current_user.hashed_password
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Password is incorrect",

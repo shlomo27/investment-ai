@@ -87,6 +87,15 @@ class User(Base):
     )
     accepted_terms_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
+    # ── Sign in with Apple / Google ─────────────────────────────────────────
+    # The provider's stable user id ("sub"), not the email: Apple may hand out
+    # a private relay address, and either provider's address can change while
+    # the sub does not. auth_provider records how the account was CREATED, so
+    # deletion knows whether the owner has a password to confirm with.
+    apple_sub: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True, index=True)
+    google_sub: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True, index=True)
+    auth_provider: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
     # ── Subscription ────────────────────────────────────────────────────────
     subscription_tier: Mapped[SubscriptionTier] = mapped_column(
         SAEnum(SubscriptionTier, name="subscriptiontier"),
