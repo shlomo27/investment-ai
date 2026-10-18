@@ -48,6 +48,23 @@ export const loginUser = createAsyncThunk(
   }
 );
 
+export const socialLoginUser = createAsyncThunk(
+  "auth/social",
+  async (
+    { provider, idToken, fullName, preferredLanguage }:
+      { provider: "apple" | "google"; idToken: string; fullName?: string; preferredLanguage?: string },
+    { rejectWithValue }
+  ) => {
+    try {
+      const response = await authApi.social(provider, idToken, fullName, preferredLanguage);
+      if ("requires_2fa" in response) return response;
+      return (response as any).user as User;
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.detail || "Sign-in failed");
+    }
+  }
+);
+
 export const registerUser = createAsyncThunk(
   "auth/register",
   async (
@@ -174,6 +191,25 @@ const authSlice = createSlice({
         state.isAuthenticated = true;
       })
       .addCase(loginUser.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+        state.isAuthenticated = false;
+      });
+
+    // Social sign-in — same outcomes as password login
+    builder
+      .addCase(socialLoginUser.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(socialLoginUser.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.error = null;
+        if (action.payload && (action.payload as any).requires_2fa) return;
+        state.user = action.payload as User;
+        state.isAuthenticated = true;
+      })
+      .addCase(socialLoginUser.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
         state.isAuthenticated = false;

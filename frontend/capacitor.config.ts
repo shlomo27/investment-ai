@@ -29,9 +29,13 @@ const config: CapacitorConfig = {
   },
 
   ios: {
-    // Charts and tables handle their own insets; let the webview own the
-    // full viewport so the layout matches the web build.
-    contentInset: "always",
+    // "never": the web view owns the whole screen and the page places itself
+    // with env(safe-area-inset-*), which the Navbar, BottomNav and the
+    // screens without a Navbar already use. With "always" the scroll view
+    // added its own inset, env() then read 0, and the first TestFlight build
+    // showed the sign-in screen's logo and language picker under the clock
+    // and battery whenever the page scrolled or the keyboard opened.
+    contentInset: "never",
   },
 
   plugins: {
@@ -39,6 +43,11 @@ const config: CapacitorConfig = {
       // A signal that arrives while the app is open should still surface —
       // the whole point of the native app is that alerts are not missable.
       presentationOptions: ["badge", "sound", "alert"],
+    },
+    SocialLogin: {
+      // Only what is used. Facebook and X are off so their SDKs are not
+      // bundled (and not flagged by App Store privacy scans).
+      providers: { google: true, apple: true, facebook: false, twitter: false },
     },
     SplashScreen: {
       launchShowDuration: 1500,

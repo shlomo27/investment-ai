@@ -11,6 +11,7 @@
  * target.
  */
 import React, { useState } from "react";
+import StatusBarShield from "../components/Layout/StatusBarShield";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { authApi } from "../api/client";
 import { useT } from "../i18n/t";
@@ -89,6 +90,7 @@ const ResetPassword: React.FC = () => {
       className="min-h-screen bg-gray-950 flex items-center justify-center px-4"
       style={{ paddingTop: "calc(env(safe-area-inset-top) + 1rem)", paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
     >
+      <StatusBarShield />
       <div className="w-full max-w-md">
         <div className="flex justify-end mb-3">
       {/* Every language, each named in itself. A two-way he/en control

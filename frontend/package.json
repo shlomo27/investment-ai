@@ -26,6 +26,7 @@
     "@capacitor/push-notifications": "^8",
     "@capacitor/splash-screen": "^8",
     "@capacitor/status-bar": "^8",
+    "@capgo/capacitor-social-login": "8.7.3",
     "@reduxjs/toolkit": "^2.2.3",
     "@revenuecat/purchases-capacitor": "^13.5.1",
     "axios": "^1.7.2",

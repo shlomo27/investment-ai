@@ -694,14 +694,18 @@ const Settings: React.FC = () => {
           </button>
         ) : (
           <div className="space-y-3 pt-1">
-            <input
-              type="password"
-              value={delPassword}
-              onChange={(e) => setDelPassword(e.target.value)}
-              autoComplete="current-password"
-              placeholder={t("Your password", "הסיסמה שלך")}
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-red-500"
-            />
+            {/* An account created with Apple/Google has no password its
+                owner knows; DELETE alone confirms it (the server agrees). */}
+            {!user?.auth_provider && (
+              <input
+                type="password"
+                value={delPassword}
+                onChange={(e) => setDelPassword(e.target.value)}
+                autoComplete="current-password"
+                placeholder={t("Your password", "הסיסמה שלך")}
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-red-500"
+              />
+            )}
             <input
               value={delConfirm}
               onChange={(e) => setDelConfirm(e.target.value)}
@@ -718,7 +722,7 @@ const Settings: React.FC = () => {
             <div className="flex gap-2">
               <button
                 onClick={handleDeleteAccount}
-                disabled={delConfirm !== "DELETE" || !delPassword || delLoading}
+                disabled={delConfirm !== "DELETE" || (!user?.auth_provider && !delPassword) || delLoading}
                 className="flex-1 bg-red-700 hover:bg-red-800 disabled:opacity-40 text-white px-5 py-2.5 rounded-xl text-sm font-medium"
               >
                 {delLoading

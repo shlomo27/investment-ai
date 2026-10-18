@@ -286,10 +286,42 @@ export const authApi = {
    * Permanently delete the signed-in account. Required by both stores for
    * any app with sign-up; Apple checks for it by hand during review.
    */
-  deleteAccount: async (password: string): Promise<{ deleted: boolean }> => {
+  deleteAccount: async (password?: string): Promise<{ deleted: boolean }> => {
+    // An account created by Apple/Google sign-in has no password its owner
+    // knows; the server accepts the DELETE confirmation alone for those.
     const response = await api.post("/auth/account/delete", {
-      password,
+      password: password || null,
       confirm: "DELETE",
+    });
+    return response.data;
+  },
+
+  /** Sign in (or up) with an Apple / Google ID token, verified by the server. */
+  social: async (
+    provider: "apple" | "google",
+    idToken: string,
+    fullName?: string,
+    preferredLanguage?: string
+  ): Promise<(AuthResponse & { created: boolean }) | { requires_2fa: true; pre_auth_token: string }> => {
+    const response = await api.post("/auth/social", {
+      provider,
+      id_token: idToken,
+      full_name: fullName || null,
+      preferred_language: preferredLanguage || null,
+    });
+    if (response.data.requires_2fa) return response.data;
+    const { tokens } = response.data as AuthResponse;
+    localStorage.setItem("access_token", tokens.access_token);
+    localStorage.setItem("refresh_token", tokens.refresh_token);
+    return response.data;
+  },
+
+  /** A social sign-up accepts the terms here — what the sign-up form does. */
+  acceptTerms: async (data: { accepted_terms_version: string; phone?: string }): Promise<User> => {
+    const response = await api.post<User>("/auth/accept-terms", {
+      accepted_terms: true,
+      accepted_terms_version: data.accepted_terms_version,
+      phone: data.phone || null,
     });
     return response.data;
   },

@@ -14,6 +14,7 @@ import { fetchUnreadCount } from "./store/slices/notificationsSlice";
 // Pages
 import Login from "./pages/Login";
 import Onboarding from "./pages/Onboarding";
+import AcceptTerms from "./pages/AcceptTerms";
 import Dashboard from "./pages/Dashboard";
 import FundDashboard from "./pages/FundDashboard";
 import Portfolio from "./pages/Portfolio";
@@ -44,7 +45,8 @@ import { useWebSocket } from "./hooks/useWebSocket";
 // ─── Protected Routes ───────────────────────────────────────────────────────────
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAppSelector((state) => state.auth);
+  const { isAuthenticated, isLoading, user } = useAppSelector((state) => state.auth);
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -55,6 +57,12 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   }
 
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  // An Apple/Google sign-up accepts the terms before anything else — the
+  // step a password sign-up does on its form. Every protected screen sends
+  // it there, so no route can be reached around it.
+  if (user && user.terms_accepted === false && location.pathname !== "/accept-terms") {
+    return <Navigate to="/accept-terms" replace />;
+  }
   return <>{children}</>;
 };
 
@@ -204,6 +212,16 @@ const App: React.FC = () => {
         {/* Password reset — public: the whole point is that the user cannot
             sign in, so this must sit outside ProtectedRoute. */}
         <Route path="/reset-password" element={<ResetPassword />} />
+
+        {/* Terms acceptance for Apple/Google sign-ups */}
+        <Route
+          path="/accept-terms"
+          element={
+            <ProtectedRoute>
+              {user && user.terms_accepted === false ? <AcceptTerms /> : <Navigate to="/onboarding" replace />}
+            </ProtectedRoute>
+          }
+        />
 
         {/* Onboarding - authenticated but not yet onboarded */}
         <Route

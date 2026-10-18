@@ -1,9 +1,11 @@
 import React, { useState } from "react";
+import StatusBarShield from "../components/Layout/StatusBarShield";
 import { useT, useDir } from "../i18n/t";
 import { LANGUAGES, detectLanguage, rememberLanguage, applyDocumentLanguage } from "../i18n/languages";
 import { useNavigate, Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
-import { loginUser, registerUser, setUser } from "../store/slices/authSlice";
+import { loginUser, registerUser, setUser, socialLoginUser } from "../store/slices/authSlice";
+import { appleAvailable, googleAvailable, signInWithApple, signInWithGoogle } from "../services/socialLogin";
 
 // Must match TERMS_VERSION in backend/app/api/v1/auth.py. Bump both together
 // whenever the substance of /terms.html changes.
@@ -72,6 +74,45 @@ const Login: React.FC = () => {
     }
   };
 
+  const [socialError, setSocialError] = useState("");
+  const [socialBusy, setSocialBusy] = useState<"apple" | "google" | null>(null);
+  const showApple = appleAvailable();
+  const showGoogle = googleAvailable();
+
+  const handleSocial = async (provider: "apple" | "google") => {
+    setSocialError("");
+    setSocialBusy(provider);
+    try {
+      const r = provider === "apple" ? await signInWithApple() : await signInWithGoogle();
+      if (r.status === "cancelled") return;
+      if (r.status === "error") {
+        setSocialError(t(
+          "Sign-in with {provider} did not complete. Try again, or use your email.",
+          "הכניסה עם {provider} לא הושלמה. נסה שוב, או היכנס עם אימייל.",
+          { provider: provider === "apple" ? "Apple" : "Google" }
+        ));
+        return;
+      }
+      const result = await dispatch(socialLoginUser({
+        provider, idToken: r.idToken, fullName: r.fullName, preferredLanguage: lang,
+      }));
+      if (socialLoginUser.fulfilled.match(result)) {
+        const payload = result.payload as any;
+        if (payload?.requires_2fa) {
+          setPreAuthToken(payload.pre_auth_token);
+          setTwoFARequired(true);
+          return;
+        }
+        navigate(
+          payload.terms_accepted === false ? "/accept-terms"
+            : payload.is_onboarded ? "/dashboard" : "/onboarding"
+        );
+      }
+    } finally {
+      setSocialBusy(null);
+    }
+  };
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     const result = await dispatch(registerUser(registerForm));
@@ -89,6 +130,7 @@ const Login: React.FC = () => {
       // language picker sat under the notch, over the clock and battery.
       style={{ paddingTop: "calc(env(safe-area-inset-top) + 1rem)", paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
     >
+      <StatusBarShield />
       {/* Language picker.
           A two-way he/en toggle labelled "עב" was wrong twice over for the
           eight other languages: it offered a reader in French a switch to
@@ -338,6 +380,55 @@ const Login: React.FC = () => {
                 {isLoading ? (t("Registering...", "נרשם...")) : (t("Register", "הרשמה"))}
               </button>
             </form>
+          )}
+
+          {/* Apple first: on iOS it is required wherever another provider is
+              offered (App Store 4.8), and Apple asks that it be no less
+              prominent. Not shown on the 2FA step. */}
+          {!twoFARequired && (showApple || showGoogle) && (
+            <div className="mt-5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex-1 h-px bg-gray-800" />
+                <span className="text-xs text-gray-500">{t("or", "או")}</span>
+                <div className="flex-1 h-px bg-gray-800" />
+              </div>
+              {socialError && (
+                <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 mb-3 text-red-300 text-sm">
+                  {socialError}
+                </div>
+              )}
+              <div className="space-y-2.5">
+                {showApple && (
+                  <button
+                    type="button"
+                    onClick={() => handleSocial("apple")}
+                    disabled={socialBusy !== null}
+                    className="w-full flex items-center justify-center gap-2 bg-white text-black rounded-lg py-3 font-medium disabled:opacity-60"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 384 512" aria-hidden fill="currentColor">
+                      <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z" />
+                    </svg>
+                    {socialBusy === "apple" ? t("Signing in...", "מתחבר...") : t("Continue with Apple", "המשך עם Apple")}
+                  </button>
+                )}
+                {showGoogle && (
+                  <button
+                    type="button"
+                    onClick={() => handleSocial("google")}
+                    disabled={socialBusy !== null}
+                    className="w-full flex items-center justify-center gap-2 bg-gray-800 border border-gray-700 text-white rounded-lg py-3 font-medium hover:border-gray-500 disabled:opacity-60"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden>
+                      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/>
+                      <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+                      <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/>
+                      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/>
+                    </svg>
+                    {socialBusy === "google" ? t("Signing in...", "מתחבר...") : t("Continue with Google", "המשך עם Google")}
+                  </button>
+                )}
+              </div>
+            </div>
           )}
         </div>
 

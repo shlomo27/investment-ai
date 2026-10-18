@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import StatusBarShield from "../components/Layout/StatusBarShield";
 import { useT } from "../i18n/t";
 import { useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
@@ -88,6 +89,7 @@ const Onboarding: React.FC = () => {
 
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="min-h-screen bg-gray-950 flex items-center justify-center px-4" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1rem)", paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}>
+      <StatusBarShield />
       <div className="w-full max-w-md">
 
         {/* Progress */}

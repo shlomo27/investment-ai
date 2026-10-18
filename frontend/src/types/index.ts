@@ -104,6 +104,10 @@ export interface User {
   alert_frequency?: "REALTIME" | "EVERY_4_HOURS" | "DAILY";
   totp_enabled: boolean;
   telegram_linked?: boolean;
+  /** "apple" / "google" when the account was created by social sign-in. */
+  auth_provider?: string | null;
+  /** False only for a social sign-up that has not yet accepted the terms. */
+  terms_accepted?: boolean;
   created_at: string;
 
   // Subscription. Descriptive only — every limit is enforced server-side,
