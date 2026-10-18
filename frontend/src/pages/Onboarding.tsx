@@ -87,7 +87,7 @@ const Onboarding: React.FC = () => {
   };
 
   return (
-    <div dir={isHe ? "rtl" : "ltr"} className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+    <div dir={isHe ? "rtl" : "ltr"} className="min-h-screen bg-gray-950 flex items-center justify-center px-4" style={{ paddingTop: "calc(env(safe-area-inset-top) + 1rem)", paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}>
       <div className="w-full max-w-md">
 
         {/* Progress */}

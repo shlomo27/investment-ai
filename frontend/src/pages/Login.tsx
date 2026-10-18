@@ -84,6 +84,10 @@ const Login: React.FC = () => {
     <div
       className="min-h-screen bg-gray-950 flex items-center justify-center px-4"
       dir={dir}
+      // These screens have no Navbar, and the Navbar is what carried the
+      // safe-area inset everywhere else: in the iOS app the logo and the
+      // language picker sat under the notch, over the clock and battery.
+      style={{ paddingTop: "calc(env(safe-area-inset-top) + 1rem)", paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
     >
       {/* Language picker.
           A two-way he/en toggle labelled "עב" was wrong twice over for the
@@ -101,7 +105,8 @@ const Login: React.FC = () => {
           setRegisterForm((f) => ({ ...f, preferred_language: code }));
         }}
         aria-label={t("Language", "שפה")}
-        className="fixed top-4 right-4 bg-gray-900 text-gray-300 text-sm border border-gray-700 rounded px-3 py-1"
+        style={{ top: "calc(env(safe-area-inset-top) + 1rem)" }}
+        className="fixed right-4 bg-gray-900 text-gray-300 text-sm border border-gray-700 rounded px-3 py-1 z-10"
         dir="ltr"
       >
         {LANGUAGES.map((l) => (
@@ -109,7 +114,7 @@ const Login: React.FC = () => {
         ))}
       </select>
 
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md pt-10">
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-2xl mb-4">
