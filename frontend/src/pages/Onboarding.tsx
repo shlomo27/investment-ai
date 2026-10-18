@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { openExternalLater } from "../platform";
 import StatusBarShield from "../components/Layout/StatusBarShield";
 import { useT } from "../i18n/t";
 import { useNavigate } from "react-router-dom";
@@ -24,9 +25,10 @@ const Onboarding: React.FC = () => {
   const [tgWaiting, setTgWaiting] = useState(false);
 
   const handleTelegramConnect = async () => {
+    const opener = openExternalLater();
     try {
       const { link } = await authApi.telegramLinkCode();
-      window.open(link, "_blank");
+      opener.go(link);
       setTgWaiting(true);
       let attempts = 0;
       const timer = window.setInterval(async () => {
@@ -45,6 +47,7 @@ const Onboarding: React.FC = () => {
         }
       }, 3000);
     } catch {
+      opener.cancel();
       setTgWaiting(false);
     }
   };

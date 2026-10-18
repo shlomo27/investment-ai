@@ -23,3 +23,32 @@ export const platform = (): string => Capacitor.getPlatform();
 
 export const isIOS = (): boolean => Capacitor.getPlatform() === "ios";
 export const isAndroid = (): boolean => Capacitor.getPlatform() === "android";
+
+/**
+ * Open a link outside the app, when the URL is only known after an await.
+ *
+ * window.open() after an await is not a user gesture any more, and both
+ * WKWebView and mobile Safari block it silently. In the iOS app the
+ * "Connect Telegram" button fetched its link, called window.open, and
+ * nothing happened — the screen sat on "waiting for Telegram" with Telegram
+ * never opened.
+ *
+ * Call this synchronously in the click handler, then pass the URL once known:
+ *   native  navigate the main frame; Capacitor hands any URL outside the app
+ *           to iOS/Android, which opens Telegram (or the browser) directly.
+ *   web     open a blank tab now, inside the gesture, and point it at the URL
+ *           when it arrives; close it again if fetching the URL fails.
+ */
+export function openExternalLater(): { go: (url: string) => void; cancel: () => void } {
+  if (isNative()) {
+    return { go: (url) => { window.location.href = url; }, cancel: () => {} };
+  }
+  const win = window.open("", "_blank");
+  return {
+    go: (url) => {
+      if (win && !win.closed) win.location.href = url;
+      else window.location.href = url;
+    },
+    cancel: () => { if (win && !win.closed) win.close(); },
+  };
+}

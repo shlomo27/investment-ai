@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { openExternalLater } from "../platform";
 import { useT, useDir , useLocale} from "../i18n/t";
 import { useAppDispatch, useAppSelector } from "../store";
 import { updateUserProfile, fetchCurrentUser } from "../store/slices/authSlice";
@@ -64,11 +65,12 @@ const Settings: React.FC = () => {
   }, []);
 
   const handleTelegramConnect = async () => {
+    const opener = openExternalLater();
     try {
       const { link } = await authApi.telegramLinkCode();
       setTgCode(new URL(link).searchParams.get("start") ?? "");
       setTgCodeCopied(false);
-      window.open(link, "_blank");
+      opener.go(link);
       setTgWaiting(true);
       if (tgPollRef.current) window.clearInterval(tgPollRef.current);
       let attempts = 0;
@@ -88,6 +90,7 @@ const Settings: React.FC = () => {
         }
       }, 3000);
     } catch {
+      opener.cancel();
       setTgWaiting(false);
     }
   };
