@@ -14,5 +14,16 @@
 	-->
 	<key>aps-environment</key>
 	<string>development</string>
+
+	<!--
+	  Sign in with Apple. Required for the "Continue with Apple" button:
+	  without it the system sheet refuses to open. The App ID must have the
+	  same capability enabled in the developer portal, and the provisioning
+	  profile must be regenerated after enabling it.
+	-->
+	<key>com.apple.developer.applesignin</key>
+	<array>
+		<string>Default</string>
+	</array>
 </dict>
 </plist>

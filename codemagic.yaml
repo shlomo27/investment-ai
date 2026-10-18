@@ -18,6 +18,8 @@
 #     VITE_FIREBASE_VAPID_KEY      Cloud Messaging → Web Push certificates
 #     VITE_REVENUECAT_IOS_KEY      RevenueCat → Project → API keys (appl_…)
 #     VITE_REVENUECAT_ANDROID_KEY  RevenueCat → Project → API keys (goog_…)
+#     VITE_GOOGLE_WEB_CLIENT_ID    Google Cloud → Credentials → OAuth client (Web application)
+#     VITE_GOOGLE_IOS_CLIENT_ID    Google Cloud → Credentials → OAuth client (iOS)
 #
 #   Group "firebase_config" (base64-encoded files, both secure):
 #     GOOGLE_SERVICES_JSON         base64 of google-services.json     (Android)
@@ -184,6 +186,24 @@ workflows:
             exit 1
           fi
       - *install_web
+      - name: Google sign-in URL scheme
+        script: |
+          # Google Sign-In returns to the app through a URL scheme made of the
+          # iOS client ID reversed. Derived here from the same variable the
+          # app reads, so the two can never disagree. Without the variable the
+          # Google button is not shown in the app, and no scheme is needed.
+          if [ -z "$VITE_GOOGLE_IOS_CLIENT_ID" ]; then
+            echo "VITE_GOOGLE_IOS_CLIENT_ID not set — Google sign-in will not be offered on iOS."
+            exit 0
+          fi
+          SCHEME="com.googleusercontent.apps.${VITE_GOOGLE_IOS_CLIENT_ID%.apps.googleusercontent.com}"
+          PLIST=frontend/ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $SCHEME" "$PLIST"
+          echo "Registered URL scheme $SCHEME"
       - name: Apply signing profiles
         script: |
           # ios_signing (environment, above) has Codemagic fetch or create the
