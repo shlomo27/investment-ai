@@ -758,9 +758,31 @@ async def get_inbox(
         )
         rec_state = {r[0]: (r[1], r[2]) for r in state_rows.all()}
 
+    # Alert titles are composed in Hebrew when the alert fires — one message
+    # shared by every recipient — so a reader in English or French saw their
+    # inbox in Hebrew. Same approach as the feed: serve what the translation
+    # cache already holds, queue the rest behind the request, and the next
+    # view is in the reader's language.
+    target_lang = normalize(getattr(current_user, "preferred_language", None))
+    titles: Dict[int, str] = {}
+    warm_jobs = []
+    for n in notifications:
+        if not _needs_translation(n.title, target_lang):
+            continue
+        symbol = (n.internal_detail or {}).get("symbol") if isinstance(n.internal_detail, dict) else None
+        got = (await cached_translations({"title": n.title}, target_lang, db, symbol=symbol)).get("title")
+        if got and got != n.title:
+            titles[n.id] = got
+        else:
+            warm_jobs.append({"texts": {"title": n.title}, "symbol": symbol})
+    if warm_jobs:
+        detach(warm_translations(warm_jobs, target_lang))
+
     out = []
     for n in notifications:
         item = NotificationInboxResponse.from_orm(n)
+        if n.id in titles:
+            item.title = titles[n.id]
         state = rec_state.get(n.recommendation_id) if n.recommendation_id else None
         if state:
             status_val, type_val = state

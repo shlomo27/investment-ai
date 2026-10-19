@@ -175,9 +175,29 @@ class NotificationService:
             # Private like the app itself, so the real alert title is allowed
             # (email/push/SMS stay generic by design).
             if realtime and personal_chat:
+                # The alert is composed in Hebrew; a reader in another
+                # language gets it translated here. Bounded: an alert that
+                # arrives in Hebrew beats one that arrives late or not at all.
+                tg_title = full_title
+                tg_footer = "כנס למערכת לצפייה בניתוח המלא"
+                lang = (user.preferred_language or "he")
+                if lang != "he":
+                    try:
+                        import asyncio as _asyncio
+                        from app.core.languages import normalize as _norm
+                        from app.services.translation.service import translate_texts
+                        got = await _asyncio.wait_for(
+                            translate_texts({"t": full_title, "f": tg_footer}, _norm(lang), db,
+                                            symbol=(internal_detail or {}).get("symbol")),
+                            timeout=10,
+                        )
+                        tg_title = got.get("t") or full_title
+                        tg_footer = got.get("f") or tg_footer
+                    except Exception:
+                        tg_title = full_title
                 sent_personal = await tg.send_message(
-                    f"🤖 <b>InvestAI</b>\n\n{full_title}\n\n"
-                    f"⚠️ כנס למערכת לצפייה בניתוח המלא",
+                    f"🤖 <b>InvestAI</b>\n\n{tg_title}\n\n"
+                    f"⚠️ {tg_footer}",
                     chat_id=personal_chat,
                 )
                 if sent_personal:
