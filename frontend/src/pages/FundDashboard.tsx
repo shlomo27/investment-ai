@@ -2290,9 +2290,7 @@ const FundDashboard: React.FC = () => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { to: "/recommendations", icon: "🎯", he: "המלצות AI", en: "AI Signals" },
-          { to: "/portfolio", icon: "📊", he: "תיק השקעות", en: "Portfolio" },
           { to: "/watchlist", icon: "👁", he: "מעקב", en: "Watchlist" },
-          { to: "/orders", icon: "📋", he: "עסקאות", en: "Trades" },
         ].map((a) => (
           <Link
             key={a.to}

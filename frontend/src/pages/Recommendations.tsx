@@ -12,9 +12,8 @@ import {
   removeReadNotifications,
 } from "../store/slices/notificationsSlice";
 import { fetchPortfolioSummary } from "../store/slices/portfolioSlice";
-import { recommendationsApi, ordersApi } from "../api/client";
-import { Recommendation, OrderType, RecommendationType, TechnicalAnalysis } from "../types";
-import ConfirmTradeModal from "../components/Trading/ConfirmTradeModal";
+import { recommendationsApi } from "../api/client";
+import { Recommendation, RecommendationType, TechnicalAnalysis } from "../types";
 import RecommendationCard from "../components/Recommendations/RecommendationCard";
 import SortMenu, { SortOption } from "../components/SortMenu";
 
@@ -218,7 +217,6 @@ const Recommendations: React.FC = () => {
   // 3 — it cannot rank anything, so sorting by it was close to arbitrary.
   // Risk/reward is arithmetic on the committee's own target and stop.
   const [sortBy, setSortBy] = useState<SortKey>("rr");
-  const [tradeModal, setTradeModal] = useState<{ rec: Recommendation; type: OrderType } | null>(null);
   const [techMap, setTechMap] = useState<Record<number, TechnicalAnalysis>>({});
   const [loadingTech, setLoadingTech] = useState<Record<number, boolean>>({});
   const [inboxType, setInboxType] = useState("");
@@ -293,24 +291,6 @@ const Recommendations: React.FC = () => {
     return alloc === "HIGH" ? 15 : alloc === "MEDIUM" ? 10 : 5;
   };
 
-  const handleConfirmTrade = async (quantity: number, price: number) => {
-    if (!tradeModal) return;
-    try {
-      await ordersApi.createOrder({
-        symbol: tradeModal.rec.symbol,
-        order_type: tradeModal.type,
-        quantity,
-        price,
-        recommendation_id: tradeModal.rec.id,
-      });
-      // NOTE: deliberately NOT acknowledging — a holder needs continued access
-      // to the recommendation's analysis in the signals feed. Explicit
-      // "Dismiss" remains available on the card.
-      setTradeModal(null);
-    } catch (e: any) {
-      alert(e.response?.data?.detail || "Order failed");
-    }
-  };
 
   // Sort all recommendations by confidence DESC.
   //
@@ -925,8 +905,6 @@ const Recommendations: React.FC = () => {
                   technicalAnalysis={techMap[rec.id]}
                   isLoadingTechnical={!!loadingTech[rec.id]}
                   onRequestTechnical={() => handleRequestTechnical(rec.id)}
-                  onBuy={() => setTradeModal({ rec, type: OrderType.BUY })}
-                  onSell={() => setTradeModal({ rec, type: OrderType.SELL })}
                   onDismiss={() => handleAcknowledge(rec.id)}
                   suggestedPct={getSuggestedPct(rec)}
                   approvedAt={rec.approved_at}
@@ -937,15 +915,6 @@ const Recommendations: React.FC = () => {
         </div>
       )}
 
-      {tradeModal && (
-        <ConfirmTradeModal
-          recommendation={tradeModal.rec}
-          orderType={tradeModal.type}
-          isHe={isHe}
-          onConfirm={handleConfirmTrade}
-          onCancel={() => setTradeModal(null)}
-        />
-      )}
     </div>
   );
 };

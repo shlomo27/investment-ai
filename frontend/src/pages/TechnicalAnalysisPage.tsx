@@ -6,12 +6,12 @@ import {
 } from "recharts";
 import { useAppSelector } from "../store";
 import { useLocale, useT } from "../i18n/t";
-import { recommendationsApi, ordersApi } from "../api/client";
+import { recommendationsApi } from "../api/client";
 import {
   Recommendation, RecommendationType, TechnicalAnalysis,
-  OrderType, AnalysisModule, FibonacciLevels,
+  AnalysisModule, FibonacciLevels,
 } from "../types";
-import ConfirmTradeModal from "../components/Trading/ConfirmTradeModal";
+import FollowButton from "../components/Recommendations/FollowButton";
 import CandlestickChart from "../components/Charts/CandlestickChart";
 
 // ─── Signal colours ─────────────────────────────────────────────────────────
@@ -229,7 +229,6 @@ const TechnicalAnalysisPage: React.FC = () => {
   const [rec, setRec]         = useState<Recommendation | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
-  const [tradeModal, setTradeModal] = useState<{ type: OrderType } | null>(null);
 
   // Refresh bookkeeping lives in refs, not state, because every path that
   // refreshes — the 5-minute tick, returning to the tab, the bfcache restore —
@@ -331,17 +330,6 @@ const TechnicalAnalysisPage: React.FC = () => {
     };
   }, []);
 
-  const handleConfirmTrade = async (quantity: number, price: number) => {
-    if (!rec || !tradeModal) return;
-    try {
-      await ordersApi.createOrder({ symbol: rec.symbol, order_type: tradeModal.type, quantity, price, recommendation_id: rec.id });
-      // Keep the recommendation live — holders need continued access to it
-      setTradeModal(null);
-      navigate("/portfolio");
-    } catch (e: any) {
-      alert(e.response?.data?.detail || "Order failed");
-    }
-  };
 
   if (loading) {
     return (
@@ -758,14 +746,9 @@ const TechnicalAnalysisPage: React.FC = () => {
 
       {/* Action buttons */}
       <div className="grid grid-cols-2 gap-4">
-        <button
-          onClick={() => setTradeModal({ type: isShort ? OrderType.SELL : OrderType.BUY })}
-          className={`py-4 rounded-2xl font-black text-sm tracking-widest ${
-            isShort ? "bg-red-600 hover:bg-red-700 text-white" : "bg-green-600 hover:bg-green-700 text-white"
-          }`}
-        >
-          {isShort ? "▼ ADD SHORT TO PORTFOLIO" : "▲ ADD TO PORTFOLIO"} · {rec.symbol}
-        </button>
+        <div className="flex items-stretch [&>button]:w-full [&>button]:py-4 [&>button]:rounded-2xl [&>span]:self-center">
+          <FollowButton symbol={rec.symbol} size="lg" />
+        </div>
         <Link
           to={`/research/${rec.id}`}
           className="py-4 rounded-2xl border border-gray-700 hover:border-gray-500 text-gray-300 text-sm tracking-widest text-center font-bold transition-colors flex items-center justify-center"
@@ -774,15 +757,6 @@ const TechnicalAnalysisPage: React.FC = () => {
         </Link>
       </div>
 
-      {tradeModal && rec && (
-        <ConfirmTradeModal
-          recommendation={rec}
-          orderType={tradeModal.type}
-          isHe={isHe}
-          onConfirm={handleConfirmTrade}
-          onCancel={() => setTradeModal(null)}
-        />
-      )}
     </div>
   );
 };

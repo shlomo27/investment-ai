@@ -917,6 +917,9 @@ export const UI_STRINGS: StringTable = {
     "Continue with Apple": "Continuer avec Apple",
     "Continue with Google": "Continuer avec Google",
     "Telegram bot check": "Vérification du bot Telegram",
+    "✓ Following — we'll alert you": "✓ Suivi — nous vous alerterons",
+    "Get alerts on this stock's trend changes, stop and target": "Recevez des alertes sur les changements de tendance, le stop et l'objectif de cette action",
+    "Follow": "Suivre",
   },
   "es": {
     "Signals": "Señales",
@@ -1808,6 +1811,9 @@ export const UI_STRINGS: StringTable = {
     "Continue with Apple": "Continuar con Apple",
     "Continue with Google": "Continuar con Google",
     "Telegram bot check": "Comprobación del bot de Telegram",
+    "✓ Following — we'll alert you": "✓ Siguiendo — te avisaremos",
+    "Get alerts on this stock's trend changes, stop and target": "Recibe alertas sobre cambios de tendencia, stop y objetivo de esta acción",
+    "Follow": "Seguir",
   },
   "de": {
     "Signals": "Signale",
@@ -2699,6 +2705,9 @@ export const UI_STRINGS: StringTable = {
     "Continue with Apple": "Weiter mit Apple",
     "Continue with Google": "Weiter mit Google",
     "Telegram bot check": "Telegram-Bot prüfen",
+    "✓ Following — we'll alert you": "✓ Gefolgt — wir benachrichtigen dich",
+    "Get alerts on this stock's trend changes, stop and target": "Erhalte Benachrichtigungen zu Trendwechseln, Stop und Kursziel dieser Aktie",
+    "Follow": "Folgen",
   },
   "it": {
     "Loading...": "Caricamento…",
@@ -3582,6 +3591,9 @@ export const UI_STRINGS: StringTable = {
     "Continue with Apple": "Continua con Apple",
     "Continue with Google": "Continua con Google",
     "Telegram bot check": "Controllo del bot Telegram",
+    "✓ Following — we'll alert you": "✓ Seguito — ti avviseremo",
+    "Get alerts on this stock's trend changes, stop and target": "Ricevi avvisi su cambi di tendenza, stop e obiettivo di questo titolo",
+    "Follow": "Segui",
   },
   "pt-BR": {
     "Log out": "Sair",
@@ -4465,6 +4477,9 @@ export const UI_STRINGS: StringTable = {
     "Continue with Apple": "Continuar com a Apple",
     "Continue with Google": "Continuar com o Google",
     "Telegram bot check": "Verificação do bot do Telegram",
+    "✓ Following — we'll alert you": "✓ Seguindo — vamos te avisar",
+    "Get alerts on this stock's trend changes, stop and target": "Receba alertas sobre mudanças de tendência, stop e alvo desta ação",
+    "Follow": "Seguir",
   },
   "ar": {
     "Log out": "تسجيل الخروج",
@@ -5348,6 +5363,9 @@ export const UI_STRINGS: StringTable = {
     "Continue with Apple": "المتابعة باستخدام Apple",
     "Continue with Google": "المتابعة باستخدام Google",
     "Telegram bot check": "فحص بوت تيليجرام",
+    "✓ Following — we'll alert you": "✓ تتم المتابعة — سننبهك",
+    "Get alerts on this stock's trend changes, stop and target": "احصل على تنبيهات بتغيرات الاتجاه ووقف الخسارة والهدف لهذا السهم",
+    "Follow": "متابعة",
   },
   "ko": {
     "Log out": "로그아웃",
@@ -6231,6 +6249,9 @@ export const UI_STRINGS: StringTable = {
     "Continue with Apple": "Apple로 계속하기",
     "Continue with Google": "Google로 계속하기",
     "Telegram bot check": "텔레그램 봇 점검",
+    "✓ Following — we'll alert you": "✓ 팔로우 중 — 알림을 보내드립니다",
+    "Get alerts on this stock's trend changes, stop and target": "이 종목의 추세 변화, 손절가, 목표가 알림 받기",
+    "Follow": "팔로우",
   },
   "ja": {
     "Log out": "ログアウト",
@@ -7114,5 +7135,8 @@ export const UI_STRINGS: StringTable = {
     "Continue with Apple": "Appleで続ける",
     "Continue with Google": "Googleで続ける",
     "Telegram bot check": "Telegramボットの確認",
+    "✓ Following — we'll alert you": "✓ フォロー中 — 通知します",
+    "Get alerts on this stock's trend changes, stop and target": "この銘柄のトレンド変化・ストップ・目標の通知を受け取る",
+    "Follow": "フォロー",
   },
 };

@@ -288,9 +288,7 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { to: "/recommendations", icon: "💡", he: "המלצות AI", en: "AI Recommendations" },
-          { to: "/portfolio", icon: "📊", he: "תיק השקעות", en: "Portfolio" },
           { to: "/watchlist", icon: "👁", he: "רשימת מעקב", en: "Watchlist" },
-          { to: "/orders", icon: "📋", he: "היסטוריית עסקאות", en: "Trade History" },
         ].map((action) => (
           <Link
             key={action.to}

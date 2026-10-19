@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useT } from "../../i18n/t";
 import { useNavigate } from "react-router-dom";
-import { watchlistApi } from "../../api/client";
+import FollowButton from "./FollowButton";
 import { Recommendation, RecommendationType, OrderType, TechnicalAnalysis } from "../../types";
 
 interface Props {
@@ -10,8 +10,6 @@ interface Props {
   technicalAnalysis?: TechnicalAnalysis;
   isLoadingTechnical: boolean;
   onRequestTechnical: () => void;
-  onBuy: () => void;
-  onSell: () => void;
   onDismiss: () => void;
   suggestedAmount?: number; // legacy — no longer rendered
   suggestedPct?: number;
@@ -24,8 +22,6 @@ const RecommendationCard: React.FC<Props> = ({
   technicalAnalysis: tech,
   isLoadingTechnical,
   onRequestTechnical,
-  onBuy,
-  onSell,
   onDismiss,
   suggestedAmount,
   suggestedPct,
@@ -33,26 +29,8 @@ const RecommendationCard: React.FC<Props> = ({
 }) => {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
-  const [following, setFollowing] = useState(false);
-  const [followMsg, setFollowMsg] = useState(false);
   const navigate = useNavigate();
 
-  const handleFollowForEntry = async () => {
-    setFollowing(true);
-    try {
-      await watchlistApi.addToWatchlist({
-        symbol: rec.symbol,
-        exchange: rec.symbol.endsWith(".TA") ? "TASE" : "NASDAQ",
-        alert_on_technical_signal: true,
-        notes: "Following for entry point",
-      });
-      setFollowMsg(true);
-    } catch {
-      // already on watchlist or failed — still show confirmation
-      setFollowMsg(true);
-    }
-    setFollowing(false);
-  };
 
   const isBuy = rec.recommendation_type.includes("BUY");
   const isSell = rec.recommendation_type.includes("SELL");
@@ -678,40 +656,7 @@ const RecommendationCard: React.FC<Props> = ({
             On a phone it would consume the line and force a wrap with nothing
             on it. */}
         <div className="hidden sm:block flex-1" />
-        {(() => {
-          if (!isBuy) return null;
-          const sig = (tech?.timing_signal || rec.technical_analysis?.timing_signal || "").toUpperCase();
-          const positive = sig === "BUY_NOW" || sig === "STRONG_BUY";
-          if (positive) return null;  // already a good entry — no need to wait
-          return followMsg ? (
-            <span className="text-xs text-green-400 px-2">{t("✓ Following", "✓ במעקב — נודיע בכניסה")}</span>
-          ) : (
-            <button
-              onClick={handleFollowForEntry}
-              disabled={following}
-              className="text-xs bg-blue-900/20 border border-blue-700/50 text-blue-300 rounded-lg px-3 py-1.5 hover:bg-blue-900/40 disabled:opacity-60"
-              title={t("We'll alert you when the technical confirms an entry point", "נודיע לך כשהניתוח הטכני יאשר נקודת כניסה")}
-            >
-              {following ? "..." : `👁 ${t("Follow for entry", "עקוב לנקודת כניסה")}`}
-            </button>
-          );
-        })()}
-        {isBuy || (!isSell) ? (
-          <button
-            onClick={onBuy}
-            className="bg-green-600 hover:bg-green-700 text-white rounded-lg px-4 py-1.5 text-sm font-medium"
-          >
-            {t("Add to Portfolio", "מחזיק? הוסף לתיק")}
-          </button>
-        ) : null}
-        {isSell && (
-          <button
-            onClick={onSell}
-            className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-1.5 text-sm font-medium"
-          >
-            {t("Sell", "מכור")}
-          </button>
-        )}
+        <FollowButton symbol={rec.symbol} />
         <button
           onClick={onDismiss}
           className="text-gray-500 hover:text-gray-300 text-sm px-2"

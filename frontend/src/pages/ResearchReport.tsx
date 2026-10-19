@@ -2,9 +2,9 @@ import React, { useEffect, useState } from "react";
 import { useT } from "../i18n/t";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useAppSelector, useAppDispatch } from "../store";
-import { recommendationsApi, ordersApi } from "../api/client";
-import { Recommendation, RecommendationType, OrderType, QuantitativeModels } from "../types";
-import ConfirmTradeModal from "../components/Trading/ConfirmTradeModal";
+import { recommendationsApi } from "../api/client";
+import { Recommendation, RecommendationType, QuantitativeModels } from "../types";
+import FollowButton from "../components/Recommendations/FollowButton";
 import Paywall from "../components/Paywall";
 import { isNative } from "../platform";
 import { fetchCurrentUser } from "../store/slices/authSlice";
@@ -649,7 +649,6 @@ const ResearchReport: React.FC = () => {
 
   const [rec, setRec] = useState<Recommendation | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tradeModal, setTradeModal] = useState<{ type: OrderType } | null>(null);
   const [quantLoading, setQuantLoading] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(false);
 
@@ -695,24 +694,6 @@ const ResearchReport: React.FC = () => {
     setQuantLoading(false);
   };
 
-  const handleConfirmTrade = async (quantity: number, price: number) => {
-    if (!rec || !tradeModal) return;
-    try {
-      await ordersApi.createOrder({
-        symbol: rec.symbol,
-        order_type: tradeModal.type,
-        quantity,
-        price,
-        recommendation_id: rec.id,
-      });
-      // Keep the recommendation live — the user now HOLDS this stock and
-      // needs the research to stay reachable.
-      setTradeModal(null);
-      navigate("/portfolio");
-    } catch (e: any) {
-      alert(e.response?.data?.detail || "Order failed");
-    }
-  };
 
   if (loading) {
     return (
@@ -865,21 +846,7 @@ const ResearchReport: React.FC = () => {
 
         {/* Action Buttons */}
         <div className="flex gap-3 mt-6">
-          {!isShort ? (
-            <button
-              onClick={() => setTradeModal({ type: OrderType.BUY })}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl py-3 font-medium"
-            >
-              {t("Bought at your broker? Add to portfolio", "רכשת אצל הברוקר? הוסף לתיק")}
-            </button>
-          ) : (
-            <button
-              onClick={() => setTradeModal({ type: OrderType.SELL })}
-              className="flex-1 bg-red-600 hover:bg-red-700 text-white rounded-xl py-3 font-medium"
-            >
-              {t("Shorted at your broker? Record it", "פתחת שורט אצל הברוקר? עדכן בתיק")}
-            </button>
-          )}
+          <div className="flex-1"><FollowButton symbol={rec.symbol} size="lg" /></div>
           <Link
             to={`/technical/${rec.id}`}
             className="flex-1 border border-blue-700 text-blue-400 hover:text-blue-300 rounded-xl py-3 text-sm font-medium text-center transition-colors"
@@ -1354,16 +1321,6 @@ const ResearchReport: React.FC = () => {
         )}
       </Link>
 
-      {/* Trade Modal */}
-      {tradeModal && rec && (
-        <ConfirmTradeModal
-          recommendation={rec}
-          orderType={tradeModal.type}
-          isHe={isHe}
-          onConfirm={handleConfirmTrade}
-          onCancel={() => setTradeModal(null)}
-        />
-      )}
     </div>
   );
 };

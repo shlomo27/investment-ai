@@ -29,8 +29,6 @@ const TABS: Tab[] = [
 ];
 
 const MORE: Tab[] = [
-  { to: "/portfolio", icon: "📊", he: "תיק השקעות", en: "Portfolio" },
-  { to: "/orders", icon: "📑", he: "עסקאות", en: "Orders" },
   { to: "/settings", icon: "⚙️", he: "הגדרות", en: "Settings" },
 ];
 
