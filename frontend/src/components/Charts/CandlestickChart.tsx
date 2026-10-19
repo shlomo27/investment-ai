@@ -51,6 +51,16 @@ const INTERACTION = {
   },
 };
 
+/**
+ * Axis dates in the app's language, not the phone's.
+ *
+ * lightweight-charts formats dates with navigator.language by default, so a
+ * phone set to Hebrew showed Hebrew month names under an English app.
+ */
+const localization = () => ({
+  locale: (typeof document !== "undefined" && document.documentElement.lang) || navigator.language,
+});
+
 function makeChart(el: HTMLDivElement, height: number) {
   return createChart(el, {
     width: el.clientWidth,
@@ -60,6 +70,7 @@ function makeChart(el: HTMLDivElement, height: number) {
     crosshair: { mode: 1 },
     rightPriceScale: { borderColor: DARK.border, scaleMargins: { top: 0.1, bottom: 0.05 } },
     timeScale: { borderColor: DARK.border, timeVisible: true, rightOffset: 4 },
+    localization: localization(),
     ...INTERACTION,
   });
 }
@@ -240,6 +251,7 @@ const MACDPanel: React.FC<{ ta: TechnicalAnalysis }> = ({ ta }) => {
       grid: { vertLines: { color: DARK.grid }, horzLines: { color: DARK.grid } },
       rightPriceScale: { borderColor: DARK.border, scaleMargins: { top: 0.1, bottom: 0.1 } },
       timeScale: { borderColor: DARK.border, timeVisible: true, rightOffset: 4 },
+      localization: localization(),
       ...INTERACTION,
       crosshair: { mode: 0 },
     });

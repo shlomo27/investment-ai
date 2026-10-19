@@ -136,12 +136,13 @@ const Watchlist: React.FC = () => {
   };
 
   const signalLabel = (signal?: string) => {
+    // Direct t() calls: the string scanner only sees literals passed to t().
     const labels: Record<string, string> = {
-      STRONG_BUY: "🟢 STRONG BUY",
-      BUY_NOW: "🟢 BUY",
-      WAIT: "🟡 WAIT",
-      SELL_NOW: "🔴 SELL",
-      STRONG_SELL: "🔴 STRONG SELL",
+      STRONG_BUY: `🟢 ${t("Strong buy", "קנייה חזקה")}`,
+      BUY_NOW: `🟢 ${t("Buy", "קנה")}`,
+      WAIT: `🟡 ${t("Wait", "המתן")}`,
+      SELL_NOW: `🔴 ${t("Sell", "מכור")}`,
+      STRONG_SELL: `🔴 ${t("Strong sell", "מכירה חזקה")}`,
     };
     return labels[signal || ""] || signal || "—";
   };

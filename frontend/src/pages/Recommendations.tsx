@@ -165,6 +165,17 @@ const Recommendations: React.FC = () => {
   const { summary: portfolioSummary } = useAppSelector((s) => s.portfolio);
   const isHe = user?.preferred_language === "he";
 
+  // Technical signal codes (BUY_NOW, WAIT…) as words in the reader's
+  // language. Direct t() calls: the string scanner only sees literals.
+  const sigWord = (sig?: string) =>
+    !sig ? ""
+    : sig === "STRONG_BUY" ? t("Strong buy", "קנייה חזקה")
+    : sig === "STRONG_SELL" ? t("Strong sell", "מכירה חזקה")
+    : sig.includes("BUY") ? t("Buy", "קנה")
+    : sig.includes("SELL") ? t("Sell", "מכור")
+    : sig === "WAIT" ? t("Wait", "המתן")
+    : sig;
+
   // Signals first: the recommendations are the product, the inbox is a log
   // of what already happened. Landing on the log made a client read
   // history before seeing what is being recommended right now.
@@ -643,8 +654,8 @@ const Recommendations: React.FC = () => {
                           {(notif.internal_detail.signal || notif.internal_detail.ta_signal) && (
                             <p>
                               <span className="text-gray-500 font-medium">{t("Technical: ", "מצב טכני: ")}</span>
-                              {notif.internal_detail.signal || notif.internal_detail.ta_signal}
-                              {notif.internal_detail.previous_signal ? ` (${t("prev", "קודם")}: ${notif.internal_detail.previous_signal})` : ""}
+                              {sigWord(notif.internal_detail.signal || notif.internal_detail.ta_signal)}
+                              {notif.internal_detail.previous_signal ? ` (${t("prev", "קודם")}: ${sigWord(notif.internal_detail.previous_signal)})` : ""}
                               {(notif.internal_detail.technical_score ?? notif.internal_detail.ta_score) != null
                                 ? ` · ${t("score", "ציון")} ${Math.round(notif.internal_detail.technical_score ?? notif.internal_detail.ta_score)}/100`
                                 : ""}
