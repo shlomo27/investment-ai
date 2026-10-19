@@ -1053,46 +1053,56 @@ const FundDashboard: React.FC = () => {
                      "עוד אין התראות רשומות — תוצאות יופיעו שבוע אחרי ההתראות הראשונות.")}
                 </p>
               ) : (
-                <div className="mt-2 overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-gray-500">
-                        <th className="text-start font-normal py-1">{t("Alert", "התראה")}</th>
-                        <th className="font-normal">{t("Count", "כמות")}</th>
-                        <th className="font-normal">{t("Right after a week", "צדקה אחרי שבוע")}</th>
-                        <th className="font-normal">{t("Right after a month", "צדקה אחרי חודש")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(outcomes.groups as Record<string, any>).map(([k, g]) => {
-                        // Direct t() calls, not a table: the string scanner
-                        // only sees literals passed to t().
-                        const label =
-                          k === "ENTRY_BUY" ? t("Entry point (buy)", "נקודת כניסה (קנייה)")
-                          : k === "TA_BUY" ? t("Technical buy", "קנייה טכנית")
-                          : k === "TA_SELL" ? t("Technical sell", "מכירה טכנית")
-                          : k === "TA_WAIT" ? t("Wait (not scored)", "המתנה (לא נמדד)")
-                          : k === "STOP" ? t("Stop broken", "סטופ נשבר")
-                          : k === "TARGET" ? t("Target reached", "יעד הושג")
-                          // Shadow rows: scored for the trend filter, so
-                          // "right" here means the filter was right.
-                          : k === "GATED_BUY" ? t("Filter held back a buy (right = it then fell)", "המסנן חסם קנייה (צדק = המניה ירדה)")
-                          : k === "GATED_SELL" ? t("Filter held back a sell (right = it then rose)", "המסנן חסם מכירה (צדק = המניה עלתה)")
-                          : k;
-                        const cell = (s: any) => s?.measured
-                          ? `${s.hit_rate_pct}% (${s.measured}) · ${s.avg_move_pct > 0 ? "+" : ""}${s.avg_move_pct}%`
-                          : "—";
-                        return (
-                          <tr key={k} className="border-t border-gray-800 text-gray-300">
-                            <td className="py-1">{label}</td>
-                            <td className="text-center num">{g.alerts}</td>
-                            <td className="text-center num" dir="ltr">{cell(g["1w"])}</td>
-                            <td className="text-center num" dir="ltr">{cell(g["1m"])}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="mt-2 space-y-2">
+                  {/* Cards, not a table: on a phone the four columns collapsed
+                      and the week figures landed under the count, where they
+                      read as part of it. */}
+                  {Object.entries(outcomes.groups as Record<string, any>).map(([k, g]) => {
+                    // Direct t() calls: the string scanner only sees literals passed to t().
+                    const label =
+                      k === "ENTRY_BUY" ? t("Entry point (buy)", "נקודת כניסה (קנייה)")
+                      : k === "TA_BUY" ? t("Technical buy", "קנייה טכנית")
+                      : k === "TA_SELL" ? t("Technical sell", "מכירה טכנית")
+                      : k === "TA_WAIT" ? t("Wait (not scored)", "המתנה (לא נמדד)")
+                      : k === "STOP" ? t("Stop broken", "סטופ נשבר")
+                      : k === "TARGET" ? t("Target reached", "יעד הושג")
+                      // Shadow rows: scored for the trend filter, so
+                      // "right" here means the filter was right.
+                      : k === "GATED_BUY" ? t("Filter held back a buy (right = it then fell)", "המסנן חסם קנייה (צדק = המניה ירדה)")
+                      : k === "GATED_SELL" ? t("Filter held back a sell (right = it then rose)", "המסנן חסם מכירה (צדק = המניה עלתה)")
+                      : k;
+                    const cell = (st: any) => !st?.measured ? (
+                      <span className="text-gray-600">—</span>
+                    ) : (
+                      <span dir="ltr" className="num">
+                        <span className={st.hit_rate_pct >= 50 ? "text-green-400 font-bold" : "text-orange-400 font-bold"}>{st.hit_rate_pct}%</span>
+                        <span className="text-gray-500"> ({st.measured}) · </span>
+                        <span className={st.avg_move_pct >= 0 ? "text-green-400" : "text-red-400"}>
+                          {st.avg_move_pct > 0 ? "+" : ""}{st.avg_move_pct}%
+                        </span>
+                      </span>
+                    );
+                    return (
+                      <div key={k} className="rounded-lg border border-gray-800 bg-gray-800/40 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-xs text-gray-200">{label}</p>
+                          <p className="text-xs text-gray-400 shrink-0">
+                            {t("Count", "כמות")}: <span className="num text-gray-200">{g.alerts}</span>
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                          <div>
+                            <p className="text-gray-500">{t("Right after a week", "צדקה אחרי שבוע")}</p>
+                            {cell(g["1w"])}
+                          </div>
+                          <div>
+                            <p className="text-gray-500">{t("Right after a month", "צדקה אחרי חודש")}</p>
+                            {cell(g["1m"])}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                   <p className="text-[11px] text-gray-500 mt-1">
                     {t("Format: % right (alerts measured) · average move in the alert's direction.",
                        "מבנה: אחוז צדקה (מספר התראות שנמדדו) · תזוזה ממוצעת בכיוון ההתראה.")}

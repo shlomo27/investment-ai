@@ -2,37 +2,22 @@ import React, { useEffect, useState } from "react";
 import { useT } from "../i18n/t";
 import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
-import { fetchPortfolioSummary } from "../store/slices/portfolioSlice";
 import { fetchInbox, fetchUnreadCount, fetchRecommendations } from "../store/slices/notificationsSlice";
-import { performanceApi } from "../api/client";
+import { performanceApi, watchlistApi } from "../api/client";
+import { WatchlistItem, Recommendation } from "../types";
 
 const Dashboard: React.FC = () => {
   const t = useT();
   const dispatch = useAppDispatch();
   const { user } = useAppSelector((state) => state.auth);
-  const { summary, isLoading: portfolioLoading } = useAppSelector((state) => state.portfolio);
   const { notifications, unreadCount, recommendations } = useAppSelector((state) => state.notifications);
 
   const isHe = user?.preferred_language === "he";
 
   useEffect(() => {
-    dispatch(fetchPortfolioSummary());
     dispatch(fetchInbox({ unreadOnly: false }));
     dispatch(fetchRecommendations({}));
   }, [dispatch]);
-
-  const formatCurrency = (value: number, currency = "₪") =>
-    `${currency}${Math.abs(value).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-  const pnlPositive = (summary?.total_pnl || 0) >= 0;
-
-
-
-  const investmentTypeLabel: Record<string, { he: string; en: string; icon: string }> = {
-    STOCKS: { he: "מניות בלבד", en: "Stocks Only", icon: "📈" },
-    ETFS: { he: "ETF בלבד", en: "ETFs Only", icon: "🗂️" },
-    BOTH: { he: "מניות + ETF", en: "Stocks + ETFs", icon: "🔀" },
-  };
 
   const getTriggerBadge = (notif: any) => {
     const trigger = notif.internal_detail?.trigger_type;
@@ -42,22 +27,59 @@ const Dashboard: React.FC = () => {
     return null;
   };
 
-  const invType = (user as any)?.investment_type || "BOTH";
-
   const [perfSummary, setPerfSummary] = useState<any>(null);
   useEffect(() => {
     performanceApi.getSummary().then(setPerfSummary).catch(() => {});
   }, []);
 
-  const stopLossWarnings = recommendations
-    .filter(r => r.stop_loss && r.current_price_at_recommendation)
-    .map(r => {
-      const currentPrice = r.current_price_at_recommendation!;
-      const stopLoss = r.stop_loss!;
-      const pctFromStop = ((currentPrice - stopLoss) / stopLoss) * 100;
-      return { symbol: r.symbol, currentPrice, stopLoss, pctFromStop };
-    })
-    .filter(w => w.pctFromStop >= 0 && w.pctFromStop <= 8);
+  // The overview is built around what the reader follows. It used to be
+  // built around a portfolio — value, cash, holdings — and with nothing in
+  // the app that records a trade, every new account saw zeros and "no
+  // holdings yet" on its first screen.
+  const [watch, setWatch] = useState<WatchlistItem[] | null>(null);
+  useEffect(() => {
+    watchlistApi.getWatchlist().then(setWatch).catch(() => setWatch([]));
+  }, []);
+
+  const recBySymbol = new Map<string, Recommendation>();
+  for (const r of recommendations) if (!recBySymbol.has(r.symbol)) recBySymbol.set(r.symbol, r);
+
+  const signalOf = (w: WatchlistItem) =>
+    String(w.technical_signal || w.last_technical_analysis?.timing_signal || "").toUpperCase();
+
+  // Same rule as the "Enter now" filter in Signals: a BUY at 60%+ whose
+  // technical is BUY, stop intact, target not yet reached.
+  const isEntry = (w: WatchlistItem) => {
+    const r = recBySymbol.get(w.symbol);
+    if (!r || !r.recommendation_type.includes("BUY") || r.confidence_score < 60 || r.level_hit) return false;
+    const sig = signalOf(w);
+    if (sig !== "BUY_NOW" && sig !== "STRONG_BUY") return false;
+    const px = typeof r.current_price === "number" ? r.current_price : w.current_price;
+    return !(px && r.target_price && px >= r.target_price);
+  };
+
+  // Near the stop on today's price — not the price at recommendation, which
+  // is what the old warning measured and could be weeks out of date.
+  const stopStatus = (w: WatchlistItem): { kind: "broken" | "near"; pct: number; stop: number } | null => {
+    const r = recBySymbol.get(w.symbol);
+    const px = typeof r?.current_price === "number" ? r.current_price : w.current_price;
+    if (!r?.stop_loss || !px) return null;
+    const short = r.recommendation_type.includes("SELL");
+    const pct = short ? ((r.stop_loss - px) / px) * 100 : ((px - r.stop_loss) / px) * 100;
+    if (r.level_hit === "STOP" || pct < 0) return { kind: "broken", pct, stop: r.stop_loss };
+    if (pct <= 3) return { kind: "near", pct, stop: r.stop_loss };
+    return null;
+  };
+
+  const watched = watch ?? [];
+  const entryCount = watched.filter(isEntry).length;
+  const stopRows = watched.map((w) => ({ w, st: stopStatus(w) })).filter((x) => x.st);
+
+  // Direct t() calls: the string scanner only sees literals passed to t().
+  const sigStyle = (sig: string) =>
+    sig.includes("BUY") ? { cls: "text-green-400", label: t("Buy", "קנה") }
+    : sig.includes("SELL") ? { cls: "text-red-400", label: t("Sell", "מכור") }
+    : { cls: "text-yellow-400", label: t("Wait", "המתן") };
 
   return (
     <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
@@ -85,112 +107,83 @@ const Dashboard: React.FC = () => {
         )}
       </div>
 
-      {/* Profile Strip */}
-      <div className="bg-gray-900 rounded-2xl px-5 py-4 border border-gray-800 flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">{t("Assets:", "נכסים:")}</span>
-          <span className="text-sm font-medium text-white">
-            {investmentTypeLabel[invType]?.icon} {isHe ? investmentTypeLabel[invType]?.he : investmentTypeLabel[invType]?.en}
-          </span>
-        </div>
-        {(user as any)?.allows_volatile && (
-          <span className="px-2 py-0.5 bg-red-900/40 text-red-300 rounded text-xs">{t("High Volatility", "תנודתיות גבוהה")}</span>
-        )}
-        {(user as any)?.allows_leveraged && (
-          <span className="px-2 py-0.5 bg-red-900/40 text-red-300 rounded text-xs">{t("Leveraged", "ממונף")}</span>
-        )}
-        {(user as any)?.allows_short && (
-          <span className="px-2 py-0.5 bg-red-900/40 text-red-300 rounded text-xs">Short</span>
-        )}
-        <div className="flex-1" />
-        <Link to="/recommendations" className="text-xs text-blue-400 hover:text-blue-300">
-          {t("Update profile →", "עדכן פרופיל ←")}
-        </Link>
+      {/* At a glance */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { to: "/watchlist", value: watch === null ? "…" : watched.length, label: t("Following", "במעקב"), cls: "text-white" },
+          { to: "/recommendations", value: watch === null ? "…" : entryCount, label: t("At an entry point", "בנקודת כניסה"), cls: entryCount > 0 ? "text-green-400" : "text-white" },
+          { to: "/recommendations", value: unreadCount ?? 0, label: t("New alerts", "התראות חדשות"), cls: (unreadCount ?? 0) > 0 ? "text-blue-400" : "text-white" },
+        ].map((c) => (
+          <Link key={c.label} to={c.to} className="bg-gray-900 hover:bg-gray-800 rounded-2xl p-4 border border-gray-800 text-center transition-colors">
+            <p className={`text-2xl font-bold num ${c.cls}`}>{c.value}</p>
+            <p className="text-xs text-gray-400 mt-1">{c.label}</p>
+          </Link>
+        ))}
       </div>
 
-      {/* Portfolio Value Cards */}
-      {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-            <p className="text-gray-400 text-xs mb-1">{t("Total Portfolio", "שווי תיק כולל")}</p>
-            <p className="text-2xl font-bold">{formatCurrency(summary.total_value)}</p>
-            <p className={`text-sm mt-1 ${pnlPositive ? "text-green-400" : "text-red-400"}`}>
-              {pnlPositive ? "+" : ""}{formatCurrency(summary.total_pnl)} ({summary.total_pnl_pct.toFixed(2)}%)
-            </p>
-          </div>
-          <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-            <p className="text-gray-400 text-xs mb-1">{t("Available Cash", "מזומן זמין")}</p>
-            <p className="text-2xl font-bold text-green-400">{formatCurrency(summary.cash_balance)}</p>
-          </div>
-          <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-            <p className="text-gray-400 text-xs mb-1">{t("Market Value", "שווי שוק")}</p>
-            <p className="text-2xl font-bold">{formatCurrency(summary.total_market_value)}</p>
-          </div>
-          <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
-            <p className="text-gray-400 text-xs mb-1">{t("Risk Score", "ציון סיכון")}</p>
-            <p className="text-2xl font-bold">
-              <span className="text-white">
-                {summary.risk_score ?? user?.risk_score ?? "—"}/100
-              </span>
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Stop-Loss Warnings */}
-      {stopLossWarnings.length > 0 && (
+      {/* Stop warnings on followed stocks */}
+      {stopRows.length > 0 && (
         <div className="bg-red-900/20 border border-red-700/50 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-red-400 text-lg">⚠️</span>
-            <h3 className="font-bold text-red-400">{t("Stop-Loss Alert", "אזהרת סטופ לוס")}</h3>
+            <h3 className="font-bold text-red-400">{t("Stop loss", "סטופ לוס")}</h3>
           </div>
-          {stopLossWarnings.map(w => (
-            <div key={w.symbol} className="flex items-center justify-between text-sm py-1">
+          {stopRows.map(({ w, st }) => (
+            <div key={w.symbol} className="flex items-center justify-between text-sm py-1 gap-3">
               <span className="font-bold">{w.symbol}</span>
-              <span className="text-red-300">{t("{price} near stop {stop}", "מחיר נוכחי {price} קרוב לסטופ {stop}", { price: w.currentPrice, stop: w.stopLoss })}</span>
-              <span className="text-red-400 font-bold">{w.pctFromStop.toFixed(1)}%</span>
+              <span className={st!.kind === "broken" ? "text-red-300" : "text-orange-300"}>
+                {st!.kind === "broken"
+                  ? t("Stop {stop} broken", "הסטופ {stop} נשבר", { stop: `$${st!.stop.toFixed(2)}` })
+                  : t("{pct}% above the stop {stop}", "{pct}% מעל הסטופ {stop}", { pct: st!.pct.toFixed(1), stop: `$${st!.stop.toFixed(2)}` })}
+              </span>
             </div>
           ))}
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Holdings */}
+        {/* Followed stocks */}
         <div className="bg-gray-900 rounded-2xl p-6 border border-gray-800">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold">{t("Top Holdings", "אחזקות עיקריות")}</h2>
-            <Link to="/portfolio" className="text-blue-400 text-sm hover:text-blue-300">
+            <h2 className="font-bold">{t("Stocks you follow", "המניות שאתה עוקב אחריהן")}</h2>
+            <Link to="/watchlist" className="text-blue-400 text-sm hover:text-blue-300">
               {t("View all", "הכל")}
             </Link>
           </div>
-          {portfolioLoading ? (
+          {watch === null ? (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-16 bg-gray-800 rounded-xl animate-pulse" />
+                <div key={i} className="h-14 bg-gray-800 rounded-xl animate-pulse" />
               ))}
             </div>
-          ) : summary?.positions && summary.positions.length > 0 ? (
-            <div className="space-y-3">
-              {summary.positions.slice(0, 3).map((pos) => (
-                <div key={pos.symbol} className="flex items-center justify-between p-3 bg-gray-800 rounded-xl">
-                  <div>
-                    <p className="font-bold">{pos.symbol}</p>
-                    <p className="text-xs text-gray-400">{pos.quantity.toFixed(4)} {t("units", "יח'")}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium">{formatCurrency(pos.current_value)}</p>
-                    <p className={`text-xs ${pos.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                      {pos.pnl >= 0 ? "+" : ""}{pos.pnl_percentage.toFixed(2)}%
-                    </p>
-                  </div>
-                </div>
-              ))}
+          ) : watched.length > 0 ? (
+            <div className="space-y-2">
+              {watched.slice(0, 6).map((w) => {
+                const sig = sigStyle(signalOf(w));
+                const entry = isEntry(w);
+                return (
+                  <Link key={w.id} to="/watchlist" className="flex items-center justify-between p-3 bg-gray-800 rounded-xl hover:bg-gray-700/70">
+                    <div className="min-w-0">
+                      <p className="font-bold">{w.symbol}</p>
+                      {w.asset_name && <p className="text-xs text-gray-400 truncate">{w.asset_name}</p>}
+                    </div>
+                    <div className="text-end shrink-0">
+                      <p className={`text-sm font-bold ${entry ? "text-green-400" : sig.cls}`}>
+                        {entry ? `🟢 ${t("Enter now", "כניסה עכשיו")}` : sig.label}
+                      </p>
+                      {typeof w.current_price === "number" && (
+                        <p className="text-xs text-gray-400 num" dir="ltr">${w.current_price.toFixed(2)}</p>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">
-              <p>{t("No holdings yet", "אין אחזקות עדיין")}</p>
+              <p>{t("You are not following any stock yet", "עדיין אינך עוקב אחרי אף מניה")}</p>
               <Link to="/recommendations" className="text-blue-400 text-sm mt-2 block">
-                {t("View buy recommendations", "צפה בהמלצות לקנייה")}
+                {t("Browse signals and tap Follow", "עבור לסיגנלים ולחץ \"עקוב\"")}
               </Link>
             </div>
           )}
