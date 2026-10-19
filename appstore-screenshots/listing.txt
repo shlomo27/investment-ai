@@ -1,0 +1,49 @@
+App Store listing — Investment AI (English)
+============================================
+
+SUBTITLE (max 30)
+AI stock research & alerts
+
+PROMOTIONAL TEXT (max 170)
+AI research on US stocks, technical signals with clear entry and stop levels, and alerts when something changes on the stocks you follow.
+
+KEYWORDS (max 100, comma-separated, no spaces)
+stocks,signals,technical analysis,stock alerts,investing,research,watchlist,market,AI
+
+DESCRIPTION
+Investment AI researches US stocks for you and tells you, in plain language, what the analysis found and when it changes.
+
+AI RESEARCH
+Each recommendation comes from a team of AI analysts covering fundamentals, valuation, news, insider activity and risk. You get a bottom line, a target price, a stop loss and the reasoning behind them, plus a confidence level that is explained rather than just shown.
+
+TECHNICAL SIGNALS
+Candlestick charts with moving averages, Bollinger Bands, support and resistance, Fibonacci levels, RSI and MACD. Each stock gets a clear signal (Buy, Wait or Sell) and the price level that would change it.
+
+FOLLOW AND GET ALERTED
+Follow the stocks you care about. You get an alert when a signal changes, when a stock reaches an entry point, or when a price nears its stop loss or target, in the app and optionally on Telegram.
+
+AN HONEST TRACK RECORD
+Every past recommendation is tracked against the S&P 500, wins and losses alike.
+
+IN YOUR LANGUAGE
+English, Hebrew, German, Spanish, Portuguese, French, Arabic, Italian, Korean and Japanese.
+
+SUBSCRIPTION
+Investment AI Pro is an auto-renewing monthly subscription ($19.99/month in the US; price may vary by country). Payment is charged to your Apple ID at confirmation of purchase. The subscription renews automatically unless it is cancelled at least 24 hours before the end of the current period. You can manage or cancel it in your App Store account settings.
+
+Privacy Policy: https://eloquent-optimism-production-52cd.up.railway.app/privacy.html
+Terms of Use: https://eloquent-optimism-production-52cd.up.railway.app/terms.html
+
+Investment AI provides information and analysis only. It is not investment advice and does not execute trades. Investing involves risk, including the loss of capital. Past performance does not guarantee future results.
+
+SUPPORT URL
+https://eloquent-optimism-production-52cd.up.railway.app
+
+PRIVACY POLICY URL (App Information)
+https://eloquent-optimism-production-52cd.up.railway.app/privacy.html
+
+CATEGORY
+Primary: Finance
+
+COPYRIGHT
+2026 Investment AI
