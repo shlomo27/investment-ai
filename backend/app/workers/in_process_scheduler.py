@@ -1159,6 +1159,23 @@ async def job_poll_telegram_links():
                 code = text
             else:
                 code = ""
+            # A chat that is already linked gets told so. The first tap on
+            # Telegram's "Start" button links the chat; a second /start, or
+            # pasting the (now spent) code by hand, used to answer with "how
+            # to link" or "code invalid" right under "linked successfully",
+            # which read as though linking had failed.
+            if not code or not await r.get(f"investment_ai:tg_link:{code}"):
+                async with AsyncSessionLocal() as db:
+                    linked = (await db.execute(
+                        select(User.full_name).where(User.telegram_chat_id == chat_id)
+                    )).first()
+                if linked is not None:
+                    await tg.send_message(
+                        f"✅ הצ'אט הזה כבר מחובר לחשבון של {linked[0]} — אין צורך בקוד נוסף. "
+                        "ההתרעות האישיות יגיעו לכאן.",
+                        chat_id=chat_id,
+                    )
+                    continue
             if not code:
                 await tg.send_message(
                     "כדי לחבר את החשבון: בהגדרות המערכת לחץ על 'חבר טלגרם אישי', "
