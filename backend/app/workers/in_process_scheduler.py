@@ -395,9 +395,29 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
             title = (f"📈 {symbol}{name_str}: סיגנל טכני חיובי{price_str} (ציון {score:.0f}/100). "
                      f"שים לב: {reason}, ולכן זו אינה נקודת כניסה מאושרת. 👈 בדוק במערכת.")
         else:
+            # Say plainly that this is the technical read alone, and how it
+            # stands against the fundamental call. "📈 Buy — NVDA" with no
+            # recommendation on NVDA read as a full buy recommendation; the
+            # reader then looked for NVDA under "Enter now" and it was not
+            # there, because only one of the two analyses had said buy.
             label = SIGNAL_LABELS.get(signal, signal)
             prev_str = f" (קודם: {SIGNAL_LABELS.get(prev_signal, 'המתנה')})" if prev_signal else ""
-            title = f"{label} — {symbol}{name_str}{price_str}{prev_str} (ניתוח טכני, ציון {score:.0f}/100)"
+            sig_dir = "buy" if signal in ("BUY_NOW", "STRONG_BUY") else "sell"
+            rec_dir = None
+            if live_rec is not None:
+                if live_rec.recommendation_type in (RecommendationType.BUY, RecommendationType.STRONG_BUY):
+                    rec_dir = "buy"
+                elif live_rec.recommendation_type in (RecommendationType.SELL, RecommendationType.STRONG_SELL):
+                    rec_dir = "sell"
+            if rec_dir is None:
+                context = "זהו סיגנל טכני בלבד — אין על המניה המלצה כלכלית פעילה."
+            elif rec_dir == sig_dir:
+                context = "תואם להמלצה הכלכלית על המניה."
+            else:
+                context = (f"שים לב: הסיגנל הטכני מנוגד להמלצה הכלכלית על המניה "
+                           f"({'קנייה' if rec_dir == 'buy' else 'מכירה'}).")
+            title = (f"{label} — סיגנל טכני | {symbol}{name_str}{price_str}{prev_str} "
+                     f"(ציון {score:.0f}/100). {context}")
 
         svc = NotificationService()
         async with AsyncSessionLocal() as db:
@@ -2039,6 +2059,36 @@ async def restore_paused_expiries() -> int:
     except Exception as exc:
         logger.error(f"[maintenance] restore_paused_expiries failed: {exc}")
         return 0
+    finally:
+        await r.aclose()
+
+
+async def recompute_vs_market_once() -> dict:
+    """One-shot (startup): re-measure every tracked recommendation's "vs S&P
+    500" against what SPY actually did, replacing the prorated-10%-a-year
+    figure. Guarded by a Redis flag; the flag is left unset when SPY's
+    history cannot be fetched, so the next boot tries again."""
+    import redis.asyncio as aioredis
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.services.performance_service import recompute_vs_market
+
+    flag = "investment_ai:maintenance:recompute_vs_market:v1"
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        if await r.get(flag):
+            return {"skipped": "already done"}
+        async with AsyncSessionLocal() as db:
+            result = await recompute_vs_market(db)
+            await db.commit()
+        if result.get("updated"):
+            import json as _json
+            await r.set(flag, _json.dumps(result))
+        logger.info(f"[maintenance] vs-market recompute: {result}")
+        return result
+    except Exception as exc:
+        logger.error(f"[maintenance] vs-market recompute failed: {exc}")
+        return {"error": str(exc)}
     finally:
         await r.aclose()
 

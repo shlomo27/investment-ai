@@ -17,7 +17,59 @@ logger = structlog.get_logger(__name__)
 OUTCOME_CHECK_DAYS = 30  # Check outcome after 30 days
 WIN_THRESHOLD_PCT = 5.0  # +5% = WIN
 LOSS_THRESHOLD_PCT = -5.0  # -5% = LOSS
-SPY_ANNUAL_RETURN = 0.10  # S&P 500 benchmark (10% annualized)
+SPY_ANNUAL_RETURN = 0.10  # fallback only — when SPY's actual closes are unavailable
+
+
+async def spy_closes() -> Dict[str, float]:
+    """SPY's daily closes for about the last two years, as {"YYYY-MM-DD": close}.
+
+    "vs S&P 500" used to subtract an ASSUMED 10% a year, prorated by day, from
+    each recommendation's return — the same 0.82% a month whatever the market
+    actually did. In a month the index fell 5% a recommendation that fell 2%
+    beat the market by 3% and was reported as losing to it. This is what the
+    index really did.
+    """
+    try:
+        from app.services.market_data.yahoo_service import YahooFinanceService
+        df = await YahooFinanceService().get_historical_prices("SPY", "2y")
+        if df is not None and not df.empty:
+            return {idx.strftime("%Y-%m-%d"): float(v) for idx, v in df["Close"].items()}
+    except Exception as exc:
+        logger.warning("SPY history from Yahoo failed", error=str(exc))
+    try:
+        import httpx
+        from app.services.market_data.alpaca_service import DATA_BASE, get_alpaca_service
+        headers = get_alpaca_service()._headers()
+        if headers:
+            start = (datetime.now(timezone.utc) - timedelta(days=730)).strftime("%Y-%m-%d")
+            async with httpx.AsyncClient(timeout=20, headers=headers) as client:
+                resp = await client.get(f"{DATA_BASE}/stocks/SPY/bars",
+                                        params={"timeframe": "1Day", "start": start, "limit": 1000})
+                bars = resp.json().get("bars", []) if resp.status_code == 200 else []
+            if bars:
+                return {b["t"][:10]: float(b["c"]) for b in bars}
+    except Exception as exc:
+        logger.warning("SPY history from Alpaca failed", error=str(exc))
+    return {}
+
+
+def close_on_or_before(closes: Dict[str, float], when: datetime) -> Optional[float]:
+    """The last close at or before a moment (weekends and holidays fall back)."""
+    if not closes:
+        return None
+    key = when.strftime("%Y-%m-%d")
+    earlier = [d for d in closes if d <= key]
+    if not earlier or (when - datetime.fromisoformat(max(earlier)).replace(tzinfo=when.tzinfo)).days > 7:
+        return None
+    return closes[max(earlier)]
+
+
+def vs_market(return_pct: float, market_pct: float, is_sell: bool) -> float:
+    """Excess return in the recommendation's direction. A short beat the
+    market when the stock did worse than the index; it was reported as
+    return minus market for every call, so a short that worked counted
+    against the record."""
+    return (market_pct - return_pct) if is_sell else (return_pct - market_pct)
 
 
 class PerformanceService:
@@ -52,6 +104,8 @@ class PerformanceService:
 
         tracked = 0
         errors = 0
+        closes = await spy_closes() if recs else {}
+        spy_now = close_on_or_before(closes, datetime.now(timezone.utc))
 
         for rec in recs:
             try:
@@ -65,11 +119,15 @@ class PerformanceService:
 
                 return_pct = (current_price - entry_price) / entry_price * 100
 
-                # Expected market return over the holding period (annualized SPY)
-                days_held = (datetime.now(timezone.utc) - rec.approved_at).days
-                market_return_pct = (SPY_ANNUAL_RETURN / 365) * days_held * 100
-
-                vs_market = return_pct - market_return_pct
+                # What the S&P 500 actually did over the same days; the old
+                # prorated 10% a year only when SPY's closes are unavailable.
+                approved = rec.approved_at if rec.approved_at.tzinfo else rec.approved_at.replace(tzinfo=timezone.utc)
+                spy_then = close_on_or_before(closes, approved)
+                if spy_then and spy_now:
+                    market_return_pct = (spy_now - spy_then) / spy_then * 100
+                else:
+                    days_held = (datetime.now(timezone.utc) - approved).days
+                    market_return_pct = (SPY_ANNUAL_RETURN / 365) * days_held * 100
 
                 # Determine result considering recommendation direction
                 rec_type = rec.recommendation_type
@@ -96,7 +154,7 @@ class PerformanceService:
 
                 rec.outcome_price = round(current_price, 4)
                 rec.outcome_return_pct = round(return_pct, 2)
-                rec.outcome_vs_market_pct = round(vs_market, 2)
+                rec.outcome_vs_market_pct = round(vs_market(return_pct, market_return_pct, is_sell), 2)
                 rec.outcome_date = datetime.now(timezone.utc)
                 rec.outcome_tracked_at = datetime.now(timezone.utc)
                 rec.outcome_result = outcome
@@ -146,7 +204,13 @@ class PerformanceService:
         losses = [r for r in tracked if r.outcome_result == "LOSS"]
         neutrals = [r for r in tracked if r.outcome_result == "NEUTRAL"]
 
-        returns = [r.outcome_return_pct for r in tracked if r.outcome_return_pct is not None]
+        # In the recommendation's direction: a short that fell 6% earned 6%.
+        # Averaging the raw stock move counted every successful short as a loss.
+        _SELLS = (_RT.SELL, _RT.STRONG_SELL)
+        returns = [
+            (-r.outcome_return_pct if r.recommendation_type in _SELLS else r.outcome_return_pct)
+            for r in tracked if r.outcome_return_pct is not None
+        ]
         vs_market = [r.outcome_vs_market_pct for r in tracked if r.outcome_vs_market_pct is not None]
 
         best = max(tracked, key=lambda r: r.outcome_return_pct or -999)
@@ -622,3 +686,34 @@ def get_performance_service() -> PerformanceService:
     if _performance_service is None:
         _performance_service = PerformanceService()
     return _performance_service
+
+
+async def recompute_vs_market(db: AsyncSession) -> Dict[str, Any]:
+    """Re-measure every tracked recommendation against what SPY actually did
+    between its approval and its outcome date (one-shot repair; see spy_closes).
+    Rows whose dates fall outside the available SPY history keep their value."""
+    closes = await spy_closes()
+    if not closes:
+        return {"updated": 0, "reason": "SPY history unavailable"}
+    rows = (await db.execute(
+        select(Recommendation).where(
+            Recommendation.outcome_tracked_at.isnot(None),
+            Recommendation.outcome_return_pct.isnot(None),
+            Recommendation.approved_at.isnot(None),
+        )
+    )).scalars().all()
+    updated = skipped = 0
+    for rec in rows:
+        approved = rec.approved_at if rec.approved_at.tzinfo else rec.approved_at.replace(tzinfo=timezone.utc)
+        end = rec.outcome_date or rec.outcome_tracked_at
+        end = end if end.tzinfo else end.replace(tzinfo=timezone.utc)
+        a, b = close_on_or_before(closes, approved), close_on_or_before(closes, end)
+        if not a or not b:
+            skipped += 1
+            continue
+        market = (b - a) / a * 100
+        is_sell = rec.recommendation_type in (RecommendationType.SELL, RecommendationType.STRONG_SELL)
+        rec.outcome_vs_market_pct = round(vs_market(rec.outcome_return_pct, market, is_sell), 2)
+        updated += 1
+    await db.flush()
+    return {"updated": updated, "skipped": skipped, "spy_days": len(closes)}
