@@ -26,19 +26,7 @@ const Dashboard: React.FC = () => {
 
   const pnlPositive = (summary?.total_pnl || 0) >= 0;
 
-  const riskColors: Record<string, string> = {
-    CONSERVATIVE: "text-green-400",
-    PASSIVE: "text-blue-400",
-    HYBRID: "text-yellow-400",
-    AGGRESSIVE: "text-red-400",
-  };
 
-  const riskLabels: Record<string, { he: string; en: string }> = {
-    CONSERVATIVE: { he: "שמרני", en: "Conservative" },
-    PASSIVE: { he: "פסיבי", en: "Passive" },
-    HYBRID: { he: "סיכון בינוני", en: "Medium Risk" },
-    AGGRESSIVE: { he: "סיכון גבוה", en: "High Risk" },
-  };
 
   const investmentTypeLabel: Record<string, { he: string; en: string; icon: string }> = {
     STOCKS: { he: "מניות בלבד", en: "Stocks Only", icon: "📈" },
@@ -54,7 +42,6 @@ const Dashboard: React.FC = () => {
     return null;
   };
 
-  const riskProfile = user?.risk_profile || "PASSIVE";
   const invType = (user as any)?.investment_type || "BOTH";
 
   const [perfSummary, setPerfSummary] = useState<any>(null);
@@ -101,13 +88,6 @@ const Dashboard: React.FC = () => {
       {/* Profile Strip */}
       <div className="bg-gray-900 rounded-2xl px-5 py-4 border border-gray-800 flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">{t("Profile:", "פרופיל:")}</span>
-          <span className={`font-bold text-sm ${riskColors[riskProfile] || "text-white"}`}>
-            {riskLabels[riskProfile] ? (isHe ? riskLabels[riskProfile].he : riskLabels[riskProfile].en) : riskProfile}
-          </span>
-        </div>
-        <div className="w-px h-4 bg-gray-700" />
-        <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500">{t("Assets:", "נכסים:")}</span>
           <span className="text-sm font-medium text-white">
             {investmentTypeLabel[invType]?.icon} {isHe ? investmentTypeLabel[invType]?.he : investmentTypeLabel[invType]?.en}
@@ -149,7 +129,7 @@ const Dashboard: React.FC = () => {
           <div className="bg-gray-900 rounded-2xl p-5 border border-gray-800">
             <p className="text-gray-400 text-xs mb-1">{t("Risk Score", "ציון סיכון")}</p>
             <p className="text-2xl font-bold">
-              <span className={riskColors[riskProfile] || "text-white"}>
+              <span className="text-white">
                 {summary.risk_score ?? user?.risk_score ?? "—"}/100
               </span>
             </p>

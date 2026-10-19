@@ -8,14 +8,7 @@ import { requestPushPermission } from "../services/pushNotifications";
 import { isNative } from "../platform";
 import { LANGUAGES, applyDocumentLanguage } from "../i18n/languages";
 import Paywall from "../components/Paywall";
-import { RiskProfile } from "../types";
 
-const PROFILE_META: Record<RiskProfile, { he: string; en: string; color: string }> = {
-  [RiskProfile.CONSERVATIVE]: { he: "שמרני",  en: "Conservative", color: "text-blue-400" },
-  [RiskProfile.PASSIVE]:      { he: "מאוזן",  en: "Balanced",     color: "text-green-400" },
-  [RiskProfile.HYBRID]:       { he: "הייבריד", en: "Hybrid",      color: "text-yellow-400" },
-  [RiskProfile.AGGRESSIVE]:   { he: "אגרסיבי", en: "Aggressive",  color: "text-red-400" },
-};
 
 const Settings: React.FC = () => {
   const t = useT();
@@ -31,8 +24,6 @@ const Settings: React.FC = () => {
   const [notifEmail, setNotifEmail] = useState(user?.notification_email ?? true);
   const [notifSms, setNotifSms] = useState(user?.notification_sms ?? false);
   const [notifPush, setNotifPush] = useState(user?.notification_push ?? false);
-  const [ageGroup, setAgeGroup] = useState<string>((user as any)?.age_group ?? "");
-  const [horizonMonths, setHorizonMonths] = useState<number>((user as any)?.investment_horizon_months ?? 12);
   const [alertFreq, setAlertFreq] = useState<"REALTIME" | "EVERY_4_HOURS" | "DAILY">(user?.alert_frequency ?? "REALTIME");
   const [allowsShort, setAllowsShort] = useState<boolean>(user?.allows_short ?? false);
   const [allowsVolatile, setAllowsVolatile] = useState<boolean>(user?.allows_volatile ?? false);
@@ -111,17 +102,7 @@ const Settings: React.FC = () => {
   const [twoFALoading, setTwoFALoading] = useState(false);
   const [twoFAEnabled, setTwoFAEnabled] = useState(user?.totp_enabled ?? false);
 
-  const AGE_GROUPS = ["18-25", "26-35", "36-50", "50+"];
-  const HORIZONS = [
-    { months: 3, he: "3 חודשים", en: "3 Months" },
-    { months: 6, he: "חצי שנה", en: "6 Months" },
-    { months: 12, he: "שנה", en: "1 Year" },
-    { months: 36, he: "3 שנים", en: "3 Years" },
-    { months: 60, he: "5 שנים", en: "5 Years" },
-    { months: 120, he: "10+ שנים", en: "10+ Years" },
-  ];
 
-  const profileMeta = user?.risk_profile ? PROFILE_META[user.risk_profile] : null;
 
   const handleSave = async () => {
     await dispatch(
@@ -132,8 +113,6 @@ const Settings: React.FC = () => {
         notification_email: notifEmail,
         notification_sms: notifSms,
         notification_push: notifPush,
-        age_group: ageGroup || undefined,
-        investment_horizon_months: horizonMonths,
         alert_frequency: alertFreq,
         allows_short: allowsShort,
         allows_volatile: allowsVolatile,
@@ -274,39 +253,11 @@ const Settings: React.FC = () => {
           </div>
         </div>
 
-        {profileMeta && (
-          <div className="flex items-center gap-3 bg-gray-800/50 rounded-xl px-4 py-3">
-            <span className="text-xs text-gray-500">{t("Risk profile:", "פרופיל סיכון:")}</span>
-            <span className={`text-sm font-bold ${profileMeta.color}`}>
-              {isHe ? profileMeta.he : profileMeta.en}
-            </span>
-            <span className="text-xs text-gray-600 mr-auto">{t("(set during onboarding)", "(הוגדר בהרשמה)")}</span>
-          </div>
-        )}
-
-        {/* Age Group */}
-        <div>
-          <label className="text-xs text-gray-500 block mb-2">{t("Age Group", "קבוצת גיל")}</label>
-          <div className="flex gap-2 flex-wrap">
-            {AGE_GROUPS.map(a => (
-              <button key={a} onClick={() => setAgeGroup(a)} className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                ageGroup === a ? "bg-blue-600/20 border-blue-500 text-blue-300" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
-              }`}>{a}</button>
-            ))}
-          </div>
-        </div>
-
-        {/* Investment Horizon */}
-        <div>
-          <label className="text-xs text-gray-500 block mb-2">{t("Investment Horizon", "אופק השקעה")}</label>
-          <div className="flex gap-2 flex-wrap">
-            {HORIZONS.map(h => (
-              <button key={h.months} onClick={() => setHorizonMonths(h.months)} className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                horizonMonths === h.months ? "bg-blue-600/20 border-blue-500 text-blue-300" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-white"
-              }`}>{isHe ? h.he : h.en}</button>
-            ))}
-          </div>
-        </div>
+        {/* No risk profile, age group or investment horizon here. They were
+            collected and stored but nothing used them — every user receives
+            the same analyses and alerts — and asking for them implied a
+            personalised recommendation the service does not make and is not
+            licensed to make. */}
       </div>
 
       {/* ── Language ────────────────────────────────────────────────────── */}
