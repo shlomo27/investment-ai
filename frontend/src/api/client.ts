@@ -688,6 +688,11 @@ export const marketApi = {
     return response.data;
   },
 
+  getTelegramDiagnostics: async (): Promise<any> => {
+    const response = await api.get("/market/diagnostics/telegram");
+    return response.data;
+  },
+
   getSignalState: async (symbol: string): Promise<any> => {
     const response = await api.get(`/market/diagnostics/signal-state/${symbol}`);
     return response.data;

@@ -159,3 +159,37 @@ def get_telegram_service() -> TelegramService:
     if _telegram_service is None:
         _telegram_service = TelegramService()
     return _telegram_service
+
+
+async def bot_username() -> str:
+    """The username of the bot this server actually holds the token for.
+
+    The deep link used TELEGRAM_BOT_USERNAME, a separate setting with a
+    default, and nothing checked it named the same bot as the token. When it
+    did not, "Connect Telegram" opened somebody else's bot: the user sent the
+    code into a chat this server never reads, and nothing ever answered.
+    Asked of Telegram (getMe) and cached for a day; the setting is only the
+    fallback when Telegram cannot be reached.
+    """
+    import httpx
+    import redis.asyncio as aioredis
+
+    key = "investment_ai:tg_bot_username"
+    token = settings.TELEGRAM_BOT_TOKEN
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        cached = await r.get(key)
+        if cached:
+            return cached.decode() if isinstance(cached, bytes) else cached
+        if token and not token.startswith("your_"):
+            async with httpx.AsyncClient(timeout=10) as client:
+                data = (await client.get(f"https://api.telegram.org/bot{token}/getMe")).json()
+            name = (data.get("result") or {}).get("username")
+            if data.get("ok") and name:
+                await r.set(key, name, ex=24 * 3600)
+                return name
+    except Exception as exc:
+        logger.warning("Telegram getMe failed — using TELEGRAM_BOT_USERNAME", error=str(exc))
+    finally:
+        await r.aclose()
+    return settings.TELEGRAM_BOT_USERNAME

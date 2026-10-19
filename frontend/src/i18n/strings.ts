@@ -916,6 +916,7 @@ export const UI_STRINGS: StringTable = {
     "Signing in...": "Connexion...",
     "Continue with Apple": "Continuer avec Apple",
     "Continue with Google": "Continuer avec Google",
+    "Telegram bot check": "Vérification du bot Telegram",
   },
   "es": {
     "Signals": "Señales",
@@ -1806,6 +1807,7 @@ export const UI_STRINGS: StringTable = {
     "Signing in...": "Iniciando sesión...",
     "Continue with Apple": "Continuar con Apple",
     "Continue with Google": "Continuar con Google",
+    "Telegram bot check": "Comprobación del bot de Telegram",
   },
   "de": {
     "Signals": "Signale",
@@ -2696,6 +2698,7 @@ export const UI_STRINGS: StringTable = {
     "Signing in...": "Anmeldung läuft...",
     "Continue with Apple": "Weiter mit Apple",
     "Continue with Google": "Weiter mit Google",
+    "Telegram bot check": "Telegram-Bot prüfen",
   },
   "it": {
     "Loading...": "Caricamento…",
@@ -3578,6 +3581,7 @@ export const UI_STRINGS: StringTable = {
     "Signing in...": "Accesso in corso...",
     "Continue with Apple": "Continua con Apple",
     "Continue with Google": "Continua con Google",
+    "Telegram bot check": "Controllo del bot Telegram",
   },
   "pt-BR": {
     "Log out": "Sair",
@@ -4460,6 +4464,7 @@ export const UI_STRINGS: StringTable = {
     "Signing in...": "Entrando...",
     "Continue with Apple": "Continuar com a Apple",
     "Continue with Google": "Continuar com o Google",
+    "Telegram bot check": "Verificação do bot do Telegram",
   },
   "ar": {
     "Log out": "تسجيل الخروج",
@@ -5342,6 +5347,7 @@ export const UI_STRINGS: StringTable = {
     "Signing in...": "جارٍ تسجيل الدخول...",
     "Continue with Apple": "المتابعة باستخدام Apple",
     "Continue with Google": "المتابعة باستخدام Google",
+    "Telegram bot check": "فحص بوت تيليجرام",
   },
   "ko": {
     "Log out": "로그아웃",
@@ -6224,6 +6230,7 @@ export const UI_STRINGS: StringTable = {
     "Signing in...": "로그인 중...",
     "Continue with Apple": "Apple로 계속하기",
     "Continue with Google": "Google로 계속하기",
+    "Telegram bot check": "텔레그램 봇 점검",
   },
   "ja": {
     "Log out": "ログアウト",
@@ -7106,5 +7113,6 @@ export const UI_STRINGS: StringTable = {
     "Signing in...": "サインイン中...",
     "Continue with Apple": "Appleで続ける",
     "Continue with Google": "Googleで続ける",
+    "Telegram bot check": "Telegramボットの確認",
   },
 };

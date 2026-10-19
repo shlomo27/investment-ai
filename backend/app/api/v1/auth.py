@@ -783,8 +783,10 @@ async def telegram_link_code(current_user: User = Depends(get_current_active_use
         await r.set(f"investment_ai:tg_link:{code}", str(current_user.id), ex=600)
     finally:
         await r.aclose()
+    from app.services.notifications.telegram_service import bot_username
+
     return TelegramLinkResponse(
-        link=f"https://t.me/{settings.TELEGRAM_BOT_USERNAME}?start={code}",
+        link=f"https://t.me/{await bot_username()}?start={code}",
         expires_in=600,
     )
 

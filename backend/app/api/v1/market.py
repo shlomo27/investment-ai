@@ -1893,6 +1893,45 @@ async def alert_outcomes(
     }
 
 
+@router.get("/diagnostics/telegram")
+async def telegram_diagnostics(current_user: User = Depends(get_current_active_user)):
+    """Which bot the server holds the token for, whether a webhook is taking
+    its messages, and what the last poll for linking codes saw."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    import json as _json
+    import httpx
+    import redis.asyncio as aioredis
+    from app.core.config import settings
+
+    out: Dict[str, Any] = {"configured_username": settings.TELEGRAM_BOT_USERNAME}
+    token = settings.TELEGRAM_BOT_TOKEN
+    if not token or token.startswith("your_"):
+        out["error"] = "TELEGRAM_BOT_TOKEN is not set"
+        return out
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            me = (await client.get(f"https://api.telegram.org/bot{token}/getMe")).json()
+            hook = (await client.get(f"https://api.telegram.org/bot{token}/getWebhookInfo")).json()
+        out["bot_username"] = (me.get("result") or {}).get("username") if me.get("ok") else None
+        out["bot_name"] = (me.get("result") or {}).get("first_name") if me.get("ok") else None
+        out["token_ok"] = bool(me.get("ok"))
+        out["webhook_url"] = (hook.get("result") or {}).get("url") or None
+    except Exception as exc:
+        out["error"] = str(exc)[:200]
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        raw = await r.get("investment_ai:tg_poll_status")
+        out["last_poll"] = _json.loads(raw) if raw else None
+    finally:
+        await r.aclose()
+    out["link_matches_bot"] = (
+        out.get("bot_username") is not None
+        and out["bot_username"].lower() == (settings.TELEGRAM_BOT_USERNAME or "").lower()
+    )
+    return out
+
+
 @router.get("/analyses/pause")
 async def get_analyses_pause(
     current_user: User = Depends(get_current_active_user),

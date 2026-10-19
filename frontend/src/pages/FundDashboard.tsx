@@ -105,6 +105,7 @@ const FundDashboard: React.FC = () => {
   const [sigSymbol, setSigSymbol] = useState("");
   const [sigState, setSigState] = useState<any>(null);
   const [outcomes, setOutcomes] = useState<any>(null);
+  const [tgDiag, setTgDiag] = useState<any>(null);
   useEffect(() => {
     marketApi.getAlertOutcomes().then(setOutcomes).catch(() => { /* admin only */ });
   }, []);
@@ -1016,6 +1017,25 @@ const FundDashboard: React.FC = () => {
                     </>
                   )}
                 </div>
+              )}
+            </div>
+
+            {/* Telegram bot: which bot the server holds, whether its messages
+                reach the server. Raw on purpose — the fields are the answer. */}
+            <div className="mt-4 pt-4 border-t border-gray-800">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-300">{t("Telegram bot check", "בדיקת בוט טלגרם")}</p>
+                <button
+                  onClick={() => marketApi.getTelegramDiagnostics().then(setTgDiag).catch((e: any) => setTgDiag({ error: e?.response?.data?.detail || "Failed" }))}
+                  className="px-3 py-1.5 rounded-lg text-xs bg-gray-800 text-blue-300 border border-gray-700 hover:border-blue-700"
+                >
+                  {t("Check", "בדוק")}
+                </button>
+              </div>
+              {tgDiag && (
+                <pre dir="ltr" className="mt-2 p-2 rounded-lg bg-gray-800/60 border border-gray-700 text-[11px] text-gray-300 whitespace-pre-wrap break-all">
+                  {JSON.stringify(tgDiag, null, 2)}
+                </pre>
               )}
             </div>
 

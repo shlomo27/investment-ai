@@ -1109,7 +1109,20 @@ async def job_poll_telegram_links():
                 f"https://api.telegram.org/bot{token}/getUpdates", params=params
             )
             data = resp.json()
+        # Recorded every poll, ok or not. A failed getUpdates used to return
+        # silently, so a bot whose updates were being taken by a webhook (409)
+        # or whose token was wrong (401) looked exactly like a bot nobody had
+        # written to, and a user sending their code heard nothing at all.
+        import json as _json
+        from datetime import datetime as _dt, timezone as _tz
+        await r.set("investment_ai:tg_poll_status", _json.dumps({
+            "at": _dt.now(_tz.utc).isoformat(),
+            "ok": bool(data.get("ok")),
+            "error": None if data.get("ok") else f"{data.get('error_code')} {data.get('description')}",
+            "updates": len(data.get("result") or []) if data.get("ok") else 0,
+        }), ex=7 * 24 * 3600)
         if not data.get("ok"):
+            logger.warning(f"[tg_poll] getUpdates failed: {data.get('error_code')} {data.get('description')}")
             return
         updates = data.get("result", [])
         if not updates:
