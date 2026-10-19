@@ -270,6 +270,18 @@ def _rebuild_fa(fa: dict, localized: dict) -> dict:
     return out
 
 
+def _needs_translation(text: Optional[str], target: str) -> bool:
+    """Whether a stored text is in a language other than the reader's."""
+    from app.services.translation.service import detect_source_language
+
+    if not text or not text.strip():
+        return False
+    detected = detect_source_language(text)
+    if detected is None:
+        return target != SOURCE_LANGUAGE   # Latin script: assumed English
+    return detected != target
+
+
 async def _localize(rec: Recommendation, user: User, db: AsyncSession) -> dict:
     """The recommendation's free text in the reader's language.
 
@@ -544,7 +556,13 @@ async def get_recommendations(
             summary = out.get("summary")
             if summary and summary != rec.senior_notes:
                 card_localized[rec.id] = summary
-            elif target_lang != SOURCE_LANGUAGE:
+            # Queue it whenever the text is not already in the reader's
+            # language — the same test cached_translations applies. This was
+            # "the reader is not reading English", which assumed every stored
+            # analysis was English. The older ones are Hebrew, so an English
+            # reader's feed showed Hebrew summaries that were never queued
+            # for translation and therefore never translated.
+            elif _needs_translation(rec.senior_notes, target_lang):
                 warm_jobs.append({
                     "texts": {"summary": rec.senior_notes},
                     "company": names.get(rec.symbol),
