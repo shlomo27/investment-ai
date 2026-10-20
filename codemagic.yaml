@@ -233,7 +233,11 @@ workflows:
         # Uploads to TestFlight only. Submission for App Store review stays a
         # deliberate manual step — review is where a financial app gets
         # scrutinised, and it should not be triggered by a git push.
-        submit_to_testflight: true
+        # Upload only. `submit_to_testflight` sends the build to beta review
+        # for EXTERNAL testers, which needs Beta App Information filled in and
+        # failed every build without it. The internal group ("Me") gets the
+        # build as soon as Apple finishes processing, no review needed.
+        submit_to_testflight: false
         submit_to_app_store: false
       email:
         recipients:
