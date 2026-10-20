@@ -368,3 +368,8 @@ tr:hover {
   display: inline-block;
 }
 
+
+/* Installed app: no double-tap zoom (see main.tsx). */
+html.native-app {
+  touch-action: manipulation;
+}
