@@ -50,6 +50,9 @@ SIGNAL_COOLDOWN_SEC = 4 * 3600
 # A signal change must still hold on the next scan (scans run every 30 min)
 # before a holder is told about it.
 CONFIRM_SECONDS = 20 * 60
+#: A BUY within this % below the previous BUY alert is an ordinary alert;
+#: further below, it is sent as "back to buy, but lower — not a new entry".
+REBUY_TOLERANCE_PCT = 3.0
 SIGNAL_LABELS = {
     "BUY_NOW":     "📈 קנה",
     "STRONG_BUY":  "🚀 קנה חזק",
@@ -276,18 +279,26 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
             past_target = bool(await r.get(f"{LEVEL_HIT_PREFIX}{live_rec.id}:TARGET")) or bool(
                 live_buy and price and live_rec.target_price and price >= live_rec.target_price)
 
-        # A BUY is not repeated lower down. BMRN was called a buy at $64, $60
-        # and $56 on the way down: each bounce re-crossed the threshold and
-        # re-sent the same message at a worse price, which reads as the system
-        # doubling down on a falling stock. Within 30 days of a BUY alert, a
-        # new one goes out only above the price of the last.
+        # A BUY is not repeated lower down as though it were news. BMRN was
+        # called a buy at $64, $60 and $56 on the way down: each bounce
+        # re-crossed the threshold and re-sent the same message at a worse
+        # price, which reads as the system doubling down on a falling stock.
+        #
+        # Silence was the wrong cure, though. The WAIT that preceded the bounce
+        # had been sent, so the reader's last word was "wait" while the app
+        # showed "buy": NVDA was alerted BUY at $218.01, WAIT overnight, and
+        # back to BUY at $217.64 the next day without a word — a 0.2% gap that
+        # is noise, not a falling stock. So: within REBUY_TOLERANCE_PCT of the
+        # last BUY alert it is an ordinary alert; further below, the reader is
+        # still told, but in words that say this is not a new entry point.
         buy_alert_key = f"investment_ai:ta_last_buy_alert:{symbol}"
+        lower_rebuy = None  # price of the earlier, higher BUY alert
+        prev_buy_price = 0.0
         if signal in ("BUY_NOW", "STRONG_BUY") and price:
             prev_buy = _load_pending(await r.get(buy_alert_key))
-            if prev_buy.get("price") and price < float(prev_buy["price"]):
-                logger.info(f"[ta] {symbol}: BUY at ${price:.2f} below last BUY alert "
-                            f"${float(prev_buy['price']):.2f} — not re-sent")
-                return False
+            prev_buy_price = float(prev_buy.get("price") or 0)
+            if prev_buy_price and price < prev_buy_price * (1 - REBUY_TOLERANCE_PCT / 100):
+                lower_rebuy = prev_buy_price
 
         # Entry-point moment: the stock has a LIVE BUY recommendation
         # (fundamental YES) and its technical just turned positive. That's the
@@ -297,7 +308,8 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         # is not an agreement anyone should be told to act on.
         weak_buy = live_buy and (live_rec.confidence_score or 0) < WEAK_BUY_BELOW
         entry_point = (signal in ("BUY_NOW", "STRONG_BUY") and live_buy
-                       and not weak_buy and not stop_hit and not past_target)
+                       and not weak_buy and not stop_hit and not past_target
+                       and lower_rebuy is None)
 
         # Never claim agreement over a negative news read. The entry-point
         # message weighed the fundamental call against the technical signal and
@@ -377,6 +389,12 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
                     f"זה אינו סיגנל מכירה. {hold_line} "
                     f"מי שממתין לכניסה — כדאי להמתין."
                 )
+        elif lower_rebuy is not None:
+            drop = (lower_rebuy - price) / lower_rebuy * 100
+            title = (f"📈 {symbol}{name_str}: הסיגנל הטכני חזר לקנייה{price_str} "
+                     f"(ציון {score:.0f}/100), אבל במחיר נמוך ב-{drop:.1f}% מסיגנל הקנייה "
+                     f"הקודם (${lower_rebuy:.2f}). המניה עדיין בירידה, ולכן זו אינה "
+                     f"נקודת כניסה חדשה. 👈 בדוק במערכת.")
         elif entry_point and news_negative:
             title = (f"⚡ {symbol}{name_str}: הסיגנל הטכני חיובי וההמלצה עדיין קנייה, "
                      f"אבל החדשות האחרונות שליליות — אין כאן הסכמה מלאה"
@@ -430,7 +448,11 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
                                      "current_price": price, "trigger": "TA_SCAN"},
                     db=db, notification_type=NotificationType.ALERT, title=title,
                 )
-        if signal in ("BUY_NOW", "STRONG_BUY") and price:
+        # The reference only moves up. A lower re-buy, or one a little below
+        # within the tolerance, keeps the earlier price, so a stock sliding in
+        # small steps is still measured against where the first BUY was sent.
+        if (signal in ("BUY_NOW", "STRONG_BUY") and price and lower_rebuy is None
+                and price >= prev_buy_price):
             await r.set(buy_alert_key, _json.dumps({"price": price, "ts": _time.time()}),
                         ex=30 * 24 * 3600)
         await record_alert_outcome(
