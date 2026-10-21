@@ -369,7 +369,7 @@ tr:hover {
 }
 
 
-/* Installed app: no double-tap zoom (see main.tsx). */
+/* Installed app: pinch zooms, double-tap does not (see main.tsx). */
 html.native-app {
   touch-action: manipulation;
 }

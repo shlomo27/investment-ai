@@ -23,6 +23,10 @@ const config: CapacitorConfig = {
     androidScheme: "https",
   },
 
+  // Pinch-to-zoom. Capacitor turns it off by default, which left a double-tap
+  // (still zooming, unpredictably) as the only way to enlarge a screen.
+  zoomEnabled: true,
+
   android: {
     // The app talks to Railway over HTTPS only; no cleartext fallback.
     allowMixedContent: false,
