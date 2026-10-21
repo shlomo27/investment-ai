@@ -17,7 +17,7 @@ import { Recommendation, RecommendationType, TechnicalAnalysis } from "../types"
 import RecommendationCard from "../components/Recommendations/RecommendationCard";
 import SortMenu, { SortOption } from "../components/SortMenu";
 
-type DirectionFilter = "ALL" | "LONG" | "SHORT" | "ENTRY";
+type DirectionFilter = "ALL" | "LONG" | "SHORT" | "ENTRY" | "TECH_BUY";
 
 const recBadgeClass = (type: string) => {
   if (type === "STRONG_BUY") return "bg-green-500/20 text-green-300 border border-green-600/40";
@@ -317,10 +317,19 @@ const Recommendations: React.FC = () => {
   const topPicks = [...topBuys, ...topSells].sort((a, b) => b.confidence_score - a.confidence_score);
 
   const entryNow = topBuys.filter((r) => entryRankOf(r) === 2);
+  // Every stock whose technical signal says buy, whatever its fundamental
+  // call or confidence. Most of the universe sits at WAIT at any moment, and
+  // finding the few buys meant scrolling through dozens of cards: sorting by
+  // confidence orders by the fundamental call, not the timing.
+  const techBuy = topPicks.filter((r) => {
+    const sig = (r.technical_analysis?.timing_signal || "").toUpperCase();
+    return sig === "BUY_NOW" || sig === "STRONG_BUY";
+  });
   const _byDir =
     dirFilter === "LONG" ? topBuys :
     dirFilter === "SHORT" ? topSells :
     dirFilter === "ENTRY" ? entryNow :
+    dirFilter === "TECH_BUY" ? techBuy :
     topPicks;
   const _q = symbolQuery.trim().toUpperCase();
   const _filtered = _q
@@ -842,7 +851,7 @@ const Recommendations: React.FC = () => {
               pushed the sort control off the edge entirely — reachable by
               nothing, since the page itself does not scroll sideways. */}
           <div className="flex flex-wrap items-center gap-2">
-            {(["ALL", "LONG", "SHORT", "ENTRY"] as DirectionFilter[]).map((f) => (
+            {(["ALL", "LONG", "SHORT", "ENTRY", "TECH_BUY"] as DirectionFilter[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setDirFilter(f)}
@@ -851,6 +860,7 @@ const Recommendations: React.FC = () => {
                     ? f === "LONG" ? "bg-green-900/40 text-green-300 border-green-700/40"
                     : f === "SHORT" ? "bg-red-900/40 text-red-300 border-red-700/40"
                     : f === "ENTRY" ? "bg-emerald-800/60 text-emerald-200 border-emerald-500/60"
+                    : f === "TECH_BUY" ? "bg-cyan-900/50 text-cyan-200 border-cyan-600/60"
                     : "bg-blue-700 text-white border-blue-600"
                     : "bg-gray-900 text-gray-400 border-gray-800 hover:border-gray-600"
                 }`}
@@ -858,6 +868,7 @@ const Recommendations: React.FC = () => {
                 {f === "LONG" ? `LONG (${longCount})`
                   : f === "SHORT" ? `SHORT (${shortCount})`
                   : f === "ENTRY" ? `🟢 ${t("Enter now", "כניסה עכשיו")} (${entryNow.length})`
+                  : f === "TECH_BUY" ? `📈 ${t("Technical buy", "קנייה טכנית")} (${techBuy.length})`
                   : `${t("All", "הכל")} (${topPicks.length})`}
               </button>
             ))}
@@ -897,6 +908,14 @@ const Recommendations: React.FC = () => {
                   <p className="text-sm mt-1">
                     {t("This lists buy recommendations at 60%+ confidence whose technical signal is a buy too. Follow a stock to be alerted when it gets there.",
                        "כאן מופיעות המלצות קנייה בביטחון 60% ומעלה, שגם הסיגנל הטכני שלהן הוא קנייה. עקוב אחרי מניה כדי לקבל התראה כשהיא מגיעה לשם.")}
+                  </p>
+                </>
+              ) : dirFilter === "TECH_BUY" ? (
+                <>
+                  <p>{t("No stock has a technical buy signal right now", "כרגע לאף מניה אין סיגנל קנייה טכני")}</p>
+                  <p className="text-sm mt-1">
+                    {t("The technical signal is about timing. Most stocks are at Wait at any given moment.",
+                       "הסיגנל הטכני עוסק בתזמון. ברוב הזמן רוב המניות במצב המתנה.")}
                   </p>
                 </>
               ) : (
