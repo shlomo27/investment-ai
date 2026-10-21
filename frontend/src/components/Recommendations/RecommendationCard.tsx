@@ -32,6 +32,10 @@ function plainNotes(text: string): string {
     .replace(/(\*\*|__)(.+?)\1/g, "$2")
     .replace(/^\s*[-*]\s+/gm, "")
     .replace(/\*\*|__/g, "")
+    // Internal checklist tokens ("auto_disqualified=false ✓") are for the
+    // pipeline, not the reader.
+    .replace(/\b[a-z]+(?:_[a-z]+)+=\S+\s*/g, "")
+    .replace(/\s*[✓✔]\s*/g, " ")
     .replace(/\n{2,}/g, "\n")
     .trim();
 }
@@ -342,6 +346,10 @@ const RecommendationCard: React.FC<Props> = ({
             {(() => {
               const alloc = (rec.fundamental_analysis as any)?.allocation_recommendation;
               if (!alloc || alloc === "NONE") return null;
+              // A size recommendation contradicts a weak buy ("suited only to
+              // a small position") and means nothing once the stop has broken.
+              // CRH showed "Medium allocation" beside both.
+              if (weakBuy || rec.level_hit) return null;
               const cls = alloc === "HIGH" ? "bg-green-900/40 text-green-300 border-green-700/40"
                 : alloc === "MEDIUM" ? "bg-blue-900/40 text-blue-300 border-blue-700/40"
                 : "bg-yellow-900/40 text-yellow-300 border-yellow-700/40";
