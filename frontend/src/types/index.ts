@@ -527,6 +527,11 @@ export interface Recommendation {
   sector?: string;
   risk_level?: string;
   beta?: number;
+  /** Ratios from the data fetch, in display units (D/E, ROE, ROA, growth as %). */
+  measured_ratios?: Partial<Record<
+    "pe" | "pb" | "debt_to_equity_pct" | "current_ratio" | "roe_pct" | "roa_pct" | "revenue_growth_pct",
+    number
+  >>;
   created_at: string;
   approved_at?: string;
   presented_at?: string;

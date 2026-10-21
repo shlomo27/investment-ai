@@ -45,8 +45,11 @@ const WYCKOFF_LABEL: Record<string, { label: string; color: string; desc: string
 // ─── 52-Week range bar ───────────────────────────────────────────────────────
 
 const RangeBar: React.FC<{ ta: TechnicalAnalysis }> = ({ ta }) => {
-  const low52  = ta.week52_low  ?? ta.support_levels?.[0];
-  const high52 = ta.week52_high ?? ta.resistance_levels?.[0];
+  // Never stand in support/resistance for the 52-week extremes: the nearest
+  // levels sit a dollar either side of the price, and the bar then labelled
+  // that sliver "52-week range". An analysis without the range says so.
+  const low52  = ta.week52_low;
+  const high52 = ta.week52_high;
   const current = ta.current_price;
   if (!low52 || !high52 || high52 <= low52 || !current) return (
     <p className="text-xs text-gray-700 text-center py-4">No range data available</p>

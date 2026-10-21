@@ -735,10 +735,33 @@ const ResearchReport: React.FC = () => {
     push(t("Horizon", "אופק השקעה"), fa?.investment_horizon?.replace("_", " ") ?? null);
   }
 
-  // Read out of the committee's prose by pattern — labelled as such in the UI.
+  // Ratios as the data fetch measured them. These win over anything read out
+  // of the prose: pattern-matching put META's revenue growth (27.6%) under
+  // Debt/Equity, because the two sat in the same sentence.
+  const mr = rec.measured_ratios ?? {};
+  const fmt = (v: number | undefined, suffix = "") =>
+    v == null ? null : `${Number(v.toFixed(2))}${suffix}`;
+  const measuredRows: NumberRow[] = [];
+  {
+    const push = (label: string, value: string | null) => {
+      if (value) measuredRows.push({ label, value });
+    };
+    push("P/E", fmt(mr.pe, "x"));
+    push("P/B", fmt(mr.pb, "x"));
+    push("Debt/Equity", fmt(mr.debt_to_equity_pct, "%"));
+    push("Current Ratio", fmt(mr.current_ratio));
+    push("ROE", fmt(mr.roe_pct, "%"));
+    push("ROA", fmt(mr.roa_pct, "%"));
+    push(t("Revenue growth", "צמיחה בהכנסות"), fmt(mr.revenue_growth_pct, "%"));
+  }
+  structuredNumbers.push(...measuredRows);
+
+  // Read out of the committee's prose by pattern — labelled as such in the UI,
+  // and only for ratios the data fetch did not measure.
+  const measuredLabels = new Set(measuredRows.map((r) => r.label));
   const ratioRows: NumberRow[] = extractRatios(
     [fa?.analyst_notes, rec.senior_notes, rec.senior_review_notes].filter(Boolean).join("\n")
-  );
+  ).filter((r) => !measuredLabels.has(r.label));
 
   const isShort = rec.recommendation_type === RecommendationType.SELL || rec.recommendation_type === RecommendationType.STRONG_SELL;
   // Infer direction from recommendation type when direction_bias is absent or NEUTRAL

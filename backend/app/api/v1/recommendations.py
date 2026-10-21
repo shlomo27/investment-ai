@@ -56,6 +56,10 @@ class RecommendationResponse(BaseModel):
     sector: Optional[str]
     risk_level: Optional[str] = None
     beta: Optional[float] = None
+    #: Valuation and balance-sheet ratios as the data fetch measured them,
+    #: already in display units (P/E 22.3, D/E 27.6 meaning %, ROA 18.0
+    #: meaning %). Replaces reading them out of the committee's prose.
+    measured_ratios: Dict[str, float] = {}
     #: True when the written reasoning was withheld for this account's tier,
     #: so the app can show an upgrade panel instead of an empty section — an
     #: empty section reads as "the analysis failed", which is worse than a
@@ -126,6 +130,41 @@ def _beta_of(rec: Recommendation, asset: Optional[Asset]) -> Optional[float]:
     except (TypeError, ValueError):
         return None
     return value if 0 < value < 10 else None
+
+
+#: (response key, data-fetch field, multiplier to display units, sane range).
+#: Yahoo's convention: ROE/ROA/growth are fractions, D/E is already percent.
+_RATIO_FIELDS = [
+    ("pe", "pe_ratio", 1, (0, 1000)),
+    ("pb", "price_to_book", 1, (0, 200)),
+    ("debt_to_equity_pct", "debt_to_equity", 1, (0, 2000)),
+    ("current_ratio", "current_ratio", 1, (0, 50)),
+    ("roe_pct", "roe", 100, (-500, 500)),
+    ("roa_pct", "roa", 100, (-200, 200)),
+    ("revenue_growth_pct", "revenue_growth", 100, (-100, 1000)),
+]
+
+
+def _measured_ratios(rec: Recommendation) -> Dict[str, float]:
+    """The ratios this analysis actually fetched, in display units.
+
+    The research page used to pattern-match them out of the committee's
+    prose, and prose puts numbers next to the wrong labels: META's card
+    showed a Debt/Equity of 27.6% that was the revenue growth figure from
+    the same sentence. These come from the data fetch, so they are what the
+    committee was looking at. Anything missing or outside a sane range is
+    left out rather than shown.
+    """
+    raw = rec.data_fetcher_raw or {}
+    out: Dict[str, float] = {}
+    for key, field, mult, (lo, hi) in _RATIO_FIELDS:
+        try:
+            v = float(raw.get(field)) * mult
+        except (TypeError, ValueError):
+            continue
+        if v != 0 and lo < v < hi:
+            out[key] = round(v, 2)
+    return out
 
 
 async def _followed_symbols(db: AsyncSession, user: User) -> set:
@@ -996,6 +1035,11 @@ async def get_recommendation(
         trigger_details=rec.trigger_details,
         asset_name=asset.name if asset else None,
         risk_level=asset.risk_level.value if asset and asset.risk_level else None,
+        # The list route sent beta and this one did not, so the research page
+        # read "volatility: not measured" for a stock whose card in the feed
+        # showed its beta.
+        beta=_beta_of(rec, asset),
+        measured_ratios={} if reasoning_locked else _measured_ratios(rec),
         sector=asset.sector if asset else None,
         created_at=rec.created_at,
         approved_at=rec.approved_at,

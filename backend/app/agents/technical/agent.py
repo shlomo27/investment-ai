@@ -268,6 +268,14 @@ class TechnicalAnalystAgent:
                 "signal_strength": signal["strength"],  # WEAK | MODERATE | STRONG
                 "signal_reasoning": signal["reasoning"],
                 "data_bars": len(df),
+                # The real 52-week range, from the bars already in hand. Only
+                # the info-derived fallback set these, so a full analysis
+                # carried none and the page drew the range bar between the
+                # nearest support and resistance instead — TCBI showed a
+                # "52-week range" of $93.28-$94.68 under a chart that had
+                # traded at $110 within the quarter.
+                "week52_high": float(df["High"].tail(252).max()),
+                "week52_low": float(df["Low"].tail(252).min()),
                 # New analysis modules
                 "analysis_breakdown": breakdown,
                 "fibonacci_levels": fib_data,

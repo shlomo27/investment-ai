@@ -16,6 +16,26 @@ interface Props {
   approvedAt?: string;
 }
 
+/**
+ * Committee notes as plain text for the card.
+ *
+ * Some notes are written as Markdown, and the card printed it raw: CRH's
+ * preview read "## Executive Decision — CRH plc (NYSE) | August 29, 2026
+ * **Decision: APPROVE…". Heading lines are dropped (they repeat the ticker
+ * and date the card already shows) and emphasis markers removed.
+ */
+function plainNotes(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !/^\s*#{1,6}\s/.test(line))
+    .join("\n")
+    .replace(/(\*\*|__)(.+?)\1/g, "$2")
+    .replace(/^\s*[-*]\s+/gm, "")
+    .replace(/\*\*|__/g, "")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
 const RecommendationCard: React.FC<Props> = ({
   recommendation: rec,
   isHe,
@@ -514,7 +534,7 @@ const RecommendationCard: React.FC<Props> = ({
         {/* Senior Notes Preview */}
         {rec.senior_notes && !expanded && (
           <p className="mt-3 text-sm text-gray-300 line-clamp-2">
-            {rec.senior_notes}
+            {plainNotes(rec.senior_notes)}
           </p>
         )}
       </div>
@@ -590,7 +610,7 @@ const RecommendationCard: React.FC<Props> = ({
               <h4 className="text-sm font-bold mb-2 text-yellow-400">
                 {t("Senior Committee", "ועדת בכירים")}
               </h4>
-              <p className="text-xs text-gray-300">{rec.senior_notes}</p>
+              <p className="text-xs text-gray-300 whitespace-pre-line">{plainNotes(rec.senior_notes)}</p>
             </div>
           )}
 
