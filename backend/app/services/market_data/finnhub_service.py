@@ -55,6 +55,44 @@ class FinnhubService:
             logger.debug("Finnhub quote failed", symbol=symbol, error=str(e))
             return None
 
+    async def search_symbols(self, query: str) -> List[Dict[str, Any]]:
+        """US-listed stocks and ETFs matching a ticker or company name.
+
+        The watchlist search was an exact ticker lookup plus our own pool,
+        so anything outside the ~900 analysed stocks was findable only by
+        typing its exact ticker — and not at all when Yahoo was throttling.
+        """
+        if not self.is_configured():
+            return []
+        try:
+            async with httpx.AsyncClient(timeout=8) as client:
+                resp = await client.get(
+                    f"{BASE_URL}/search",
+                    params={"q": query, "exchange": "US"},
+                    headers=self._headers(),
+                )
+                if resp.status_code != 200:
+                    return []
+                out = []
+                for r in (resp.json() or {}).get("result") or []:
+                    sym = (r.get("symbol") or "").upper()
+                    kind = r.get("type") or ""
+                    # Plain US tickers only: "BRK.B"-style share classes are
+                    # kept, foreign listings ("SAP.DE") and warrants are not.
+                    if not sym or kind not in ("Common Stock", "ETP", "ADR", "REIT"):
+                        continue
+                    out.append({
+                        "symbol": sym,
+                        "name": r.get("description") or sym,
+                        "exchange": "US",
+                        "type": "ETF" if kind == "ETP" else "STOCK",
+                        "currency": "USD",
+                    })
+                return out[:15]
+        except Exception as e:
+            logger.debug("Finnhub search failed", query=query, error=str(e))
+            return []
+
     async def get_profile(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Company profile: sector, market cap, country, exchange."""
         if not self.is_configured():

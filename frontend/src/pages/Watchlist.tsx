@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useT, useDir } from "../i18n/t";
 import { useAppSelector } from "../store";
 import { watchlistApi, marketApi } from "../api/client";
@@ -43,23 +43,36 @@ const Watchlist: React.FC = () => {
     setIsLoading(false);
   };
 
-  const handleSearch = async (q: string) => {
+  // Only the newest query may write results. Replies arrive out of order, so
+  // the slow answer to "Sp" could land after "Spcx" and show Columbia
+  // Sportswear and Simon Property as the matches for "Spcx". A short pause
+  // before searching also stops one request per keystroke.
+  const latestQuery = useRef("");
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSearch = (q: string) => {
     setSearchQuery(q);
-    if (q.length < 2) {
+    latestQuery.current = q;
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (q.trim().length < 2) {
       setSearchResults([]);
+      setSearchLoading(false);
       return;
     }
     setSearchLoading(true);
-    try {
-      const [global, tase] = await Promise.all([
-        marketApi.search(q),
-        marketApi.searchTASE(q),
-      ]);
-      setSearchResults([...global, ...tase].slice(0, 10));
-    } catch (e) {
-      console.error(e);
-    }
-    setSearchLoading(false);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const [global, tase] = await Promise.all([
+          marketApi.search(q),
+          marketApi.searchTASE(q).catch(() => []),
+        ]);
+        if (latestQuery.current !== q) return;
+        setSearchResults([...global, ...tase].slice(0, 10));
+      } catch (e) {
+        console.error(e);
+        if (latestQuery.current === q) setSearchResults([]);
+      }
+      if (latestQuery.current === q) setSearchLoading(false);
+    }, 300);
   };
 
   // Prices were rendered with a hardcoded shekel sign. GOOGL showed ₪353.65
@@ -184,6 +197,12 @@ const Watchlist: React.FC = () => {
             )}
           </div>
         </div>
+
+        {searchResults.length === 0 && !searchLoading && searchQuery.trim().length >= 2 && (
+          <div className="absolute top-14 left-0 right-0 bg-gray-800 border border-gray-700 rounded-xl z-10 shadow-xl px-4 py-3 text-sm text-gray-400">
+            {t("No US or Israeli listed stock matches \"{q}\"", "לא נמצאה מניה אמריקאית או ישראלית בשם \"{q}\"", { q: searchQuery.trim() })}
+          </div>
+        )}
 
         {searchResults.length > 0 && (
           <div className="absolute top-14 left-0 right-0 bg-gray-800 border border-gray-700 rounded-xl overflow-hidden z-10 shadow-xl">

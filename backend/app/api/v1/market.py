@@ -55,34 +55,52 @@ async def search_market(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Search for stocks globally (Yahoo Finance)."""
-    yahoo = YahooFinanceService()
-    results = await yahoo.search_stocks(q)
+    """Search for stocks by ticker or company name.
 
-    # Also search our asset pool
+    Order: our own pool (analysed stocks, which carry recommendations), then
+    every US listing from Finnhub, then Yahoo's exact-ticker lookup as a last
+    resort. Exact ticker matches come first in each.
+    """
+    q_up = q.strip().upper()
+
     pool_query = select(Asset).where(
         Asset.symbol.ilike(f"%{q}%") | Asset.name.ilike(f"%{q}%")
     ).limit(10)
-    pool_result = await db.execute(pool_query)
-    pool_assets = pool_result.scalars().all()
-
+    pool_assets = (await db.execute(pool_query)).scalars().all()
     pool_symbols = {a.symbol for a in pool_assets}
 
-    # Merge results
-    for asset in pool_assets:
-        if asset.symbol not in {r.get("symbol") for r in results}:
-            results.insert(0, {
-                "symbol": asset.symbol,
-                "name": asset.name,
-                "exchange": asset.exchange.value,
-                "type": asset.asset_type.value,
-                "currency": "ILS" if asset.exchange == Exchange.TASE else "USD",
-                "in_pool": True,
-            })
+    results = [{
+        "symbol": a.symbol,
+        "name": a.name,
+        "exchange": a.exchange.value,
+        "type": a.asset_type.value,
+        "currency": "ILS" if a.exchange == Exchange.TASE else "USD",
+        "in_pool": True,
+    } for a in pool_assets]
 
-    for r in results:
-        r["in_pool"] = r.get("symbol") in pool_symbols
+    from app.services.market_data.finnhub_service import get_finnhub_service
+    seen = set(pool_symbols)
+    for r in await get_finnhub_service().search_symbols(q):
+        if r["symbol"] not in seen:
+            seen.add(r["symbol"])
+            results.append({**r, "in_pool": False})
 
+    # Nothing found anywhere: try the ticker as typed (covers listings the
+    # search index has not caught up with yet).
+    if not any(r["symbol"] == q_up for r in results):
+        try:
+            for r in await YahooFinanceService().search_stocks(q):
+                if r.get("symbol") and r["symbol"] not in seen:
+                    seen.add(r["symbol"])
+                    results.append({**r, "in_pool": False})
+        except Exception:
+            pass
+
+    # Exact ticker first, then tickers that start with the query, then the rest.
+    def rank(r):
+        sym = (r.get("symbol") or "").upper()
+        return (0 if sym == q_up else 1 if sym.startswith(q_up) else 2)
+    results.sort(key=rank)
     return results[:20]
 
 
