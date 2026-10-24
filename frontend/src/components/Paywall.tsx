@@ -135,7 +135,9 @@ const Paywall: React.FC<Props> = ({ isHe, reason, onClose, onUpgraded }) => {
       dir={isHe ? "rtl" : "ltr"}
       // Opaque: at 95% the Settings screen underneath showed through and
       // its labels ran across the benefits list and the price.
-      className="fixed inset-0 z-50 bg-gray-950 overflow-y-auto"
+      // Above the bottom tab bar (z-50), which otherwise covered the
+      // disclaimer and could take a tap meant for the legal links.
+      className="fixed inset-0 z-[60] bg-gray-950 overflow-y-auto"
       role="dialog"
       aria-modal="true"
     >
