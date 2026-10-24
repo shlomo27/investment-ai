@@ -63,8 +63,11 @@ export function openExternalLater(): { go: (url: string) => void; cancel: () => 
  * requires them to work. Inside the app they point at the live website.
  */
 export function pageUrl(path: string): string {
-  if (!isNative()) return path;
+  // The pages put the reader's language first (Hebrew or English).
+  const lang = typeof document !== "undefined" ? document.documentElement.lang : "";
+  const withLang = lang ? `${path}?lang=${encodeURIComponent(lang)}` : path;
+  if (!isNative()) return withLang;
   const origin = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
-  return origin ? `${origin}${path}` : path;
+  return origin ? `${origin}${withLang}` : withLang;
 }
 

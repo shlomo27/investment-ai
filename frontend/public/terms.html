@@ -164,5 +164,20 @@
   </div>
 
 </div>
+<script>
+  // English readers get the English text first. The page is Hebrew, then
+  // English, so a reader arriving from the English app (or an App Store
+  // reviewer) landed on a screen of Hebrew. The app passes ?lang=; a direct
+  // visit falls back to the browser's language.
+  (function () {
+    var lang = (new URLSearchParams(location.search).get("lang") || navigator.language || "he").toLowerCase();
+    if (lang.indexOf("he") === 0) return;
+    var en = document.querySelector(".en"), wrap = document.querySelector(".wrap");
+    if (!en || !wrap) return;
+    wrap.insertBefore(en, wrap.firstChild);
+    en.style.borderTop = "0"; en.style.marginTop = "0"; en.style.paddingTop = "0";
+    var h = en.querySelector("h1"); if (h) document.title = h.textContent + " — Investment AI";
+  })();
+</script>
 </body>
 </html>
