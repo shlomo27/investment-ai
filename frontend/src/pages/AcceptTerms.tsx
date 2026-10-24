@@ -1,3 +1,4 @@
+import { pageUrl } from "../platform";
 import React, { useState } from "react";
 import StatusBarShield from "../components/Layout/StatusBarShield";
 import { useNavigate } from "react-router-dom";
@@ -100,11 +101,11 @@ const AcceptTerms: React.FC = () => {
               />
               <span className="text-xs text-gray-300 leading-relaxed">
                 {t("I have read and accept the ", "קראתי ואני מסכים ל")}
-                <a href="/terms.html" target="_blank" rel="noreferrer" className="text-blue-400 underline">
+                <a href={pageUrl("/terms.html")} target="_blank" rel="noreferrer" className="text-blue-400 underline">
                   {t("Terms of Use", "תנאי השימוש")}
                 </a>
                 {t(" and ", " ול")}
-                <a href="/privacy.html" target="_blank" rel="noreferrer" className="text-blue-400 underline">
+                <a href={pageUrl("/privacy.html")} target="_blank" rel="noreferrer" className="text-blue-400 underline">
                   {t("Privacy Policy", "מדיניות הפרטיות")}
                 </a>
                 {t(", and confirm I am 18 or older.", ", ואני מאשר שאני בן 18 ומעלה.")}

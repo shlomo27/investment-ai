@@ -18,7 +18,7 @@
  * outside IAP, and it must not point at one either.
  */
 import React, { useEffect, useState } from "react";
-import { isNative } from "../platform";
+import { isNative, pageUrl } from "../platform";
 import { getPackages, purchase, restore, type Package } from "../services/purchases";
 import { authApi } from "../api/client";
 import { useT } from "../i18n/t";
@@ -133,11 +133,20 @@ const Paywall: React.FC<Props> = ({ isHe, reason, onClose, onUpgraded }) => {
   return (
     <div
       dir={isHe ? "rtl" : "ltr"}
-      className="fixed inset-0 z-50 bg-gray-950/95 overflow-y-auto"
+      // Opaque: at 95% the Settings screen underneath showed through and
+      // its labels ran across the benefits list and the price.
+      className="fixed inset-0 z-50 bg-gray-950 overflow-y-auto"
       role="dialog"
       aria-modal="true"
     >
-      <div className="max-w-md mx-auto px-5 py-8 min-h-full flex flex-col">
+      <div
+        className="max-w-md mx-auto px-5 py-8 min-h-full flex flex-col"
+        // Clear of the clock and the home bar on a notched iPhone.
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top) + 1.5rem)",
+          paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)",
+        }}
+      >
         <button
           onClick={onClose}
           className="self-start text-gray-500 hover:text-gray-300 text-sm mb-6"
@@ -177,7 +186,18 @@ const Paywall: React.FC<Props> = ({ isHe, reason, onClose, onUpgraded }) => {
               >
                 <div className="font-semibold">{p.title}</div>
                 {/* Price comes from the store, in the user's own currency. */}
-                <div className="text-blue-200 text-sm mt-0.5">{p.priceString}</div>
+                {/* Apple requires the billing period beside the price. */}
+                <div className="text-blue-200 text-sm mt-0.5">
+                  {p.priceString}
+                  {p.period === "P1M" ? ` / ${t("month", "חודש")}`
+                    : p.period === "P1Y" ? ` / ${t("year", "שנה")}`
+                    : ""}
+                </div>
+                {p.period === "P1M" && (
+                  <div className="text-blue-200/80 text-xs mt-1">
+                    {t("Monthly subscription, renews automatically", "מנוי חודשי, מתחדש אוטומטית")}
+                  </div>
+                )}
               </button>
             ))}
           </div>
@@ -199,10 +219,10 @@ const Paywall: React.FC<Props> = ({ isHe, reason, onClose, onUpgraded }) => {
           </p>
           {/* Apple requires links to terms and privacy on the purchase screen. */}
           <p className="flex gap-3">
-            <a href="/privacy.html" className="underline" target="_blank" rel="noreferrer">
+            <a href={pageUrl("/privacy.html")} className="underline" target="_blank" rel="noreferrer">
               {t("Privacy Policy", "מדיניות פרטיות")}
             </a>
-            <a href="/terms.html" className="underline" target="_blank" rel="noreferrer">
+            <a href={pageUrl("/terms.html")} className="underline" target="_blank" rel="noreferrer">
               {t("Terms of Use", "תנאי שימוש")}
             </a>
           </p>

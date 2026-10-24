@@ -52,3 +52,19 @@ export function openExternalLater(): { go: (url: string) => void; cancel: () => 
     cancel: () => { if (win && !win.closed) win.close(); },
   };
 }
+
+
+/**
+ * A page of the website (privacy policy, terms) as a link that works here.
+ *
+ * In the iOS app a relative "/privacy.html" with target="_blank" is handed
+ * to the system as capacitor://localhost/privacy.html, which nothing can
+ * open, so the links on the purchase screen did nothing at all — and Apple
+ * requires them to work. Inside the app they point at the live website.
+ */
+export function pageUrl(path: string): string {
+  if (!isNative()) return path;
+  const origin = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+  return origin ? `${origin}${path}` : path;
+}
+

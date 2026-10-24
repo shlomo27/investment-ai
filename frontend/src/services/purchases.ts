@@ -32,6 +32,8 @@ export type Package = {
   priceString: string;
   title: string;
   description: string;
+  /** Billing period as the store reports it, e.g. "P1M"; null if unknown. */
+  period: string | null;
 };
 
 let configured = false;
@@ -85,6 +87,7 @@ export async function getPackages(): Promise<Package[]> {
       priceString: p.product.priceString,
       title: p.product.title,
       description: p.product.description,
+      period: p.product.subscriptionPeriod ?? null,
     }));
   } catch (err) {
     console.warn("[purchases] getOfferings failed:", err);
