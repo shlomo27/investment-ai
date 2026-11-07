@@ -34,6 +34,7 @@ REQUIRED_JOBS = {
     "scheduled_stale_recommendations",
     "scheduled_rec_levels",
     "scheduled_alert_outcomes",
+    "scheduled_market_regime",
 }
 
 

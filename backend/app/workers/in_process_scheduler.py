@@ -437,6 +437,12 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
             title = (f"{label} — סיגנל טכני | {symbol}{name_str}{price_str}{prev_str} "
                      f"(ציון {score:.0f}/100). {context}")
 
+        # A buy in a falling market is a different proposition from the same
+        # buy in a healthy one; the stock's own indicators cannot know which.
+        if signal in ("BUY_NOW", "STRONG_BUY"):
+            from app.services.market_regime import context_line
+            title += await context_line(r)
+
         svc = NotificationService()
         async with AsyncSessionLocal() as db:
             for uid in user_ids:
@@ -1592,6 +1598,170 @@ async def job_check_recommendation_levels():
         logger.error(f"[levels] failed: {exc}")
 
 
+async def evaluate_market_regime() -> dict:
+    """Read the market's regime after the close; on a confirmed change, tell
+    every active user what changed and how it touches the stocks they follow.
+
+    A change must show on CONFIRM_READINGS consecutive readings first, as stock
+    signals must survive a scan: a market sitting on a threshold would
+    otherwise flip the reading, and the users, back and forth. The first
+    reading ever is a baseline and alerts nobody.
+    """
+    import json as _json
+    from sqlalchemy import select
+    import redis.asyncio as aioredis
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.db.models.asset import Asset
+    from app.db.models.notification import NotificationType
+    from app.db.models.recommendation import Recommendation, RecommendationStatus
+    from app.db.models.user import User
+    from app.db.models.watchlist import Watchlist
+    from app.services import market_regime as mr
+    from app.services.notifications.service import NotificationService
+
+    inputs = await mr.fetch_inputs()
+    if inputs.get("spy") is None and inputs.get("VIXCLS") is None:
+        return {"skipped": "no market data"}
+    reading = mr.assess(inputs)
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    # Missing data scores as zero, so a FRED outage would read as a sudden
+    # recovery and tell everyone the risk had passed. Too few inputs: keep the
+    # reading for diagnostics, change nothing, tell nobody.
+    if reading["inputs_available"] < 4:
+        try:
+            await r.set(mr.REDIS_KEY + ":latest", _json.dumps(reading), ex=14 * 24 * 3600)
+        finally:
+            await r.aclose()
+        return {"skipped": "too few inputs", "available": reading["inputs_available"]}
+    try:
+        await r.set(mr.REDIS_KEY + ":latest", _json.dumps(reading), ex=14 * 24 * 3600)
+        prev = await mr.current(r)
+        if prev is None:
+            await r.set(mr.REDIS_KEY, _json.dumps(reading))
+            return {"baseline": reading["regime"], "score": reading["score"]}
+        if reading["regime"] == prev.get("regime"):
+            await r.delete(mr.PENDING_KEY)
+            await r.set(mr.REDIS_KEY, _json.dumps(reading))  # fresher reasons, same regime
+            return {"regime": reading["regime"], "score": reading["score"], "changed": False}
+
+        raw = await r.get(mr.PENDING_KEY)
+        pending = _json.loads(raw) if raw else {}
+        count = int(pending.get("count", 0)) + 1 if pending.get("regime") == reading["regime"] else 1
+        if count < mr.CONFIRM_READINGS:
+            await r.set(mr.PENDING_KEY, _json.dumps({"regime": reading["regime"], "count": count}),
+                        ex=7 * 24 * 3600)
+            return {"regime": prev["regime"], "pending": reading["regime"], "count": count}
+
+        await r.delete(mr.PENDING_KEY)
+        await r.set(mr.REDIS_KEY, _json.dumps(reading))
+    finally:
+        await r.aclose()
+
+    old, new = prev["regime"], reading["regime"]
+    order = [mr.HEALTHY, mr.CORRECTION, mr.STRESS]
+    worse = order.index(new) > order.index(old)
+    old_he, new_he, emoji = mr.LABELS[old][1], mr.LABELS[new][1], mr.LABELS[new][2]
+    why = "; ".join(x["he"] for x in sorted(reading["reasons"], key=lambda x: -x["points"])[:3])
+
+    async with AsyncSessionLocal() as db:
+        users = (await db.execute(select(User.id).where(User.is_active == True))).scalars().all()
+        follows = (await db.execute(select(Watchlist.user_id, Watchlist.symbol))).all()
+        symbols = {s for _, s in follows}
+        assets = {a.symbol: a for a in (await db.execute(
+            select(Asset).where(Asset.symbol.in_(symbols)))).scalars().all()} if symbols else {}
+        stops = {sym: stop for sym, stop in (await db.execute(
+            select(Recommendation.symbol, Recommendation.stop_loss).where(
+                Recommendation.symbol.in_(symbols),
+                Recommendation.status.in_([RecommendationStatus.APPROVED,
+                                           RecommendationStatus.PRESENTED_TO_USER,
+                                           RecommendationStatus.ACTIONED]))
+        )).all() if stop} if symbols else {}
+
+    by_user: dict = {}
+    for uid, sym in follows:
+        by_user.setdefault(uid, []).append(sym)
+
+    svc = NotificationService()
+    sent = 0
+    async with AsyncSessionLocal() as db:
+        for uid in users:
+            mine = by_user.get(uid, [])
+            near_stop, volatile = [], []
+            for sym in mine:
+                a = assets.get(sym)
+                price = a.last_price if a else None
+                stop = stops.get(sym)
+                if price and stop and 0 <= (price - stop) / price * 100 < 3:
+                    near_stop.append(sym)
+                if a and a.beta and a.beta > 1.3:
+                    volatile.append(sym)
+            if worse:
+                personal = ""
+                if mine:
+                    parts = []
+                    if near_stop:
+                        parts.append(f"קרובות לסטופ (פחות מ-3%): {', '.join(near_stop)}")
+                    if volatile:
+                        parts.append(f"תנודתיות גבוהה, שבדרך כלל נפגעות יותר בירידות: {', '.join(volatile)}")
+                    personal = (f" מתוך {len(mine)} המניות שאתה עוקב אחריהן — " + "; ".join(parts) + "."
+                                if parts else
+                                f" אף אחת מ-{len(mine)} המניות שאתה עוקב אחריהן אינה קרובה לסטופ.")
+                title = (f"{emoji} מצב השוק השתנה — היה: {old_he}, עכשיו: {new_he}. "
+                         f"הסיבות: {why}.{personal} "
+                         f"זו אינה המלצה למכור: זהו מידע על רמת הסיכון. מה שקובע אם להמשיך "
+                         f"להחזיק מניה הוא הסטופ שלה.")
+            else:
+                title = (f"{emoji} מצב השוק השתפר — היה: {old_he}, עכשיו: {new_he}. "
+                         f"הסיכון הכללי בשוק ירד" + (f" ({why})" if why else "") + ".")
+            try:
+                await svc.send_notification(
+                    user_id=uid, recommendation_id=None,
+                    internal_detail={"trigger": "MARKET_REGIME", "regime": new,
+                                     "previous_regime": old, "score": reading["score"]},
+                    db=db, notification_type=NotificationType.RISK_WARNING if worse
+                    else NotificationType.ALERT,
+                    title=title,
+                )
+                sent += 1
+            except Exception as exc:
+                logger.warning(f"[regime] notify {uid} failed: {exc}")
+
+    # Measured like any alert: a worse regime was right if SPY then fell.
+    await record_alert_outcome("SPY", "MARKET", f"MARKET_{new}", inputs.get("spy"))
+    logger.info(f"[regime] {old} -> {new} (score {reading['score']}) → {sent} users")
+    return {"regime": new, "previous": old, "changed": True, "notified": sent}
+
+
+async def baseline_market_regime_once() -> None:
+    """Take the first market reading at start-up rather than waiting for the
+    next weekday close, so the regime is known from the first day. Only when
+    no reading exists: a restart must not count as a confirming reading."""
+    try:
+        import redis.asyncio as aioredis
+        from app.core.config import settings
+        from app.services import market_regime as mr
+
+        r = aioredis.from_url(settings.REDIS_URL)
+        try:
+            exists = await r.exists(mr.REDIS_KEY)
+        finally:
+            await r.aclose()
+        if not exists:
+            logger.info(f"[regime] baseline: {await evaluate_market_regime()}")
+    except Exception as exc:
+        logger.warning(f"[regime] baseline failed: {exc}")
+
+
+async def job_evaluate_market_regime():
+    try:
+        result = await evaluate_market_regime()
+        logger.info(f"[regime] {result}")
+    except Exception as exc:
+        logger.error(f"[regime] failed: {exc}")
+
+
 async def evaluate_alert_outcomes() -> dict:
     """Fill in the price a week and a month after each alert, from the
     prices the TA scan keeps current."""
@@ -1618,6 +1788,13 @@ async def evaluate_alert_outcomes() -> dict:
             select(Asset.symbol, Asset.last_price).where(
                 Asset.symbol.in_({o.symbol for o in rows}))
         )).all() if p}
+        if "SPY" not in prices and any(o.symbol == "SPY" for o in rows):
+            # Market-regime alerts are scored on SPY, which need not be an
+            # asset the scans keep priced.
+            from app.services.performance_service import spy_closes
+            spy = await spy_closes()
+            if spy:
+                prices["SPY"] = spy[max(spy)]
         for o in rows:
             p = prices.get(o.symbol)
             if not p:
@@ -1703,6 +1880,15 @@ def create_scheduler(sync_db_url: str) -> AsyncIOScheduler:
         job_check_recommendation_levels,
         CronTrigger(day_of_week="mon-fri", hour=16, minute=45, timezone="America/New_York"),
         id="scheduled_rec_levels",
+        replace_existing=True,
+    )
+
+    # Market regime — weekdays 17:30 New York, after the close; FRED's daily
+    # series (VIX, credit spreads) update for the previous day by then.
+    scheduler.add_job(
+        job_evaluate_market_regime,
+        CronTrigger(day_of_week="mon-fri", hour=17, minute=30, timezone="America/New_York"),
+        id="scheduled_market_regime",
         replace_existing=True,
     )
 
@@ -1900,6 +2086,7 @@ KNOWN_JOB_IDS = {
     "scheduled_stale_recommendations",
     "scheduled_rec_levels",
     "scheduled_alert_outcomes",
+    "scheduled_market_regime",
     "scheduled_prescreener",
     "scheduled_weekly_full_scan",
     "scheduled_earnings_watcher",

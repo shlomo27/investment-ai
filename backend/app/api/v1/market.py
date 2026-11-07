@@ -1832,7 +1832,32 @@ _ALERT_DIRECTION = {
     # Leaving a long at its stop or target was right if it then fell.
     "STOP_LONG": -1, "TARGET_LONG": -1,
     "STOP_SHORT": 1, "TARGET_SHORT": 1,
+    # A worse market regime was right if the index then fell.
+    "MARKET_HEALTHY": 1, "MARKET_CORRECTION": -1, "MARKET_STRESS": -1,
 }
+
+
+@router.get("/regime")
+async def market_regime(current_user: User = Depends(get_current_active_user)):
+    """The market's current regime (HEALTHY / CORRECTION / STRESS) with the
+    reasons behind it, and the latest unconfirmed reading."""
+    import redis.asyncio as aioredis
+    from app.core.config import settings
+    from app.services import market_regime as mr
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        committed = await mr.current(r)
+        raw = await r.get(mr.REDIS_KEY + ":latest")
+        pending = await r.get(mr.PENDING_KEY)
+    finally:
+        await r.aclose()
+    import json as _json
+    return {
+        "current": committed,
+        "latest": _json.loads(raw) if raw else None,
+        "pending": _json.loads(pending) if pending else None,
+    }
 
 
 @router.get("/diagnostics/alert-outcomes")

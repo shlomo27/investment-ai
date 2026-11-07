@@ -156,6 +156,7 @@ async def lifespan(app: FastAPI):
         from app.workers.in_process_scheduler import (
             create_scheduler, dedupe_live_recommendations, remove_stale_jobs,
             restore_actioned_recommendations, restore_paused_expiries, recompute_vs_market_once,
+            baseline_market_regime_once,
         )
 
         SCHEDULER_LOCK_KEY = 931_702  # arbitrary app-wide constant
@@ -350,6 +351,7 @@ async def lifespan(app: FastAPI):
                             await restore_actioned_recommendations()
                             await restore_paused_expiries()
                             await recompute_vs_market_once()
+                            await baseline_market_regime_once()
                             await dedupe_live_recommendations()
                         except Exception as maint_exc:
                             logger.warning(
