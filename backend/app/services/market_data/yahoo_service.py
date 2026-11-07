@@ -563,6 +563,12 @@ class YahooFinanceService:
             "analyst_recommendation": info.get("recommendationKey"),
             "institutional_ownership": self._safe_float(info.get("institutionsPercentHeld")),
             "short_interest": self._safe_float(info.get("shortPercentOfFloat")),
+            # Days to cover, and the change in shares short against the
+            # prior month: the two readings besides short % of float that
+            # say how crowded a short is.
+            "short_ratio": self._safe_float(info.get("shortRatio")),
+            "shares_short": self._safe_float(info.get("sharesShort")),
+            "shares_short_prior_month": self._safe_float(info.get("sharesShortPriorMonth")),
             "earnings_data": earnings_data,
             "name": info.get("shortName") or info.get("longName", symbol),
             "exchange": info.get("exchange", "NASDAQ"),

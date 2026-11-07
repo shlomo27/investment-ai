@@ -175,4 +175,5 @@ def conditions(shadow: Optional[Dict[str, Any]]) -> Dict[str, Optional[bool]]:
         "strong_trend_adx25": gt("adx_14", 25),
         "money_flowing_in": gt("cmf_20", 0),
         "weekly_uptrend": None if s.get("weekly_trend") is None else s["weekly_trend"] == "UP",
+        "squeeze_risk": None if s.get("squeeze_level") is None else s["squeeze_level"] != "NONE",
     }

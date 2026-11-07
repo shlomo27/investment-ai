@@ -442,6 +442,9 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         # Every other change gets the regime too: it bears on holding.
         from app.services.market_regime import context_line
         title += await context_line(r, buy=signal in ("BUY_NOW", "STRONG_BUY"))
+        if ((ta or {}).get("squeeze") or {}).get("level") == "HIGH":
+            from app.agents.technical.squeeze import HE_LINE
+            title += HE_LINE
 
         svc = NotificationService()
         async with AsyncSessionLocal() as db:

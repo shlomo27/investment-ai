@@ -304,6 +304,20 @@ class TechnicalAnalystAgent:
             except Exception as e:
                 logger.warning("shadow indicators failed", symbol=symbol, error=str(e))
 
+            # Short-squeeze exposure: a risk tag for the card and the alerts.
+            if not is_tase:
+                try:
+                    from app.agents.technical import squeeze as _sq
+                    sd = await _sq.short_data(symbol)
+                    closes = df["Close"]
+                    chg5 = (float(closes.iloc[-1]) / float(closes.iloc[-6]) - 1) * 100 if len(closes) > 6 else None
+                    result["squeeze"] = _sq.assess(
+                        sd.get("short_pct"), sd.get("days_to_cover"), sd.get("short_change_pct"),
+                        indicators.get("volume_ratio"), chg5)
+                    result.setdefault("shadow", {})["squeeze_level"] = result["squeeze"]["level"]
+                except Exception as e:
+                    logger.warning("squeeze check failed", symbol=symbol, error=str(e))
+
             # Attach price history + indicator series for frontend charting (last 90 bars)
             try:
                 chart_bars = df.tail(90)
