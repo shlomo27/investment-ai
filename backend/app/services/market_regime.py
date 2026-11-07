@@ -119,6 +119,10 @@ async def fetch_inputs() -> Dict[str, Any]:
     # Credit spreads matter most for how fast they widen: about a month back.
     hy = fred["BAMLH0A0HYM2"]
     inputs["hy_spread_1m_ago"] = _ago(hy, 21) if inputs["BAMLH0A0HYM2"] is not None else None
+    # The curve's lowest point over the past year: an inversion that has just
+    # ended has preceded recessions more reliably than the inversion itself.
+    curve = [v for _, v in fred["T10Y2Y"][-252:]]
+    inputs["t10y2y_min_1y"] = min(curve) if curve and inputs["T10Y2Y"] is not None else None
     inputs["breadth_pct"] = await _breadth()
     return inputs
 
@@ -215,6 +219,14 @@ def assess(i: Dict[str, Any]) -> Dict[str, Any]:
     if nfci is not None and nfci > 0:
         add("stress", 1, f"Financial conditions tighter than average (NFCI {nfci:.2f})",
             f"התנאים הפיננסיים הדוקים מהממוצע (NFCI {nfci:.2f})")
+
+    curve, curve_min = i.get("T10Y2Y"), i.get("t10y2y_min_1y")
+    if curve is not None and curve < 0:
+        add("stress", 1, f"Yield curve inverted (10Y-2Y {curve:.2f})",
+            f"עקום התשואות הפוך (10Y-2Y {curve:.2f})")
+    elif curve is not None and curve_min is not None and curve_min <= -0.25:
+        add("stress", 1, "Yield curve has just come out of an inversion, which has preceded past recessions",
+            "עקום התשואות יצא לאחרונה מהיפוך, מצב שקדם למיתונים בעבר")
 
     b = i.get("breadth_pct")
     if b is not None and b < 25:
