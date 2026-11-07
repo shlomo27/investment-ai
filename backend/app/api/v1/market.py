@@ -1890,13 +1890,30 @@ async def alert_outcomes(
         side = "BUY" if d == 1 else "SELL" if d == -1 else "WAIT"
         return f"{o.kind}_{side}"
 
+    # SPY on the alert's day and at each checkpoint. Taken from SPY's daily
+    # history rather than only the stored values, so alerts recorded before
+    # the benchmark existed are judged against the market too.
+    from datetime import timedelta as _td, timezone as _tz
+    from app.services.performance_service import spy_closes, close_on_or_before
+    spy = await spy_closes()
+
+    def _spy_at(o, days: int):
+        stored = {0: o.spy_at_alert, 7: o.spy_1w, 28: o.spy_1m}.get(days)
+        if stored:
+            return stored
+        if not o.created_at:
+            return None
+        created = o.created_at if o.created_at.tzinfo else o.created_at.replace(tzinfo=_tz.utc)
+        return close_on_or_before(spy, created + _td(days=days))
+
+    def _blank():
+        return {"measured": 0, "right": 0, "move_sum": 0.0,
+                "vs_n": 0, "beat": 0, "vs_sum": 0.0}
+
     groups: Dict[str, Dict[str, Any]] = {}
     for o in rows:
-        g = groups.setdefault(_group(o), {
-            "alerts": 0,
-            "1w": {"measured": 0, "right": 0, "move_sum": 0.0},
-            "1m": {"measured": 0, "right": 0, "move_sum": 0.0},
-        })
+        name = _group(o)
+        g = groups.setdefault(name, {"alerts": 0, "1w": _blank(), "1m": _blank(), "splits": {}})
         g["alerts"] += 1
         d = _ALERT_DIRECTION.get(o.signal)
         # A GATED row is a signal the trend gate held back. It is scored for
@@ -1904,25 +1921,53 @@ async def alert_outcomes(
         # price then fell.
         if o.kind == "GATED" and d is not None:
             d = -d
-        for span, later in (("1w", o.price_1w), ("1m", o.price_1m)):
+        ctx = o.context or {}
+        for span, later, days in (("1w", o.price_1w, 7), ("1m", o.price_1m, 28)):
             if d is None or not later or not o.price_at_alert:
                 continue
             move = (later - o.price_at_alert) / o.price_at_alert * 100 * d
-            g[span]["measured"] += 1
-            g[span]["right"] += 1 if move > 0 else 0
-            g[span]["move_sum"] += move
+            buckets = [g[span]]
+            # Split buy/sell alerts by each condition known at the alert, to
+            # show which shadow indicator, or which market regime, would have
+            # made them better.
+            for cond, val in ctx.items():
+                if val is None or o.kind == "MARKET":
+                    continue
+                key = f"{cond}={str(val).lower()}"
+                buckets.append(g["splits"].setdefault(key, {"1w": _blank(), "1m": _blank()})[span])
+            s0, s1 = _spy_at(o, 0), _spy_at(o, days)
+            excess = None
+            if s0 and s1 and o.kind != "MARKET":
+                excess = move - (s1 - s0) / s0 * 100 * d
+            for b in buckets:
+                b["measured"] += 1
+                b["right"] += 1 if move > 0 else 0
+                b["move_sum"] += move
+                if excess is not None:
+                    b["vs_n"] += 1
+                    b["beat"] += 1 if excess > 0 else 0
+                    b["vs_sum"] += excess
+
+    def _finish(b: dict) -> dict:
+        n, vn = b["measured"], b["vs_n"]
+        return {
+            "measured": n,
+            "hit_rate_pct": round(b["right"] / n * 100, 1) if n else None,
+            "avg_move_pct": round(b["move_sum"] / n, 2) if n else None,
+            # In the alert's direction, minus what SPY did in that direction:
+            # positive means the alert did better than simply holding the index.
+            "vs_market_measured": vn,
+            "beat_market_pct": round(b["beat"] / vn * 100, 1) if vn else None,
+            "avg_vs_market_pct": round(b["vs_sum"] / vn, 2) if vn else None,
+        }
 
     for g in groups.values():
         for span in ("1w", "1m"):
-            s = g[span]
-            n = s.pop("measured")
-            right = s.pop("right")
-            total = s.pop("move_sum")
-            s.update({
-                "measured": n,
-                "hit_rate_pct": round(right / n * 100, 1) if n else None,
-                "avg_move_pct": round(total / n, 2) if n else None,
-            })
+            g[span] = _finish(g[span])
+        g["splits"] = {
+            k: {span: _finish(v[span]) for span in ("1w", "1m")}
+            for k, v in sorted(g["splits"].items())
+        }
 
     return {
         "groups": groups,

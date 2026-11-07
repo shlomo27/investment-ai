@@ -9,7 +9,7 @@ daily job fills in the price about a week and about a month later.
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Float, Integer, String
+from sqlalchemy import JSON, DateTime, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -36,3 +36,13 @@ class AlertOutcome(Base):
     price_1w: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     #: Price about twenty trading days (twenty-eight calendar days) later.
     price_1m: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    #: The S&P 500 (SPY) at the alert and at the same two checkpoints, so each
+    #: alert can be judged against what the whole market did meanwhile: a buy
+    #: that fell 2% in a week the index fell 5% did its job.
+    spy_at_alert: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    spy_1w: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    spy_1m: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    #: What else was true at the alert: the market regime and the shadow
+    #: indicators' yes/no readings. The outcome report splits by these to
+    #: show whether any of them would have improved the alerts.
+    context: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

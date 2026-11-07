@@ -464,6 +464,7 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         await record_alert_outcome(
             symbol, "ENTRY" if entry_point else "TA", signal, price,
             recommendation_id=live_rec.id if live_rec is not None else None,
+            ta=ta,
         )
         logger.info(f"[ta_signal] {symbol}: {prev_signal or '—'}→{signal} (score={score}) → {len(user_ids)} users")
         return True
@@ -746,7 +747,7 @@ async def job_daily_ta_scan():
                             ex=7 * 24 * 3600, nx=True,
                         ):
                             await record_alert_outcome(
-                                symbol, "GATED", gate["blocked"], ta["current_price"])
+                                symbol, "GATED", gate["blocked"], ta["current_price"], ta=ta)
                 else:
                     errors += 1
                     logger.warning(f"[ta_scan] {symbol}: no analysis after retry")
@@ -1415,20 +1416,58 @@ async def job_engine_health_check():
 
 # ─── Scheduler factory ────────────────────────────────────────────────────────
 
+async def _latest_spy() -> float | None:
+    """SPY's latest close, for benchmarking alerts. None if unavailable."""
+    try:
+        from app.agents.technical.shadow_indicators import benchmark_closes
+        series = await benchmark_closes("SPY")
+        return float(series.iloc[-1]) if series is not None and len(series) else None
+    except Exception:
+        return None
+
+
 async def record_alert_outcome(symbol: str, kind: str, signal: str, price,
-                               recommendation_id=None) -> None:
+                               recommendation_id=None, ta: dict | None = None) -> None:
     """Note an alert and its price, to be scored later. Never raises: losing
-    a measurement must not cost anyone the alert itself."""
+    a measurement must not cost anyone the alert itself.
+
+    With `ta`, the alert also records the shadow indicators' readings, and
+    every alert records the market regime and SPY, so the report can say
+    whether the alert beat the market and which conditions would have
+    improved it."""
     if not price:
         return
     try:
         from app.core.database import AsyncSessionLocal
         from app.db.models.alert_outcome import AlertOutcome
+        from app.agents.technical.shadow_indicators import conditions
+
+        context: dict = {}
+        try:
+            import redis.asyncio as aioredis
+            from app.core.config import settings
+            from app.services import market_regime as mr
+            _r = aioredis.from_url(settings.REDIS_URL)
+            try:
+                state = await mr.current(_r)
+            finally:
+                await _r.aclose()
+            if state:
+                context["market_regime"] = state.get("regime")
+        except Exception:
+            pass
+        if ta:
+            context.update(conditions(ta.get("shadow")))
+            gate = (ta.get("signal_gate") or {}).get("rule")
+            if gate:
+                context["trend_gate"] = gate
 
         async with AsyncSessionLocal() as db:
             db.add(AlertOutcome(symbol=symbol, kind=kind, signal=signal,
                                 price_at_alert=float(price),
-                                recommendation_id=recommendation_id))
+                                recommendation_id=recommendation_id,
+                                spy_at_alert=await _latest_spy(),
+                                context=context or None))
             await db.commit()
     except Exception as exc:
         logger.warning(f"[outcomes] could not record {kind} alert for {symbol}: {exc}")
@@ -1801,6 +1840,7 @@ async def evaluate_alert_outcomes() -> dict:
             spy = await spy_closes()
             if spy:
                 prices["SPY"] = spy[max(spy)]
+        spy_now = await _latest_spy()
         for o in rows:
             p = prices.get(o.symbol)
             if not p:
@@ -1808,9 +1848,11 @@ async def evaluate_alert_outcomes() -> dict:
             created = o.created_at if o.created_at.tzinfo else o.created_at.replace(tzinfo=timezone.utc)
             if o.price_1w is None and created <= now - timedelta(days=7):
                 o.price_1w = p
+                o.spy_1w = spy_now if o.spy_at_alert else None
                 filled += 1
             if o.price_1m is None and created <= now - timedelta(days=28):
                 o.price_1m = p
+                o.spy_1m = spy_now if o.spy_at_alert else None
                 filled += 1
         await db.commit()
     return {"filled": filled}

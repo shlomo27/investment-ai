@@ -284,6 +284,26 @@ class TechnicalAnalystAgent:
                 "elliott_wave": elliott_data,
             }
 
+            # Shadow indicators: recorded with the analysis and with every
+            # alert, no weight in the signal until the outcome data shows
+            # they help (see shadow_indicators.py).
+            try:
+                from app.agents.technical.shadow_indicators import compute as _shadow
+                sector = None
+                try:
+                    from sqlalchemy import select as _select
+                    from app.core.database import AsyncSessionLocal
+                    from app.db.models.asset import Asset
+                    async with AsyncSessionLocal() as _db:
+                        sector = (await _db.execute(
+                            _select(Asset.sector).where(Asset.symbol == symbol)
+                        )).scalar_one_or_none()
+                except Exception:
+                    pass
+                result["shadow"] = await _shadow(df, sector)
+            except Exception as e:
+                logger.warning("shadow indicators failed", symbol=symbol, error=str(e))
+
             # Attach price history + indicator series for frontend charting (last 90 bars)
             try:
                 chart_bars = df.tail(90)
