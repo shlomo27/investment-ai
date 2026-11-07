@@ -278,14 +278,34 @@ async def current(redis_client) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def context_line(redis_client) -> str:
-    """One Hebrew sentence on the market for a stock alert, or "" when healthy
-    or unknown. Never raises: an alert must not be lost to this."""
+async def context_line(redis_client=None, buy: bool = False) -> str:
+    """One Hebrew sentence on the market for a stock alert, or "" when the
+    market is healthy or the regime unknown.
+
+    A buy in a weak market is marked high risk: the stock's own indicators
+    cannot tell a falling market from a healthy one. Every other alert gets a
+    plain statement of the regime, since it bears on whether to keep holding.
+    Never raises: an alert must not be lost to this.
+    """
+    own = redis_client is None
     try:
+        if own:
+            import redis.asyncio as aioredis
+            from app.core.config import settings
+            redis_client = aioredis.from_url(settings.REDIS_URL)
         state = await current(redis_client)
         if not state or state.get("regime") == HEALTHY:
             return ""
-        label = LABELS[state["regime"]][1]
-        return f" שים לב: השוק הכללי במצב {label} — הסיכון בכל קנייה גבוה מהרגיל."
+        label, emoji = LABELS[state["regime"]][1], LABELS[state["regime"]][2]
+        if buy:
+            return (f" ⚠️ סיכון גבוה: השוק הכללי במצב {label} {emoji}, ובשוק כזה "
+                    f"הסיכון בכל קנייה גבוה מהרגיל.")
+        return f" מצב השוק הכללי: {label} {emoji}."
     except Exception:
         return ""
+    finally:
+        if own and redis_client is not None:
+            try:
+                await redis_client.aclose()
+            except Exception:
+                pass

@@ -439,9 +439,9 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
 
         # A buy in a falling market is a different proposition from the same
         # buy in a healthy one; the stock's own indicators cannot know which.
-        if signal in ("BUY_NOW", "STRONG_BUY"):
-            from app.services.market_regime import context_line
-            title += await context_line(r)
+        # Every other change gets the regime too: it bears on holding.
+        from app.services.market_regime import context_line
+        title += await context_line(r, buy=signal in ("BUY_NOW", "STRONG_BUY"))
 
         svc = NotificationService()
         async with AsyncSessionLocal() as db:
@@ -576,6 +576,8 @@ async def notify_entry_state_on_follow(user_id: int, symbol: str) -> bool:
                 f"{label} — {symbol} נוספה למעקב והסיגנל הטכני שלה כבר פעיל כרגע"
                 f"{price_str} (ציון טכני {score:.0f}/100)."
             )
+        from app.services.market_regime import context_line
+        title += await context_line(buy=signal in ("BUY_NOW", "STRONG_BUY"))
 
         async with AsyncSessionLocal() as db:
             await NotificationService().send_notification(
@@ -1546,6 +1548,9 @@ async def check_recommendation_levels() -> dict:
                 else:
                     title = (f"🎯 {rec.symbol}{name_str}: ירדה ליעד ${rec.target_price:.2f} של המלצת המכירה "
                              f"— מחיר סגירה ${price:.2f}. המניה תנותח מחדש.")
+
+                from app.services.market_regime import context_line
+                title += await context_line(r)
 
                 async with AsyncSessionLocal() as db:
                     holders = {row[0] for row in (await db.execute(
