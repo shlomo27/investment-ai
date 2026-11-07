@@ -12,8 +12,8 @@ import {
   removeReadNotifications,
 } from "../store/slices/notificationsSlice";
 import { fetchPortfolioSummary } from "../store/slices/portfolioSlice";
-import { recommendationsApi } from "../api/client";
-import { Recommendation, RecommendationType, TechnicalAnalysis } from "../types";
+import { recommendationsApi, watchlistApi } from "../api/client";
+import { Recommendation, RecommendationType, TechnicalAnalysis, WatchlistItem } from "../types";
 import RecommendationCard from "../components/Recommendations/RecommendationCard";
 import SortMenu, { SortOption } from "../components/SortMenu";
 
@@ -176,6 +176,11 @@ const Recommendations: React.FC = () => {
     : sig === "WAIT" ? t("Wait", "המתן")
     : sig;
 
+  const [watch, setWatch] = useState<WatchlistItem[] | null>(null);
+  useEffect(() => {
+    watchlistApi.getWatchlist().then(setWatch).catch(() => setWatch([]));
+  }, []);
+
   // Signals first: the recommendations are the product, the inbox is a log
   // of what already happened. Landing on the log made a client read
   // history before seeing what is being recommended right now.
@@ -324,6 +329,14 @@ const Recommendations: React.FC = () => {
   const techBuy = topPicks.filter((r) => {
     const sig = (r.technical_analysis?.timing_signal || "").toUpperCase();
     return sig === "BUY_NOW" || sig === "STRONG_BUY";
+  });
+  // And the stocks the reader follows that have no recommendation: NVDA had
+  // a technical buy and a Telegram alert saying so, and was missing here
+  // because this list was drawn from recommendations alone.
+  const recSymbols = new Set(recommendations.map((r) => r.symbol));
+  const watchTechBuy = (watch ?? []).filter((w) => {
+    const sig = String(w.technical_signal || w.last_technical_analysis?.timing_signal || "").toUpperCase();
+    return !recSymbols.has(w.symbol) && (sig === "BUY_NOW" || sig === "STRONG_BUY");
   });
   const _byDir =
     dirFilter === "LONG" ? topBuys :
@@ -868,7 +881,7 @@ const Recommendations: React.FC = () => {
                 {f === "LONG" ? `LONG (${longCount})`
                   : f === "SHORT" ? `SHORT (${shortCount})`
                   : f === "ENTRY" ? `🟢 ${t("Enter now", "כניסה עכשיו")} (${entryNow.length})`
-                  : f === "TECH_BUY" ? `📈 ${t("Technical buy", "קנייה טכנית")} (${techBuy.length})`
+                  : f === "TECH_BUY" ? `📈 ${t("Technical buy", "קנייה טכנית")} (${techBuy.length + watchTechBuy.length})`
                   : `${t("All", "הכל")} (${topPicks.length})`}
               </button>
             ))}
@@ -892,7 +905,40 @@ const Recommendations: React.FC = () => {
             />
           </div>
 
-          {filteredRecs.length === 0 ? (
+          {dirFilter === "TECH_BUY" && watchTechBuy.length > 0 && !_q && (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-500">
+                {t("Stocks you follow: technical signal only, no AI recommendation",
+                   "מניות שאתה עוקב אחריהן: סיגנל טכני בלבד, בלי המלצת AI")}
+              </p>
+              {watchTechBuy.map((w) => {
+                const sig = String(w.technical_signal || w.last_technical_analysis?.timing_signal || "").toUpperCase();
+                const score = w.last_technical_analysis?.technical_score;
+                return (
+                  <Link key={w.id} to="/watchlist"
+                        className="flex items-center justify-between gap-3 bg-gray-900 border border-cyan-900/50 rounded-2xl px-4 py-3 hover:border-cyan-700/60">
+                    <div className="min-w-0">
+                      <p className="font-bold text-white">{w.symbol}
+                        <span className="ms-2 text-xs text-gray-400 font-normal">{w.asset_name}</span>
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {score != null ? t("Technical score {s}/100", "ציון טכני {s}/100", { s: Math.round(score) }) : ""}
+                      </p>
+                    </div>
+                    <div className="text-end shrink-0">
+                      <p className="text-green-400 font-bold text-sm">
+                        {sig === "STRONG_BUY" ? t("Strong buy", "קנייה חזקה") : t("Buy", "קנה")}
+                      </p>
+                      {w.current_price ? <p className="text-xs text-gray-400 num" dir="ltr">${Number(w.current_price).toFixed(2)}</p> : null}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+
+          {filteredRecs.length === 0 && dirFilter === "TECH_BUY" && watchTechBuy.length > 0 && !_q ? null
+          : filteredRecs.length === 0 ? (
             <div className="bg-gray-900 rounded-2xl p-12 border border-gray-800 text-center text-gray-500">
               <p className="text-4xl mb-3">🤖</p>
               {_q ? (

@@ -567,7 +567,27 @@ export const recommendationsApi = {
 
 // ─── Market API ──────────────────────────────────────────────────────────────
 
+export type MarketRegimeReason = {
+  layer: "trend" | "stress" | "breadth";
+  points: number;
+  en: string;
+  he: string;
+  code?: string;
+  vars?: Record<string, number>;
+};
+export type MarketRegimeReading = {
+  regime: "HEALTHY" | "CORRECTION" | "STRESS";
+  score: number;
+  reasons: MarketRegimeReason[];
+  as_of: string;
+};
+
 export const marketApi = {
+  getRegime: async (): Promise<{ current: MarketRegimeReading | null }> => {
+    const response = await api.get("/market/regime");
+    return response.data;
+  },
+
   search: async (query: string, exchange?: string): Promise<any[]> => {
     const response = await api.get<any[]>("/market/search", {
       params: { q: query, exchange },

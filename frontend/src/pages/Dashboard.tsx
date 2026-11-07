@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { useT } from "../i18n/t";
+import { useT, useDir, useLocale } from "../i18n/t";
+import MarketRegimeCard from "../components/Market/MarketRegimeCard";
 import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store";
 import { fetchInbox, fetchUnreadCount, fetchRecommendations } from "../store/slices/notificationsSlice";
@@ -12,7 +13,10 @@ const Dashboard: React.FC = () => {
   const { user } = useAppSelector((state) => state.auth);
   const { notifications, unreadCount, recommendations } = useAppSelector((state) => state.notifications);
 
-  const isHe = user?.preferred_language === "he";
+  // Direction and date from the language itself: an `isHe` check laid Arabic out
+  // left-to-right and dated every other language in English.
+  const dir = useDir();
+  const locale = useLocale();
 
   useEffect(() => {
     dispatch(fetchInbox({ unreadOnly: false }));
@@ -82,7 +86,7 @@ const Dashboard: React.FC = () => {
     : { cls: "text-yellow-400", label: t("Wait", "המתן") };
 
   return (
-    <div dir={isHe ? "rtl" : "ltr"} className="space-y-6">
+    <div dir={dir} className="space-y-6">
 
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -91,7 +95,7 @@ const Dashboard: React.FC = () => {
             {t("Hello, {name}", "שלום, {name}", { name: user?.full_name ?? "" })}
           </h1>
           <p className="text-gray-400 text-sm mt-1">
-            {new Date().toLocaleDateString(isHe ? "he-IL" : "en-US", {
+            {new Date().toLocaleDateString(locale, {
               weekday: "long", year: "numeric", month: "long", day: "numeric",
             })}
           </p>
@@ -106,6 +110,8 @@ const Dashboard: React.FC = () => {
           </Link>
         )}
       </div>
+
+      <MarketRegimeCard />
 
       {/* At a glance */}
       <div className="grid grid-cols-3 gap-3">
@@ -224,7 +230,7 @@ const Dashboard: React.FC = () => {
                           <p className="text-sm truncate">{notif.title || notif.external_message}</p>
                         </div>
                         <p className="text-xs text-gray-500">
-                          {new Date(notif.sent_at).toLocaleString(isHe ? "he-IL" : "en-US")}
+                          {new Date(notif.sent_at).toLocaleString(locale)}
                         </p>
                       </div>
                     </div>
@@ -253,7 +259,7 @@ const Dashboard: React.FC = () => {
             {[
               { label: t("Win Rate", "אחוז הצלחה"), value: `${perfSummary.win_rate_pct}%`, color: "text-green-400" },
               { label: t("Avg Return", "תשואה ממוצעת"), value: `${perfSummary.avg_return_pct > 0 ? "+" : ""}${perfSummary.avg_return_pct}%`, color: perfSummary.avg_return_pct >= 0 ? "text-green-400" : "text-red-400" },
-              { label: isHe ? "alpha vs S&P500" : "vs S&P 500", value: `${perfSummary.avg_vs_market_pct > 0 ? "+" : ""}${perfSummary.avg_vs_market_pct}%`, color: perfSummary.avg_vs_market_pct >= 0 ? "text-green-400" : "text-red-400" },
+              { label: t("vs S&P 500", "מול S&P 500"), value: `${perfSummary.avg_vs_market_pct > 0 ? "+" : ""}${perfSummary.avg_vs_market_pct}%`, color: perfSummary.avg_vs_market_pct >= 0 ? "text-green-400" : "text-red-400" },
               { label: t("Tracked", "סה\"כ במעקב"), value: perfSummary.total_tracked, color: "text-white" },
             ].map(kpi => (
               <div key={kpi.label} className="bg-gray-800 rounded-xl p-3 text-center">
@@ -280,8 +286,8 @@ const Dashboard: React.FC = () => {
       {/* Quick Actions */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { to: "/recommendations", icon: "💡", he: "המלצות AI", en: "AI Recommendations" },
-          { to: "/watchlist", icon: "👁", he: "רשימת מעקב", en: "Watchlist" },
+          { to: "/recommendations", icon: "💡", label: t("AI Recommendations", "המלצות AI") },
+          { to: "/watchlist", icon: "👁", label: t("Watchlist", "רשימת מעקב") },
         ].map((action) => (
           <Link
             key={action.to}
@@ -289,7 +295,7 @@ const Dashboard: React.FC = () => {
             className="bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-2xl p-4 flex items-center gap-3 transition-colors"
           >
             <span className="text-2xl">{action.icon}</span>
-            <span className="text-sm font-medium">{isHe ? action.he : action.en}</span>
+            <span className="text-sm font-medium">{action.label}</span>
           </Link>
         ))}
       </div>

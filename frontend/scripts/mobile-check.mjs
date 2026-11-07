@@ -61,7 +61,7 @@ const recs = [
 
 const json = (body) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
 
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium' });
 const ctx = await browser.newContext({ ...devices['iPhone 14 Pro Max'] });
 
 await ctx.route('**/api/v1/**', async (route) => {
@@ -73,7 +73,17 @@ await ctx.route('**/api/v1/**', async (route) => {
   if (url.includes('/recommendations/inbox')) return route.fulfill(json([]));
   if (url.includes('/recommendations/scan-activity')) return route.fulfill(json({ items: [], totals: {} }));
   if (url.match(/\/recommendations\/?(\?|$)/)) return route.fulfill(json(recs));
-  if (url.includes('/watchlist')) return route.fulfill(json([]));
+  if (url.includes('/watchlist')) return route.fulfill(json([
+    { id: 7, symbol: 'NVDA', asset_name: 'NVIDIA Corporation', current_price: 216.0, technical_signal: 'STRONG_BUY',
+      last_technical_analysis: { timing_signal: 'STRONG_BUY', technical_score: 74 }, alert_on_technical_signal: true },
+  ]));
+  // A market under stress, so the gauge renders with reasons.
+  if (url.includes('/market/regime')) return route.fulfill(json({ current: {
+    regime: 'STRESS', score: 9, as_of: '2026-11-06T22:00:00Z', reasons: [
+      { layer: 'trend', points: 2, en: '', he: '', code: 'spy_below_200', vars: {} },
+      { layer: 'stress', points: 2, en: '', he: '', code: 'hy_stress', vars: { v: 7.2 } },
+      { layer: 'stress', points: 1, en: '', he: '', code: 'vix_elevated', vars: { v: 29 } },
+    ] } }));
   if (url.includes('/portfolio')) return route.fulfill(json([]));
   if (url.includes('/billing/status'))
     return route.fulfill(json({ tier: 'FREE', is_pro: false, expires_at: null, source: null, watchlist_limit: 2, recommendation_limit: 5, full_research: false }));

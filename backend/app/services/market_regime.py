@@ -168,7 +168,7 @@ def assess(i: Dict[str, Any]) -> Dict[str, Any]:
     reasons: List[Dict[str, Any]] = []
     trend = stress = breadth = 0
 
-    def add(layer: str, points: int, en: str, he: str):
+    def add(layer: str, points: int, en: str, he: str, code: str = "", **vars_):
         nonlocal trend, stress, breadth
         if layer == "trend":
             trend += points
@@ -176,65 +176,67 @@ def assess(i: Dict[str, Any]) -> Dict[str, Any]:
             stress += points
         else:
             breadth += points
-        reasons.append({"layer": layer, "points": points, "en": en, "he": he})
+        # `code` and `vars` let the app show the reason in any language.
+        reasons.append({"layer": layer, "points": points, "en": en, "he": he,
+                        "code": code, "vars": vars_})
 
     spy, ma50, ma200, high = i.get("spy"), i.get("spy_ma50"), i.get("spy_ma200"), i.get("spy_high_1y")
     if spy and ma200 and spy < ma200:
-        add("trend", 2, "S&P 500 is below its 200-day average", "S&P 500 מתחת לממוצע 200 הימים")
+        add("trend", 2, "S&P 500 is below its 200-day average", "S&P 500 מתחת לממוצע 200 הימים", "spy_below_200")
     if spy and ma50 and spy < ma50:
-        add("trend", 1, "S&P 500 is below its 50-day average", "S&P 500 מתחת לממוצע 50 הימים")
+        add("trend", 1, "S&P 500 is below its 50-day average", "S&P 500 מתחת לממוצע 50 הימים", "spy_below_50")
     drawdown = round((high - spy) / high * 100, 1) if spy and high else None
     if drawdown is not None and drawdown >= 20:
         add("trend", 2, f"S&P 500 is {drawdown}% below its one-year high (bear market)",
-            f"S&P 500 נמוך ב-{drawdown}% מהשיא השנתי (שוק דובי)")
+            f"S&P 500 נמוך ב-{drawdown}% מהשיא השנתי (שוק דובי)", "drawdown_bear", pct=drawdown)
     elif drawdown is not None and drawdown >= 10:
         add("trend", 1, f"S&P 500 is {drawdown}% below its one-year high (correction)",
-            f"S&P 500 נמוך ב-{drawdown}% מהשיא השנתי (תיקון)")
+            f"S&P 500 נמוך ב-{drawdown}% מהשיא השנתי (תיקון)", "drawdown_correction", pct=drawdown)
 
     vix = i.get("VIXCLS")
     if vix is not None and vix >= 35:
-        add("stress", 2, f"VIX at {vix:.0f}: extreme fear", f"VIX ב-{vix:.0f}: פחד קיצוני")
+        add("stress", 2, f"VIX at {vix:.0f}: extreme fear", f"VIX ב-{vix:.0f}: פחד קיצוני", "vix_extreme", v=round(vix))
     elif vix is not None and vix >= 25:
-        add("stress", 1, f"VIX at {vix:.0f}: elevated fear", f"VIX ב-{vix:.0f}: פחד מוגבר")
+        add("stress", 1, f"VIX at {vix:.0f}: elevated fear", f"VIX ב-{vix:.0f}: פחד מוגבר", "vix_elevated", v=round(vix))
 
     hy, hy_prev = i.get("BAMLH0A0HYM2"), i.get("hy_spread_1m_ago")
     if hy is not None and hy >= 7:
         add("stress", 2, f"High-yield credit spread at {hy:.1f}%: credit stress",
-            f"מרווח אשראי בתשואה גבוהה {hy:.1f}%: לחץ אשראי")
+            f"מרווח אשראי בתשואה גבוהה {hy:.1f}%: לחץ אשראי", "hy_stress", v=round(hy, 1))
     elif hy is not None and hy >= 5:
         add("stress", 1, f"High-yield credit spread at {hy:.1f}%: elevated",
-            f"מרווח אשראי בתשואה גבוהה {hy:.1f}%: גבוה")
+            f"מרווח אשראי בתשואה גבוהה {hy:.1f}%: גבוה", "hy_elevated", v=round(hy, 1))
     if hy is not None and hy_prev is not None and hy - hy_prev >= 1.0:
         add("stress", 1, f"Credit spreads widened {hy - hy_prev:.1f} points in a month",
-            f"מרווחי האשראי התרחבו ב-{hy - hy_prev:.1f} נקודות בחודש")
+            f"מרווחי האשראי התרחבו ב-{hy - hy_prev:.1f} נקודות בחודש", "hy_widening", v=round(hy - hy_prev, 1))
 
     fsi = i.get("STLFSI4")
     if fsi is not None and fsi >= 1.5:
-        add("stress", 2, f"Financial stress index at {fsi:.2f}: high", f"מדד הלחץ הפיננסי {fsi:.2f}: גבוה")
+        add("stress", 2, f"Financial stress index at {fsi:.2f}: high", f"מדד הלחץ הפיננסי {fsi:.2f}: גבוה", "fsi_high", v=round(fsi, 2))
     elif fsi is not None and fsi > 0:
         add("stress", 1, f"Financial stress index at {fsi:.2f}: above normal",
-            f"מדד הלחץ הפיננסי {fsi:.2f}: מעל הרגיל")
+            f"מדד הלחץ הפיננסי {fsi:.2f}: מעל הרגיל", "fsi_above", v=round(fsi, 2))
 
     nfci = i.get("NFCI")
     if nfci is not None and nfci > 0:
         add("stress", 1, f"Financial conditions tighter than average (NFCI {nfci:.2f})",
-            f"התנאים הפיננסיים הדוקים מהממוצע (NFCI {nfci:.2f})")
+            f"התנאים הפיננסיים הדוקים מהממוצע (NFCI {nfci:.2f})", "nfci_tight", v=round(nfci, 2))
 
     curve, curve_min = i.get("T10Y2Y"), i.get("t10y2y_min_1y")
     if curve is not None and curve < 0:
         add("stress", 1, f"Yield curve inverted (10Y-2Y {curve:.2f})",
-            f"עקום התשואות הפוך (10Y-2Y {curve:.2f})")
+            f"עקום התשואות הפוך (10Y-2Y {curve:.2f})", "curve_inverted", v=round(curve, 2))
     elif curve is not None and curve_min is not None and curve_min <= -0.25:
         add("stress", 1, "Yield curve has just come out of an inversion, which has preceded past recessions",
-            "עקום התשואות יצא לאחרונה מהיפוך, מצב שקדם למיתונים בעבר")
+            "עקום התשואות יצא לאחרונה מהיפוך, מצב שקדם למיתונים בעבר", "curve_uninverted")
 
     b = i.get("breadth_pct")
     if b is not None and b < 25:
         add("breadth", 2, f"Only {b:.0f}% of analysed stocks are above their 200-day average",
-            f"רק {b:.0f}% מהמניות המנותחות מעל ממוצע 200 הימים")
+            f"רק {b:.0f}% מהמניות המנותחות מעל ממוצע 200 הימים", "breadth_low", pct=round(b))
     elif b is not None and b < 40:
         add("breadth", 1, f"{b:.0f}% of analysed stocks are above their 200-day average",
-            f"{b:.0f}% מהמניות המנותחות מעל ממוצע 200 הימים")
+            f"{b:.0f}% מהמניות המנותחות מעל ממוצע 200 הימים", "breadth_weak", pct=round(b))
 
     score = trend + stress + breadth
     if score >= STRESS_AT or stress >= STRESS_LAYER_OVERRIDE:

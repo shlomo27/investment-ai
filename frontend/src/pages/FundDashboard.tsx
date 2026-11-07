@@ -1070,6 +1070,9 @@ const FundDashboard: React.FC = () => {
                       // "right" here means the filter was right.
                       : k === "GATED_BUY" ? t("Filter held back a buy (right = it then fell)", "המסנן חסם קנייה (צדק = המניה ירדה)")
                       : k === "GATED_SELL" ? t("Filter held back a sell (right = it then rose)", "המסנן חסם מכירה (צדק = המניה עלתה)")
+                      // Market-regime changes, scored on SPY.
+                      : k === "MARKET_BUY" ? t("Market turned healthy (right = S&P 500 then rose)", "השוק חזר לבריא (צדק = S&P 500 עלה)")
+                      : k === "MARKET_SELL" ? t("Market turned weaker (right = S&P 500 then fell)", "השוק נחלש (צדק = S&P 500 ירד)")
                       : k;
                     const cell = (st: any) => !st?.measured ? (
                       <span className="text-gray-600">—</span>
@@ -1080,8 +1083,42 @@ const FundDashboard: React.FC = () => {
                         <span className={st.avg_move_pct >= 0 ? "text-green-400" : "text-red-400"}>
                           {st.avg_move_pct > 0 ? "+" : ""}{st.avg_move_pct}%
                         </span>
+                        {st.vs_market_measured > 0 && (
+                          // Against the S&P 500 over the same days: did the
+                          // alert do better than simply holding the index?
+                          <span className="block text-[11px] text-gray-400 mt-0.5">
+                            {t("vs S&P 500", "מול S&P 500")}:{" "}
+                            <span className={st.avg_vs_market_pct >= 0 ? "text-green-400" : "text-red-400"}>
+                              {st.avg_vs_market_pct > 0 ? "+" : ""}{st.avg_vs_market_pct}%
+                            </span>
+                            <span className="text-gray-500"> · {t("beat it {p}%", "ניצחה {p}%", { p: st.beat_market_pct })}</span>
+                          </span>
+                        )}
                       </span>
                     );
+                    // Which condition at the alert would have made it better.
+                    const splitLabel = (key: string) => {
+                      const [cond, val] = key.split("=");
+                      const yes = val === "true";
+                      const name =
+                        cond === "beats_market_3m" ? t("Stock beating the market (3m)", "המניה חזקה מהשוק (3 ח׳)")
+                        : cond === "beats_sector_3m" ? t("Stock beating its sector (3m)", "המניה חזקה מהסקטור (3 ח׳)")
+                        : cond === "strong_trend_adx25" ? t("Strong trend (ADX>25)", "מגמה חזקה (ADX>25)")
+                        : cond === "money_flowing_in" ? t("Money flowing in", "כסף נכנס")
+                        : cond === "weekly_uptrend" ? t("Weekly uptrend", "מגמה שבועית עולה")
+                        : cond === "squeeze_risk" ? t("Short-squeeze risk", "סיכון לשורט סקוויז")
+                        : cond === "trend_gate" ? t("Trend gate", "מסנן מגמה")
+                        : cond === "market_regime" ? t("Market", "השוק")
+                        : cond;
+                      if (cond === "market_regime") {
+                        const r = val === "healthy" ? t("healthy", "בריא") : val === "correction" ? t("correction", "תיקון") : val === "stress" ? t("stress", "לחץ") : val;
+                        return `${name}: ${r}`;
+                      }
+                      if (cond === "trend_gate") return `${name}: ${val}`;
+                      return `${name}: ${yes ? t("yes", "כן") : t("no", "לא")}`;
+                    };
+                    const splits = Object.entries((g.splits ?? {}) as Record<string, any>)
+                      .filter(([, v]) => v["1w"]?.measured >= 5);
                     return (
                       <div key={k} className="rounded-lg border border-gray-800 bg-gray-800/40 p-3">
                         <div className="flex items-start justify-between gap-3">
@@ -1100,6 +1137,22 @@ const FundDashboard: React.FC = () => {
                             {cell(g["1m"])}
                           </div>
                         </div>
+                        {splits.length > 0 && (
+                          <details className="mt-2">
+                            <summary className="text-[11px] text-blue-400 cursor-pointer">
+                              {t("By condition at the alert", "לפי תנאים בזמן ההתראה")}
+                            </summary>
+                            <div className="mt-1 space-y-1">
+                              {splits.map(([sk, sv]) => (
+                                <div key={sk} className="grid grid-cols-3 gap-2 text-[11px]">
+                                  <span className="text-gray-400">{splitLabel(sk)}</span>
+                                  <span>{cell(sv["1w"])}</span>
+                                  <span>{cell(sv["1m"])}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
                       </div>
                     );
                   })}

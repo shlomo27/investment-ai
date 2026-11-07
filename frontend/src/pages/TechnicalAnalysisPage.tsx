@@ -221,6 +221,48 @@ const PriceLevels: React.FC<{ ta: TechnicalAnalysis }> = ({ ta }) => {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
+// ─── Indicators being tested ─────────────────────────────────────────────────
+// Recorded with every analysis and every alert, with no weight in the signal
+// yet: they earn weight only if the alert outcomes show they would help.
+const ShadowPanel: React.FC<{ ta: TechnicalAnalysis }> = ({ ta }) => {
+  const t = useT();
+  const s = (ta as any).shadow;
+  if (!s) return null;
+  const pct = (v?: number | null) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}%`);
+  const color = (v?: number | null) => (v == null ? "text-gray-500" : v >= 0 ? "text-green-400" : "text-red-400");
+  const rows: { label: string; value: string; cls: string; hint: string }[] = [
+    { label: t("vs S&P 500 (3 months)", "מול S&P 500 (3 חודשים)"), value: pct(s.rs_spy_3m), cls: color(s.rs_spy_3m),
+      hint: t("How much better or worse than the market the stock did", "בכמה המניה הצליחה יותר או פחות מהשוק") },
+    { label: t("vs its sector ({etf})", "מול הסקטור ({etf})", { etf: s.sector_etf ?? "—" }), value: pct(s.rs_sector_3m), cls: color(s.rs_sector_3m),
+      hint: t("Compared with the sector's ETF over 3 months", "בהשוואה לתעודת הסל של הסקטור, 3 חודשים") },
+    { label: t("Trend strength (ADX)", "עוצמת מגמה (ADX)"), value: s.adx_14 == null ? "—" : String(s.adx_14),
+      cls: s.adx_14 >= 25 ? "text-white" : "text-gray-400",
+      hint: t("Above 25: a real trend. Below 20: no clear trend", "מעל 25: יש מגמה. מתחת ל-20: אין מגמה ברורה") },
+    { label: t("Money flow (CMF)", "זרימת כסף (CMF)"), value: s.cmf_20 == null ? "—" : s.cmf_20.toFixed(2), cls: color(s.cmf_20),
+      hint: t("Positive: volume coming in on up days. Negative: going out", "חיובי: כסף נכנס בימי עלייה. שלילי: יוצא") },
+    { label: t("Weekly trend", "מגמה שבועית"),
+      value: s.weekly_trend === "UP" ? t("Up", "עולה") : s.weekly_trend === "DOWN" ? t("Down", "יורדת") : s.weekly_trend === "MIXED" ? t("Mixed", "מעורבת") : "—",
+      cls: s.weekly_trend === "UP" ? "text-green-400" : s.weekly_trend === "DOWN" ? "text-red-400" : "text-gray-400",
+      hint: t("The weekly chart against its 10- and 30-week averages", "הגרף השבועי מול ממוצעי 10 ו-30 שבועות") },
+  ];
+  return (
+    <div className="bg-gray-900 rounded-2xl border border-gray-800 p-5">
+      <p className="text-xs text-gray-600 tracking-widest mb-1">{t("ADDITIONAL INDICATORS", "מדדים נוספים")}</p>
+      <p className="text-[11px] text-gray-600 mb-3">
+        {t("Being tested: shown for information, not yet part of the signal.", "בבדיקה: מוצגים לידיעה, עדיין לא חלק מהסיגנל.")}
+      </p>
+      <div className="divide-y divide-gray-800/70">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-baseline justify-between gap-3 py-2" title={r.hint}>
+            <span className="text-xs text-gray-400">{r.label}</span>
+            <span className={`text-sm font-semibold num ${r.cls}`} dir="ltr">{r.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const TechnicalAnalysisPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -515,6 +557,8 @@ const TechnicalAnalysisPage: React.FC = () => {
             <p className="text-xs text-gray-600 tracking-widest mb-4">52-WEEK RANGE POSITION</p>
             {ta ? <RangeBar ta={ta} /> : <p className="text-xs text-gray-700 text-center py-4">Awaiting analysis…</p>}
           </div>
+
+          {ta && <ShadowPanel ta={ta} />}
 
           {/* Score breakdown chart */}
           {breakdown.length > 0 && (

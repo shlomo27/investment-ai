@@ -292,6 +292,23 @@ const RecommendationCard: React.FC<Props> = ({
               );
             })()}
             {(() => {
+              // Short-squeeze exposure: a risk tag, never a reason to buy.
+              const sq = (rec.technical_analysis as any)?.squeeze;
+              if (!sq || (sq.level !== "HIGH" && sq.level !== "ELEVATED")) return null;
+              const high = sq.level === "HIGH";
+              return (
+                <span className={`inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full border ${
+                        high ? "bg-fuchsia-950/60 text-fuchsia-300 border-fuchsia-800/50"
+                             : "bg-purple-950/50 text-purple-300 border-purple-800/40"}`}
+                      title={t("Many shares are sold short ({pct}% of the float). A forced buy-back can move the price sharply in either direction, regardless of the business.",
+                               "הרבה מניות בשורט ({pct}% מהמניות הסחירות). כיסוי שורטים בכפייה יכול להזיז את המחיר בחדות לשני הכיוונים, בלי קשר לעסק.",
+                               { pct: sq.short_pct_float ?? "?" })}>
+                  🌀 {high ? t("Short-squeeze risk: extreme moves possible", "סיכון לשורט סקוויז: תנודות קיצוניות אפשריות")
+                           : t("Heavily shorted", "הרבה שורטים")}
+                </span>
+              );
+            })()}
+            {(() => {
               if (!approvedAt) return null;
               const ageDays = Math.floor((Date.now() - new Date(approvedAt).getTime()) / 86400000);
               // Thresholds follow the actual refresh policy. The weekly scan
