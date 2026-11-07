@@ -24,6 +24,7 @@ const Settings: React.FC = () => {
   const [notifEmail, setNotifEmail] = useState(user?.notification_email ?? true);
   const [notifSms, setNotifSms] = useState(user?.notification_sms ?? false);
   const [notifPush, setNotifPush] = useState(user?.notification_push ?? false);
+  const [notifMarket, setNotifMarket] = useState<boolean>(user?.notify_market_regime ?? true);
   const [alertFreq, setAlertFreq] = useState<"REALTIME" | "EVERY_4_HOURS" | "DAILY">(user?.alert_frequency ?? "REALTIME");
   const [allowsShort, setAllowsShort] = useState<boolean>(user?.allows_short ?? false);
   const [allowsVolatile, setAllowsVolatile] = useState<boolean>(user?.allows_volatile ?? false);
@@ -114,6 +115,7 @@ const Settings: React.FC = () => {
         notification_sms: notifSms,
         notification_push: notifPush,
         alert_frequency: alertFreq,
+        notify_market_regime: notifMarket,
         allows_short: allowsShort,
         allows_volatile: allowsVolatile,
       } as any)
@@ -305,15 +307,18 @@ const Settings: React.FC = () => {
           {t("Notifications", "התרעות")}
         </h2>
 
+        {/* Direct t() calls: the string scanner only sees literals passed to
+            t(), and `isHe ? he : en` showed English to every other language. */}
         {[
-          { key: "email" as const, icon: "📧", he: "התרעות אימייל",  en: "Email notifications",  val: notifEmail, set: setNotifEmail },
-          { key: "sms"   as const, icon: "📱", he: "הודעות SMS",     en: "SMS messages",          val: notifSms,   set: setNotifSms },
-          { key: "push"  as const, icon: "🔔", he: "Push (דפדפן)",   en: "Push (browser)",        val: notifPush,  set: setNotifPush },
+          { key: "email" as const, icon: "📧", label: t("Email notifications", "התרעות אימייל"), val: notifEmail, set: setNotifEmail },
+          { key: "sms"   as const, icon: "📱", label: t("SMS messages", "הודעות SMS"),          val: notifSms,   set: setNotifSms },
+          { key: "push"  as const, icon: "🔔", label: t("Push (browser)", "Push (דפדפן)"),      val: notifPush,  set: setNotifPush },
+          { key: "market" as const, icon: "🌡️", label: t("Market condition alerts", "התראות על מצב השוק"), val: notifMarket, set: setNotifMarket },
         ].map((item) => (
           <div key={item.key} className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span>{item.icon}</span>
-              <span className="text-sm text-gray-300">{isHe ? item.he : item.en}</span>
+              <span className="text-sm text-gray-300">{item.label}</span>
             </div>
             <button
               onClick={() => item.set(!item.val)}

@@ -93,6 +93,7 @@ class ProfileUpdateRequest(BaseModel):
     allows_short: Optional[bool] = None
     allows_volatile: Optional[bool] = None
     alert_frequency: Optional[str] = None  # REALTIME | EVERY_4_HOURS | DAILY
+    notify_market_regime: Optional[bool] = None
 
     @validator("alert_frequency")
     def _validate_alert_frequency(cls, v):
@@ -137,6 +138,7 @@ class UserResponse(BaseModel):
     age_group: Optional[str] = None
     investment_horizon_months: Optional[int] = None
     alert_frequency: str = "REALTIME"
+    notify_market_regime: bool = True
     totp_enabled: bool = False
     telegram_linked: bool = False
     #: "apple" / "google" when the account was created by social sign-in.
@@ -612,6 +614,8 @@ async def update_profile(
         current_user.allows_volatile = request.allows_volatile
     if request.alert_frequency is not None:
         current_user.alert_frequency = request.alert_frequency
+    if request.notify_market_regime is not None:
+        current_user.notify_market_regime = request.notify_market_regime
 
     await db.flush()
     logger.info("Profile updated", user_id=current_user.id)

@@ -1671,7 +1671,8 @@ async def evaluate_market_regime() -> dict:
     why = "; ".join(x["he"] for x in sorted(reading["reasons"], key=lambda x: -x["points"])[:3])
 
     async with AsyncSessionLocal() as db:
-        users = (await db.execute(select(User.id).where(User.is_active == True))).scalars().all()
+        users = (await db.execute(select(User.id).where(
+            User.is_active == True, User.notify_market_regime == True))).scalars().all()
         follows = (await db.execute(select(Watchlist.user_id, Watchlist.symbol))).all()
         symbols = {s for _, s in follows}
         assets = {a.symbol: a for a in (await db.execute(

@@ -134,6 +134,10 @@ class User(Base):
     notification_push: Mapped[bool] = mapped_column(Boolean, default=True)
     # External alert cadence (REALTIME | EVERY_4_HOURS | DAILY); inbox unaffected
     alert_frequency: Mapped[str] = mapped_column(String(20), nullable=False, default="REALTIME")
+    # Market-regime alerts (healthy / correction / stress). On by default:
+    # they are rare, and they are the one alert about everything a user holds.
+    notify_market_regime: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true")
     last_digest_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

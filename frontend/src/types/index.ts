@@ -102,6 +102,7 @@ export interface User {
   notification_sms: boolean;
   notification_push: boolean;
   alert_frequency?: "REALTIME" | "EVERY_4_HOURS" | "DAILY";
+  notify_market_regime?: boolean;
   totp_enabled: boolean;
   telegram_linked?: boolean;
   /** "apple" / "google" when the account was created by social sign-in. */
