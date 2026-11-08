@@ -580,11 +580,42 @@ export type MarketRegimeReading = {
   score: number;
   reasons: MarketRegimeReason[];
   as_of: string;
+  since?: string;
+};
+export type MarketIndicator = {
+  key: string;
+  layer: "trend" | "stress" | "breadth";
+  value: number | null;
+  status: "ok" | "warn" | "alert" | "unknown";
+  note?: string;
+};
+export type MarketRegimeDetail = {
+  current: MarketRegimeReading | null;
+  latest: MarketRegimeReading | null;
+  pending: { regime: MarketRegimeReading["regime"]; count: number } | null;
+  indicators: MarketIndicator[];
+  series: {
+    spy: [string, number, number | null, number | null][];
+    vix: [string, number][];
+    hy_spread: [string, number][];
+  };
+  history: { at: string; from: string | null; to: string; score: number;
+             spy_1w_pct: number | null; spy_1m_pct: number | null }[];
+  exposure: {
+    followed: number;
+    near_stop: { symbol: string; price: number; stop: number; gap_pct: number }[];
+    volatile: { symbol: string; beta: number }[];
+  };
 };
 
 export const marketApi = {
   getRegime: async (): Promise<{ current: MarketRegimeReading | null }> => {
     const response = await api.get("/market/regime");
+    return response.data;
+  },
+
+  getRegimeDetail: async (): Promise<MarketRegimeDetail> => {
+    const response = await api.get("/market/regime/detail");
     return response.data;
   },
 

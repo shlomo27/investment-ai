@@ -25,10 +25,13 @@ const TABS: Tab[] = [
   { to: "/recommendations", icon: "🤖", he: "סיגנלים", en: "Signals" },
   { to: "/watchlist", icon: "👁", he: "מעקב", en: "Watchlist" },
   { to: "/dashboard", icon: "🏠", he: "סקירה", en: "Overview" },
-  { to: "/performance", icon: "📈", he: "ביצועים", en: "Results" },
+  // The market as a whole is worth a daily look; past results less so, and
+  // five tabs is the most a phone fits, so Results moved to More.
+  { to: "/market", icon: "🌡️", he: "שוק", en: "Market" },
 ];
 
 const MORE: Tab[] = [
+  { to: "/performance", icon: "📈", he: "ביצועים", en: "Results" },
   { to: "/settings", icon: "⚙️", he: "הגדרות", en: "Settings" },
 ];
 

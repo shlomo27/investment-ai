@@ -7,12 +7,13 @@
  * an instruction to sell.
  */
 import React from "react";
+import { Link } from "react-router-dom";
 import { type MarketRegimeReason } from "../../api/client";
 import { useMarketRegime } from "./useMarketRegime";
 import { useT, type TFunction } from "../../i18n/t";
 
 // Direct t() calls: the string scanner only sees literals passed to t().
-function reasonText(t: TFunction, r: MarketRegimeReason): string {
+export function reasonText(t: TFunction, r: MarketRegimeReason): string {
   const v = r.vars ?? {};
   switch (r.code) {
     case "spy_below_200": return t("S&P 500 is below its 200-day average", "S&P 500 מתחת לממוצע 200 הימים");
@@ -52,7 +53,8 @@ const MarketRegimeCard: React.FC = () => {
   const top = [...reading.reasons].sort((a, b) => b.points - a.points).slice(0, 3);
 
   return (
-    <div className={`rounded-2xl border p-4 ${style.cls}`}>
+    // The whole card opens the Market tab, where every measure is shown.
+    <Link to="/market" className={`block rounded-2xl border p-4 ${style.cls}`}>
       <div className="flex items-center justify-between gap-3">
         <p className={`font-bold ${style.text}`}>
           {style.dot} {style.label}
@@ -76,7 +78,8 @@ const MarketRegimeCard: React.FC = () => {
              "זהו מידע על רמת הסיכון ולא הוראה למכור. ההחלטה אם להמשיך להחזיק מניה תלויה בסטופ שלה.")}
         </p>
       )}
-    </div>
+      <p className="mt-2 text-[11px] text-blue-400">{t("Full market analysis →", "ניתוח השוק המלא ←")}</p>
+    </Link>
   );
 };
 

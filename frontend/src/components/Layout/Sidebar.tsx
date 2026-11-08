@@ -17,6 +17,7 @@ const ADMIN_ITEMS: NavItem[] = [
 const CLIENT_ITEMS: NavItem[] = [
   { to: "/recommendations", icon: "🤖", label_he: "סיגנלים AI", label_en: "AI Signals" },
   { to: "/dashboard", icon: "🏠", label_he: "סקירה כללית", label_en: "Overview" },
+  { to: "/market", icon: "🌡️", label_he: "שוק", label_en: "Market" },
   { to: "/performance", icon: "📈", label_he: "ביצועי AI", label_en: "AI Performance" },
   { to: "/watchlist", icon: "👁", label_he: "מעקב", label_en: "Watchlist" },
 ];
@@ -42,7 +43,7 @@ const Sidebar: React.FC = () => {
       }
     >
       <span className="text-lg">{item.icon}</span>
-      <span className="hidden md:block">{isHe ? item.label_he : item.label_en}</span>
+      <span className="hidden md:block">{t(item.label_en, item.label_he)}</span>
       {item.to === "/recommendations" && unreadCount > 0 && (
         <span className="ml-auto bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center hidden md:flex">
           {unreadCount > 9 ? "9+" : unreadCount}

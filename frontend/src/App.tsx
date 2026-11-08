@@ -25,6 +25,7 @@ import Orders from "./pages/Orders";
 import Watchlist from "./pages/Watchlist";
 import Settings from "./pages/Settings";
 import Performance from "./pages/Performance";
+import MarketPage from "./pages/MarketPage";
 import NotFound from "./pages/NotFound";
 import ResetPassword from "./pages/ResetPassword";
 
@@ -329,6 +330,16 @@ const App: React.FC = () => {
             <ProtectedRoute>
               <AppLayout>
                 <Settings />
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/market"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <MarketPage />
               </AppLayout>
             </ProtectedRoute>
           }

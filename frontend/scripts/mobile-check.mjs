@@ -77,6 +77,33 @@ await ctx.route('**/api/v1/**', async (route) => {
     { id: 7, symbol: 'NVDA', asset_name: 'NVIDIA Corporation', current_price: 216.0, technical_signal: 'STRONG_BUY',
       last_technical_analysis: { timing_signal: 'STRONG_BUY', technical_score: 74 }, alert_on_technical_signal: true },
   ]));
+  if (url.includes('/market/regime/detail')) {
+    const days = Array.from({ length: 252 }, (_, i) => new Date(Date.UTC(2025, 10, 10) + i * 86400000 * 1.45).toISOString().slice(0, 10));
+    return route.fulfill(json({
+      current: { regime: 'CORRECTION', score: 5, as_of: '2026-11-06T22:00:00Z', since: '2026-11-03T22:00:00Z', reasons: [
+        { layer: 'trend', points: 1, en: '', he: '', code: 'spy_below_50', vars: {} },
+        { layer: 'stress', points: 1, en: '', he: '', code: 'vix_elevated', vars: { v: 27 } },
+        { layer: 'stress', points: 1, en: '', he: '', code: 'hy_widening', vars: { v: 1.2 } } ] },
+      latest: null, pending: { regime: 'STRESS', count: 1 },
+      indicators: [
+        { key: 'spy_vs_200', layer: 'trend', value: 1.8, status: 'ok' },
+        { key: 'spy_vs_50', layer: 'trend', value: -2.6, status: 'warn' },
+        { key: 'drawdown', layer: 'trend', value: 6.7, status: 'ok' },
+        { key: 'vix', layer: 'stress', value: 27, status: 'warn' },
+        { key: 'hy_spread', layer: 'stress', value: 4.8, status: 'ok' },
+        { key: 'hy_widening_1m', layer: 'stress', value: 1.2, status: 'warn' },
+        { key: 'stlfsi', layer: 'stress', value: 0.3, status: 'warn' },
+        { key: 'nfci', layer: 'stress', value: -0.2, status: 'ok' },
+        { key: 'yield_curve', layer: 'stress', value: 0.2, status: 'warn', note: 'uninverted' },
+        { key: 'breadth', layer: 'breadth', value: 38, status: 'warn' } ],
+      series: {
+        spy: days.map((d, i) => [d, 520 + i * 0.25 + 8 * Math.sin(i / 9), i > 49 ? 520 + i * 0.25 - 6 : null, i > 199 ? 520 + i * 0.25 - 20 : null]),
+        vix: days.map((d, i) => [d, 16 + 6 * Math.abs(Math.sin(i / 20))]),
+        hy_spread: days.map((d, i) => [d, 3.4 + 0.8 * Math.abs(Math.sin(i / 30))]) },
+      history: [{ at: '2026-11-03T22:00:00Z', from: 'HEALTHY', to: 'CORRECTION', score: 4, spy_1w_pct: -1.2, spy_1m_pct: null }],
+      exposure: { followed: 2, near_stop: [{ symbol: 'KKR', price: 95.66, stop: 94, gap_pct: 1.7 }], volatile: [{ symbol: 'NVDA', beta: 1.8 }] },
+    }));
+  }
   // A market under stress, so the gauge renders with reasons.
   if (url.includes('/market/regime')) return route.fulfill(json({ current: {
     regime: 'STRESS', score: 9, as_of: '2026-11-06T22:00:00Z', reasons: [
@@ -168,6 +195,7 @@ const ROUTES = [
   ['/orders', 'm-orders'],
   ['/performance', 'm-performance'],
   ['/dashboard', 'm-dashboard'],
+  ['/market', 'm-market'],
   ['/settings', 'm-settings'],
 ];
 for (const [route, name] of ROUTES) {
@@ -197,7 +225,7 @@ for (const [route, name] of ROUTES) {
     return bad;
   });
   console.log(`${route}: ${off.length === 0 ? 'PASS' : `FAIL — unreachable: ${JSON.stringify(off.slice(0,4))}`}`);
-  await page.screenshot({ path: `/tmp/claude-0/${name}.png` });
+  await page.screenshot({ path: `/tmp/claude-0/${name}.png`, fullPage: route === '/market' });
 }
 
 await browser.close();
