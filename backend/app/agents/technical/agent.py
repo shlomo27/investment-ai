@@ -198,8 +198,9 @@ class TechnicalAnalystAgent:
             # the same signal.
             from app.agents.technical.gates import apply_signal_gates
             signal_gate = None
+            trend_warning = None
             try:
-                signal["signal"], signal["strength"], signal_gate = apply_signal_gates(
+                signal["signal"], signal["strength"], signal_gate, trend_warning = apply_signal_gates(
                     score=_s, signal=signal["signal"], strength=signal["strength"],
                     price=float(df["Close"].iloc[-1]),
                     ma_20=indicators.get("ma_20"), ma_50=indicators.get("ma_50"),
@@ -263,6 +264,9 @@ class TechnicalAnalystAgent:
                 #: The rule that changed the raw signal, if any — HOLD_BUY,
                 #: HOLD_SELL, DOWNTREND or UPTREND (see gates.py).
                 "signal_gate": signal_gate,
+                #: Set when the signal goes against a clear trend (DOWNTREND
+                #: for a buy, UPTREND for a sell). Advisory: see gates.py.
+                "trend_warning": trend_warning,
                 "entry_price": signal.get("entry_price") if signal["signal"] != "WAIT" else None,
                 "technical_score": signal["score"],  # 0-100
                 "signal_strength": signal["strength"],  # WEAK | MODERATE | STRONG

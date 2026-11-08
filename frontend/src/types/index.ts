@@ -440,6 +440,12 @@ export interface TechnicalAnalysis {
     confirm_above?: number | null;
     confirm_below?: number | null;
   } | null;
+  /** The signal goes against a clear trend. Advisory only (gates.py). */
+  trend_warning?: {
+    rule: "DOWNTREND" | "UPTREND";
+    against: string;
+    ma_20?: number | null;
+  } | null;
   entry_price?: number;
   technical_score: number;
   signal_strength: "WEAK" | "MODERATE" | "STRONG";

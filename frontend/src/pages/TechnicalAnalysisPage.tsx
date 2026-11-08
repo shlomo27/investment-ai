@@ -501,17 +501,23 @@ const TechnicalAnalysisPage: React.FC = () => {
       {/* Why the signal is not what the score alone would say. The score
           and the label can disagree on purpose (gates.py on the server):
           without this line a reader sees "60/100 · WAIT" and assumes a bug. */}
+      {/* The signal goes against a clear trend. It used to be held at WAIT;
+          a month of outcomes showed that block was wrong, so it is said
+          rather than enforced. */}
+      {ta?.trend_warning && (
+        <div className="rounded-xl border border-orange-800/40 bg-orange-950/30 px-4 py-3 text-sm text-orange-200">
+          {ta.trend_warning.rule === "DOWNTREND"
+            ? t("Buy against the trend: the stock is in a downtrend. These buys carry more risk; follow the stop loss closely.",
+                "קנייה נגד המגמה: המניה במגמת ירידה. בקנייה כזו הסיכון גבוה יותר, ולכן חשוב לעקוב אחרי הסטופ.")
+            : t("Sell against the trend: the stock is in an uptrend.",
+                "מכירה נגד המגמה: המניה במגמת עלייה.")}
+        </div>
+      )}
       {ta?.signal_gate && (() => {
         const g = ta.signal_gate;
         const text =
-          g.rule === "DOWNTREND"
-            ? t("The stock is in a downtrend, so oversold readings alone do not make a buy. The signal turns to buy once the price closes above its 20-day average{level}.",
-                "המניה במגמת ירידה, ולכן \"ירדה יותר מדי\" לבד אינו סיבה לקנות. הסיגנל יחזור לקנייה אחרי שהמחיר ייסגר מעל הממוצע ל-20 יום{level}.",
-                { level: g.confirm_above ? ` ($${g.confirm_above.toFixed(2)})` : "" })
-          : g.rule === "UPTREND"
-            ? t("The stock is in an uptrend, so overbought readings alone do not make a sell. The signal turns to sell once the price closes below its 20-day average{level}.",
-                "המניה במגמת עלייה, ולכן \"עלתה יותר מדי\" לבד אינו סיבה למכור. הסיגנל יעבור למכירה אחרי שהמחיר ייסגר מתחת לממוצע ל-20 יום{level}.",
-                { level: g.confirm_below ? ` ($${g.confirm_below.toFixed(2)})` : "" })
+          g.rule === "DOWNTREND" || g.rule === "UPTREND"
+            ? null  // analyses made before the trend filter became a warning
           : g.rule === "HOLD_BUY"
             ? t("The buy signal stays until the score falls below {n}, so small moves around the threshold do not flip it.",
                 "סיגנל הקנייה נשמר עד שהציון יורד מתחת ל-{n}, כדי שתזוזות קטנות סביב הסף לא יהפכו אותו.",

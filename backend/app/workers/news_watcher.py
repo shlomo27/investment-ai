@@ -550,6 +550,10 @@ async def _run_news_watch() -> dict:
             holder_ids = set(await _get_recipient_ids(symbol, holders_only=True))
             guide = detail["guidance"]
 
+            # The market's regime, as on every other stock alert.
+            from app.services.market_regime import context_line
+            title += await context_line()
+
             async with AsyncSessionLocal() as db:
                 for uid in recipient_ids:
                     per_user = dict(detail)
@@ -738,6 +742,10 @@ async def _social_buzz_pass(redis_client, notifier) -> int:
                 lines.append("📝 ציטוט לדוגמה:")
                 lines.append((posts_list[0]["text"] or "")[:160])
             lines.append("👈 פתח את המניה במערכת לניתוח הטכני והחדשות המלאים.")
+            from app.services.market_regime import context_line
+            market = (await context_line()).strip()
+            if market:
+                lines.append(market)
             title = "\n".join(lines)
             async with AsyncSessionLocal() as db:
                 for uid in user_ids:

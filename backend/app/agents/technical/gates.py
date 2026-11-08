@@ -15,11 +15,15 @@ so the research page and the alerts can never disagree about which applied:
   margin: BUY at 60, back to WAIT below 55; SELL at 40, back to WAIT above 45.
   A score wobbling between 57 and 61 no longer flips the signal.
 
-  Trend gate. In a clear downtrend, being oversold is not a reason to buy —
-  oversold readings are what a downtrend produces. A BUY there is held at
-  WAIT until the price closes back above its 20-day average, the first
-  evidence the decline has paused. The mirror rule holds a SELL in a clear
-  uptrend until the price closes below its 20-day average.
+  Trend warning. A BUY in a clear downtrend, or a SELL in a clear uptrend,
+  goes against the trend. This used to BLOCK the signal (held at WAIT until
+  the price crossed its 20-day average). A month of outcomes said the block
+  was wrong: of the buys it held back, 81% had risen a month later, by 10.5%
+  on average and 12.9% more than the S&P 500, while the sells it held back
+  went on to fall 10%. So the signal now stands, and the trend is reported
+  as a warning — on the alert, the card and the research page — and kept
+  in each alert's record, so whether going against the trend pays is still
+  measured.
 """
 from typing import Any, Dict, Optional, Tuple
 
@@ -42,9 +46,12 @@ def apply_signal_gates(
     ma_200: Optional[float],
     wyckoff: Optional[str],
     prev_confirmed: Optional[str],
-) -> Tuple[str, str, Optional[Dict[str, Any]]]:
-    """Return (signal, strength, gate). `gate` describes the rule that
-    changed the signal, or is None when the raw reading stands."""
+) -> Tuple[str, str, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Return (signal, strength, gate, trend_warning).
+
+    `gate` describes the hysteresis rule that changed the signal, or is None
+    when the raw reading stands. `trend_warning` is set when the final signal
+    goes against a clear trend; it never changes the signal."""
     gate: Optional[Dict[str, Any]] = None
 
     # 1. Hysteresis — keep the confirmed signal until the score clears the
@@ -57,24 +64,18 @@ def apply_signal_gates(
             signal, strength = "SELL_NOW", "MODERATE"
             gate = {"rule": "HOLD_SELL", "exit_above": SELL_EXIT_ABOVE}
 
-    # 2. Trend gate — wins over hysteresis: a held BUY in a stock that has
-    #    since entered a downtrend is exactly what must not survive.
+    # 2. Trend warning — reported, not enforced.
+    warning: Optional[Dict[str, Any]] = None
     if price:
         below_long = bool(ma_50 and ma_200 and price < ma_50 and price < ma_200)
         above_long = bool(ma_50 and ma_200 and price > ma_50 and price > ma_200)
         downtrend = wyckoff == "MARKDOWN" or below_long
         uptrend = wyckoff == "MARKUP" or above_long
-
-        # `blocked` is the signal the gate replaced — what the shadow record
-        # (in_process_scheduler.job_daily_ta_scan) checks against the price
-        # later, to tell whether the gate was right to hold it back.
         if signal in BUY_SIDE and downtrend and not (ma_20 and price > ma_20):
-            gate = {"rule": "DOWNTREND", "blocked": signal,
-                    "confirm_above": round(ma_20, 2) if ma_20 else None}
-            signal, strength = "WAIT", "WEAK"
+            warning = {"rule": "DOWNTREND", "against": signal,
+                       "ma_20": round(ma_20, 2) if ma_20 else None}
         elif signal in SELL_SIDE and uptrend and not (ma_20 and price < ma_20):
-            gate = {"rule": "UPTREND", "blocked": signal,
-                    "confirm_below": round(ma_20, 2) if ma_20 else None}
-            signal, strength = "WAIT", "WEAK"
+            warning = {"rule": "UPTREND", "against": signal,
+                       "ma_20": round(ma_20, 2) if ma_20 else None}
 
-    return signal, strength, gate
+    return signal, strength, gate, warning

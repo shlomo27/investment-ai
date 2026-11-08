@@ -855,10 +855,10 @@ const FundDashboard: React.FC = () => {
                       tell the two apart. */}
                   {typeof (taScan as any).wait === "number" && (
                     <p className="text-xs text-gray-400 mt-1">
-                      {t("Signals now: {buy} buy · {sell} sell · {wait} wait. Moved to wait by the trend filter: {down} (downtrend) · {up} (uptrend).",
-                         "סיגנלים כרגע: {buy} קנייה · {sell} מכירה · {wait} המתנה. הועברו להמתנה ע\"י מסנן המגמה: {down} (מגמת ירידה) · {up} (מגמת עלייה).",
+                      {t("Signals now: {buy} buy · {sell} sell · {wait} wait. Against the trend: {down} buys in a downtrend · {up} sells in an uptrend.",
+                         "סיגנלים כרגע: {buy} קנייה · {sell} מכירה · {wait} המתנה. נגד המגמה: {down} קניות במגמת ירידה · {up} מכירות במגמת עלייה.",
                          { buy: (taScan as any).buy ?? 0, sell: (taScan as any).sell ?? 0, wait: (taScan as any).wait ?? 0,
-                           down: (taScan as any).gate_downtrend ?? 0, up: (taScan as any).gate_uptrend ?? 0 })}
+                           down: (taScan as any).against_downtrend ?? 0, up: (taScan as any).against_uptrend ?? 0 })}
                     </p>
                   )}
                   {(taScan.errors ?? 0) > 0 && (taScan.errors ?? 0) >= (taScan.success ?? 0) && (
@@ -1108,6 +1108,7 @@ const FundDashboard: React.FC = () => {
                         : cond === "weekly_uptrend" ? t("Weekly uptrend", "מגמה שבועית עולה")
                         : cond === "squeeze_risk" ? t("Short-squeeze risk", "סיכון לשורט סקוויז")
                         : cond === "trend_gate" ? t("Trend gate", "מסנן מגמה")
+                        : cond === "against_trend" ? t("Against the trend", "נגד המגמה")
                         : cond === "market_regime" ? t("Market", "השוק")
                         : cond;
                       if (cond === "market_regime") {

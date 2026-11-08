@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useT } from "../../i18n/t";
 import { useNavigate } from "react-router-dom";
 import FollowButton from "./FollowButton";
+import { useMarketRegime } from "../Market/useMarketRegime";
 import { Recommendation, RecommendationType, OrderType, TechnicalAnalysis } from "../../types";
 
 interface Props {
@@ -52,6 +53,8 @@ const RecommendationCard: React.FC<Props> = ({
   approvedAt,
 }) => {
   const t = useT();
+  const regime = useMarketRegime();
+  const weakMarket = !!regime && regime.regime !== "HEALTHY";
   const [expanded, setExpanded] = useState(false);
   const navigate = useNavigate();
 
@@ -136,10 +139,15 @@ const RecommendationCard: React.FC<Props> = ({
                 if (weakBuy) {
                   return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-gray-800/80 text-gray-300 border border-gray-700">📈 {t("Technical positive", "הסיגנל הטכני חיובי")}</span>;
                 }
+                // Against a downtrend, or in a weak market, it is still a
+                // buy signal, but not one to call simply "good".
+                const against = (tech?.trend_warning || rec.technical_analysis?.trend_warning)?.rule === "DOWNTREND";
+                if (against || weakMarket) {
+                  return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-orange-900/40 text-orange-300 border border-orange-700/40">⚠️ {
+                    against ? t("Entry against the trend: higher risk", "כניסה נגד המגמה: סיכון גבוה")
+                            : t("Entry in a weak market: higher risk", "כניסה בשוק חלש: סיכון גבוה")}</span>;
+                }
                 return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-green-900/50 text-green-300 border border-green-600/50">🟢 {t("Good entry", "נקודת כניסה טובה")}</span>;
-              }
-              if (sig === "WAIT" && (tech?.signal_gate || rec.technical_analysis?.signal_gate)?.rule === "DOWNTREND") {
-                return <span className="inline-block mt-1 mr-1 text-xs px-2 py-0.5 rounded-full bg-orange-900/40 text-orange-300 border border-orange-700/40">↘ {t("Downtrend — wait for it to turn", "מגמת ירידה — המתן להתהפכות")}</span>;
               }
               // WAIT and SELL are NOT the same state and must not share a
               // badge. WAIT means the technical has not confirmed entry yet.

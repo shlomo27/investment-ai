@@ -373,9 +373,7 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
                 # nothing as it fell to $56, because a sell signal never came
                 # and nothing watched the stop. What decides whether to keep
                 # holding is the stop, so say where it is.
-                gate_rule = ((ta or {}).get("signal_gate") or {}).get("rule")
-                why = (" המניה במגמת ירידה — הסיגנל יחזור לקנייה רק אחרי שהמחיר "
-                       "ייסגר מעל הממוצע ל-20 יום." if gate_rule == "DOWNTREND" else "")
+                why = ""
                 stop = live_rec.stop_loss if live_rec is not None else None
                 if stop and price:
                     gap = (price - stop) / price * 100
@@ -442,6 +440,11 @@ async def process_signal_transition(symbol: str, ta: dict, redis_client=None) ->
         # Every other change gets the regime too: it bears on holding.
         from app.services.market_regime import context_line
         title += await context_line(r, buy=signal in ("BUY_NOW", "STRONG_BUY"))
+        trend_rule = ((ta or {}).get("trend_warning") or {}).get("rule")
+        if trend_rule == "DOWNTREND" and signal in ("BUY_NOW", "STRONG_BUY"):
+            title += " ↘ שים לב: המניה במגמת ירידה, וזו קנייה נגד המגמה."
+        elif trend_rule == "UPTREND" and signal in ("SELL_NOW", "STRONG_SELL"):
+            title += " ↗ שים לב: המניה במגמת עלייה, וזו מכירה נגד המגמה."
         if ((ta or {}).get("squeeze") or {}).get("level") == "HIGH":
             from app.agents.technical.squeeze import HE_LINE
             title += HE_LINE
@@ -735,22 +738,15 @@ async def job_daily_ta_scan():
                             else "sell" if sig in ("SELL_NOW", "STRONG_SELL")
                             else "wait")
                     tally[side] += 1
-                    gate = ta.get("signal_gate") or {}
-                    rule = (gate.get("rule") or "").lower()
+                    rule = ((ta.get("signal_gate") or {}).get("rule") or "").lower()
                     if rule:
                         tally[f"gate_{rule}"] = tally.get(f"gate_{rule}", 0) + 1
-                    # Shadow record: whether the trend gate is right can only
-                    # be judged by what the blocked stocks did next. Note the
-                    # blocked signal and the price, at most once a week per
-                    # stock and rule, and let the outcome job score it like
-                    # any alert. Nobody is notified.
-                    if gate.get("blocked") and ta.get("current_price"):
-                        if await redis_client.set(
-                            f"investment_ai:gated_shadow:{symbol}:{rule}", "1",
-                            ex=7 * 24 * 3600, nx=True,
-                        ):
-                            await record_alert_outcome(
-                                symbol, "GATED", gate["blocked"], ta["current_price"], ta=ta)
+                    # Signals that go against a clear trend. The trend gate
+                    # used to hold these at WAIT; it now only warns (see
+                    # gates.py), and these counts show how many there are.
+                    against = ((ta.get("trend_warning") or {}).get("rule") or "").lower()
+                    if against:
+                        tally[f"against_{against}"] = tally.get(f"against_{against}", 0) + 1
                 else:
                     errors += 1
                     logger.warning(f"[ta_scan] {symbol}: no analysis after retry")
@@ -1461,9 +1457,10 @@ async def record_alert_outcome(symbol: str, kind: str, signal: str, price,
             pass
         if ta:
             context.update(conditions(ta.get("shadow")))
-            gate = (ta.get("signal_gate") or {}).get("rule")
-            if gate:
-                context["trend_gate"] = gate
+            # Whether the alert went against a clear trend, so that the
+            # outcome report keeps measuring what the old gate used to block.
+            trend = (ta.get("trend_warning") or {}).get("rule")
+            context["against_trend"] = bool(trend)
 
         async with AsyncSessionLocal() as db:
             db.add(AlertOutcome(symbol=symbol, kind=kind, signal=signal,
@@ -2490,6 +2487,8 @@ async def job_earnings_reminders():
                     f"זה האירוע שהכי עשוי לשנות את ההמלצה על המניה. "
                     f"המערכת תנתח אותה מחדש מיד עם פרסום התוצאות."
                 )
+                from app.services.market_regime import context_line
+                title += await context_line(r)
 
                 for uid in followers.get(symbol, ()):
                     # One reminder per user per symbol per report date.

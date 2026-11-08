@@ -6,8 +6,9 @@
  * the reader can see why, and says plainly that it is risk information, not
  * an instruction to sell.
  */
-import React, { useEffect, useState } from "react";
-import { marketApi, type MarketRegimeReading, type MarketRegimeReason } from "../../api/client";
+import React from "react";
+import { type MarketRegimeReason } from "../../api/client";
+import { useMarketRegime } from "./useMarketRegime";
 import { useT, type TFunction } from "../../i18n/t";
 
 // Direct t() calls: the string scanner only sees literals passed to t().
@@ -36,11 +37,7 @@ function reasonText(t: TFunction, r: MarketRegimeReason): string {
 
 const MarketRegimeCard: React.FC = () => {
   const t = useT();
-  const [reading, setReading] = useState<MarketRegimeReading | null | undefined>(undefined);
-
-  useEffect(() => {
-    marketApi.getRegime().then((r) => setReading(r.current)).catch(() => setReading(null));
-  }, []);
+  const reading = useMarketRegime();
 
   // Nothing until there is a reading: an empty gauge would read as "healthy".
   if (!reading) return null;
