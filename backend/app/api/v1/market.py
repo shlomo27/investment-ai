@@ -1860,6 +1860,113 @@ async def market_regime(current_user: User = Depends(get_current_active_user)):
     }
 
 
+@router.get("/regime/detail")
+async def market_regime_detail(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Everything the Market screen shows: the regime, every measure behind
+    it with its thresholds, a year of S&P 500 / VIX / credit-spread history,
+    the past changes of regime with what the index did after each, and which
+    of the reader's followed stocks are most exposed."""
+    import json as _json
+    from datetime import timedelta as _td, timezone as _tz
+    import redis.asyncio as aioredis
+    from sqlalchemy import select as _sel
+    from app.core.config import settings
+    from app.services import market_regime as mr
+    from app.services.performance_service import spy_closes, close_on_or_before
+    from app.db.models.market_regime_reading import MarketRegimeReading
+    from app.db.models.recommendation import Recommendation, RecommendationStatus
+    from app.db.models.watchlist import Watchlist
+
+    r = aioredis.from_url(settings.REDIS_URL)
+    try:
+        committed = await mr.current(r)
+        raw = await r.get(mr.REDIS_KEY + ":latest")
+        pending_raw = await r.get(mr.PENDING_KEY)
+        vix = await mr.fred_series_1y(r, "VIXCLS")
+        hy = await mr.fred_series_1y(r, "BAMLH0A0HYM2")
+    finally:
+        await r.aclose()
+    latest = _json.loads(raw) if raw else committed
+    inputs = (latest or {}).get("inputs") or {}
+
+    # S&P 500 with its 50- and 200-day averages, for the past year.
+    closes = await spy_closes()
+    days = sorted(closes)
+    vals = [closes[d] for d in days]
+    spy_series = []
+    for idx in range(max(0, len(days) - 252), len(days)):
+        ma50 = sum(vals[idx - 49:idx + 1]) / 50 if idx >= 49 else None
+        ma200 = sum(vals[idx - 199:idx + 1]) / 200 if idx >= 199 else None
+        spy_series.append([days[idx], round(vals[idx], 2),
+                           round(ma50, 2) if ma50 else None, round(ma200, 2) if ma200 else None])
+
+    # Changes of regime, newest first, with the index a week and a month on.
+    rows = (await db.execute(
+        _sel(MarketRegimeReading).where(MarketRegimeReading.changed == True)
+        .order_by(MarketRegimeReading.created_at.desc()).limit(20)
+    )).scalars().all()
+    first = (await db.execute(
+        _sel(MarketRegimeReading).order_by(MarketRegimeReading.created_at.asc()).limit(1)
+    )).scalar_one_or_none()
+    history = []
+    prev_regime = {}
+    ordered = sorted(rows, key=lambda x: x.created_at)
+    for idx, row in enumerate(ordered):
+        prev_regime[row.id] = (ordered[idx - 1].committed if idx > 0
+                               else (first.committed if first and first.id != row.id else None))
+    for row in rows:
+        at = row.created_at if row.created_at.tzinfo else row.created_at.replace(tzinfo=_tz.utc)
+        s0 = close_on_or_before(closes, at)
+        s1 = close_on_or_before(closes, at + _td(days=7)) if at + _td(days=7) <= _now_utc() else None
+        s4 = close_on_or_before(closes, at + _td(days=28)) if at + _td(days=28) <= _now_utc() else None
+        history.append({
+            "at": at.isoformat(), "from": prev_regime.get(row.id), "to": row.committed,
+            "score": row.score,
+            "spy_1w_pct": round((s1 - s0) / s0 * 100, 2) if s0 and s1 else None,
+            "spy_1m_pct": round((s4 - s0) / s0 * 100, 2) if s0 and s4 else None,
+        })
+
+    # The reader's own exposure.
+    follows = (await db.execute(
+        _sel(Watchlist.symbol).where(Watchlist.user_id == current_user.id))).scalars().all()
+    exposure = {"followed": len(follows), "near_stop": [], "volatile": []}
+    if follows:
+        assets = {a.symbol: a for a in (await db.execute(
+            _sel(Asset).where(Asset.symbol.in_(follows)))).scalars().all()}
+        stops = {sym: stop for sym, stop in (await db.execute(
+            _sel(Recommendation.symbol, Recommendation.stop_loss).where(
+                Recommendation.symbol.in_(follows),
+                Recommendation.status.in_([RecommendationStatus.APPROVED,
+                                           RecommendationStatus.PRESENTED_TO_USER,
+                                           RecommendationStatus.ACTIONED])))).all() if stop}
+        for sym in follows:
+            a = assets.get(sym)
+            price, stop = (a.last_price if a else None), stops.get(sym)
+            if price and stop and 0 <= (price - stop) / price * 100 < 3:
+                exposure["near_stop"].append({"symbol": sym, "price": price, "stop": stop,
+                                              "gap_pct": round((price - stop) / price * 100, 1)})
+            if a and a.beta and a.beta > 1.3:
+                exposure["volatile"].append({"symbol": sym, "beta": round(a.beta, 2)})
+
+    return {
+        "current": committed,
+        "latest": latest,
+        "pending": _json.loads(pending_raw) if pending_raw else None,
+        "indicators": mr.indicator_table(inputs) if inputs else [],
+        "series": {"spy": spy_series, "vix": vix, "hy_spread": hy},
+        "history": history,
+        "exposure": exposure,
+    }
+
+
+def _now_utc():
+    from datetime import datetime as _dt, timezone as _tz
+    return _dt.now(_tz.utc)
+
+
 @router.get("/diagnostics/alert-outcomes")
 async def alert_outcomes(
     current_user: User = Depends(get_current_active_user),

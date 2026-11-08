@@ -1668,6 +1668,18 @@ async def evaluate_market_regime() -> dict:
     if inputs.get("spy") is None and inputs.get("VIXCLS") is None:
         return {"skipped": "no market data"}
     reading = mr.assess(inputs)
+    now_iso = reading["as_of"]
+
+    async def _save(committed: str, changed: bool = False) -> None:
+        # The Market screen's history and charts. Never blocks the reading.
+        try:
+            from app.db.models.market_regime_reading import MarketRegimeReading
+            async with AsyncSessionLocal() as _db:
+                _db.add(MarketRegimeReading(reading=reading["regime"], committed=committed,
+                                            changed=changed, score=reading["score"], data=reading))
+                await _db.commit()
+        except Exception as exc:
+            logger.warning(f"[regime] could not save reading: {exc}")
 
     r = aioredis.from_url(settings.REDIS_URL)
     # Missing data scores as zero, so a FRED outage would read as a sudden
@@ -1683,11 +1695,16 @@ async def evaluate_market_regime() -> dict:
         await r.set(mr.REDIS_KEY + ":latest", _json.dumps(reading), ex=14 * 24 * 3600)
         prev = await mr.current(r)
         if prev is None:
+            reading["since"] = now_iso
             await r.set(mr.REDIS_KEY, _json.dumps(reading))
+            await _save(reading["regime"])
             return {"baseline": reading["regime"], "score": reading["score"]}
         if reading["regime"] == prev.get("regime"):
             await r.delete(mr.PENDING_KEY)
-            await r.set(mr.REDIS_KEY, _json.dumps(reading))  # fresher reasons, same regime
+            # Fresher reasons, same regime: the date it began is kept.
+            reading["since"] = prev.get("since") or prev.get("as_of") or now_iso
+            await r.set(mr.REDIS_KEY, _json.dumps(reading))
+            await _save(reading["regime"])
             return {"regime": reading["regime"], "score": reading["score"], "changed": False}
 
         raw = await r.get(mr.PENDING_KEY)
@@ -1696,10 +1713,13 @@ async def evaluate_market_regime() -> dict:
         if count < mr.CONFIRM_READINGS:
             await r.set(mr.PENDING_KEY, _json.dumps({"regime": reading["regime"], "count": count}),
                         ex=7 * 24 * 3600)
+            await _save(prev["regime"])
             return {"regime": prev["regime"], "pending": reading["regime"], "count": count}
 
         await r.delete(mr.PENDING_KEY)
+        reading["since"] = now_iso
         await r.set(mr.REDIS_KEY, _json.dumps(reading))
+        await _save(reading["regime"], changed=True)
     finally:
         await r.aclose()
 

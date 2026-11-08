@@ -38,7 +38,7 @@ logger = structlog.get_logger(__name__)
 
 HEALTHY, CORRECTION, STRESS = "HEALTHY", "CORRECTION", "STRESS"
 #: Score at or above which the regime is CORRECTION / STRESS.
-CORRECTION_AT, STRESS_AT = 3, 6
+CORRECTION_AT, STRESS_AT = 3, 7
 #: Stress-layer points that force STRESS whatever the trend says: the leading
 #: measures flashing together is the case this detector exists for.
 STRESS_LAYER_OVERRIDE = 4
@@ -239,7 +239,11 @@ def assess(i: Dict[str, Any]) -> Dict[str, Any]:
             f"{b:.0f}% מהמניות המנותחות מעל ממוצע 200 הימים", "breadth_weak", pct=round(b))
 
     score = trend + stress + breadth
-    if score >= STRESS_AT or stress >= STRESS_LAYER_OVERRIDE:
+    # The yield curve is a slow, macro signal: an un-inversion can stand for a
+    # year. It counts toward the score, but not toward the override, which is
+    # for the fast stress measures flashing together.
+    curve_pts = sum(x["points"] for x in reasons if x.get("code", "").startswith("curve_"))
+    if score >= STRESS_AT or stress - curve_pts >= STRESS_LAYER_OVERRIDE:
         regime = STRESS
     elif score >= CORRECTION_AT:
         regime = CORRECTION
@@ -311,3 +315,75 @@ async def context_line(redis_client=None, buy: bool = False) -> str:
                 await redis_client.aclose()
             except Exception:
                 pass
+
+
+# ─── Market screen ────────────────────────────────────────────────────────────
+
+def indicator_table(i: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Every measure the reading uses, with its value, the thresholds that
+    count against the market, and a status — so the screen can show exactly
+    what was checked, not only the verdict. `status`: ok / warn / alert /
+    unknown. Thresholds match assess()."""
+    def row(key, layer, value, warn, alert, higher_is_worse=True, fmt=None):
+        if value is None:
+            status = "unknown"
+        else:
+            bad = (lambda t: value >= t) if higher_is_worse else (lambda t: value <= t)
+            status = "alert" if alert is not None and bad(alert) else "warn" if warn is not None and bad(warn) else "ok"
+        return {"key": key, "layer": layer, "value": value, "warn_at": warn, "alert_at": alert,
+                "higher_is_worse": higher_is_worse, "status": status}
+
+    spy, ma50, ma200, high = i.get("spy"), i.get("spy_ma50"), i.get("spy_ma200"), i.get("spy_high_1y")
+    vs200 = round((spy - ma200) / ma200 * 100, 1) if spy and ma200 else None
+    vs50 = round((spy - ma50) / ma50 * 100, 1) if spy and ma50 else None
+    dd = round((high - spy) / high * 100, 1) if spy and high else None
+    hy, hy_prev = i.get("BAMLH0A0HYM2"), i.get("hy_spread_1m_ago")
+    widen = round(hy - hy_prev, 2) if hy is not None and hy_prev is not None else None
+    curve = i.get("T10Y2Y")
+    rows = [
+        row("spy_vs_200", "trend", vs200, 0.0, None, higher_is_worse=False),
+        row("spy_vs_50", "trend", vs50, 0.0, None, higher_is_worse=False),
+        row("drawdown", "trend", dd, 10, 20),
+        row("vix", "stress", i.get("VIXCLS"), 25, 35),
+        row("hy_spread", "stress", hy, 5, 7),
+        row("hy_widening_1m", "stress", widen, 1.0, None),
+        row("stlfsi", "stress", i.get("STLFSI4"), 0.0001, 1.5),
+        row("nfci", "stress", i.get("NFCI"), 0.0001, None),
+        row("yield_curve", "stress", curve, 0.0, None, higher_is_worse=False),
+        row("breadth", "breadth", i.get("breadth_pct"), 40, 25, higher_is_worse=False),
+    ]
+    # A positive curve that only just stopped being inverted still warns.
+    for r_ in rows:
+        if r_["key"] == "yield_curve" and curve is not None and curve >= 0 \
+                and (i.get("t10y2y_min_1y") or 0) <= -0.25:
+            r_["status"] = "warn"
+            r_["note"] = "uninverted"
+        if r_["key"] in ("spy_vs_200", "spy_vs_50") and r_["value"] is not None:
+            r_["status"] = "warn" if r_["value"] < 0 else "ok"
+        if r_["key"] == "yield_curve" and curve is not None and curve < 0:
+            r_["status"] = "warn"
+        if r_["key"] == "breadth" and r_["value"] is not None:
+            v = r_["value"]
+            r_["status"] = "alert" if v < 25 else "warn" if v < 40 else "ok"
+    return rows
+
+
+async def fred_series_1y(redis_client, series_id: str) -> List[List[Any]]:
+    """[[date, value], ...] for the past year, cached for six hours."""
+    import json
+    key = f"investment_ai:fred_series:{series_id}"
+    try:
+        raw = await redis_client.get(key)
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+    async with httpx.AsyncClient() as client:
+        hist = await _fred_history(client, series_id)
+    out = [[d, v] for d, v in hist[-260:]]
+    if out:
+        try:
+            await redis_client.set(key, json.dumps(out), ex=6 * 3600)
+        except Exception:
+            pass
+    return out
