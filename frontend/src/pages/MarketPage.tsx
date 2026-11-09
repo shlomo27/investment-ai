@@ -197,8 +197,11 @@ function buildSummary(t: TFunction, d: MarketRegimeDetail): string[] {
 
   // What is driving it.
   const top = [...cur.reasons].sort((a, b) => b.points - a.points).slice(0, 2).map((r) => reasonText(t, r));
+  // In a healthy market the points found are things to note, not reasons.
   lines.push(top.length
-    ? t("Main reasons: {r}.", "הסיבות העיקריות: {r}.", { r: top.join("; ") })
+    ? (cur.regime === "HEALTHY"
+        ? t("Worth noting: {r}.", "כדאי לשים לב: {r}.", { r: top.join("; ") })
+        : t("Main reasons: {r}.", "הסיבות העיקריות: {r}.", { r: top.join("; ") }))
     : t("Trend, credit and stress measures are all within normal ranges.", "מדדי המגמה, האשראי והלחץ כולם בטווח הרגיל."));
 
   // How deep it goes: credit and financial stress, and abroad.
@@ -221,13 +224,14 @@ function buildSummary(t: TFunction, d: MarketRegimeDetail): string[] {
   const ex = d.exposure;
   if (ex.followed > 0) {
     if (ex.near_stop.length) {
-      lines.push(t("For you: {list} near the stop loss.", "בשבילך: {list} קרובות לסטופ.",
+      // Phrased to read right for one stock or several.
+      lines.push(t("For you, near the stop loss: {list}.", "בשבילך, קרוב לסטופ: {list}.",
                    { list: ex.near_stop.map((x) => x.symbol).join(", ") }));
     } else {
       lines.push(t("For you: none of your stocks is near its stop loss.", "בשבילך: אף מניה שלך אינה קרובה לסטופ."));
     }
     if (ex.volatile.length && cur.regime !== "HEALTHY") {
-      lines.push(t("{list}: highly volatile, usually hit harder in a fall.", "{list}: תנודתיות גבוהה, בדרך כלל נפגעות יותר בירידות.",
+      lines.push(t("Highly volatile, usually hit harder in a fall: {list}.", "תנודתיות גבוהה, בדרך כלל נפגעות יותר בירידות: {list}.",
                    { list: ex.volatile.map((x) => x.symbol).join(", ") }));
     }
   }
@@ -330,7 +334,7 @@ const MarketPage: React.FC = () => {
               {t("Near their stop loss (under 3%):", "קרובות לסטופ לוס (פחות מ-3%):")}{" "}
               {data.exposure.near_stop.length
                 ? data.exposure.near_stop.map((x) => (
-                    <span key={x.symbol} className="text-orange-300 font-medium me-2">{x.symbol} <span className="num" dir="ltr">({x.gap_pct}%)</span></span>
+                    <span key={x.symbol} dir="ltr" className="inline-block text-orange-300 font-medium me-3">{x.symbol} ({x.gap_pct}%)</span>
                   ))
                 : <span className="text-green-400">{t("none", "אין")}</span>}
             </p>
@@ -338,7 +342,7 @@ const MarketPage: React.FC = () => {
               {t("Highly volatile (usually hit harder in a fall):", "תנודתיות גבוהה (בדרך כלל נפגעות יותר בירידות):")}{" "}
               {data.exposure.volatile.length
                 ? data.exposure.volatile.map((x) => (
-                    <span key={x.symbol} className="text-orange-300 font-medium me-2">{x.symbol} <span className="num" dir="ltr">(β {x.beta})</span></span>
+                    <span key={x.symbol} dir="ltr" className="inline-block text-orange-300 font-medium me-3">{x.symbol} (β {x.beta})</span>
                   ))
                 : <span className="text-green-400">{t("none", "אין")}</span>}
             </p>

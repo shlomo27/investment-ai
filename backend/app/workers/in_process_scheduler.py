@@ -1815,6 +1815,15 @@ async def baseline_market_regime_once() -> None:
             await r.aclose()
         if not exists:
             logger.info(f"[regime] baseline: {await evaluate_market_regime()}")
+        else:
+            # A reading made by older code (no global layer) is refreshed now.
+            r2 = aioredis.from_url(settings.REDIS_URL)
+            try:
+                result = await mr.refresh_outdated_reading(r2)
+            finally:
+                await r2.aclose()
+            if result:
+                logger.info(f"[regime] outdated reading: {result}")
     except Exception as exc:
         logger.warning(f"[regime] baseline failed: {exc}")
 

@@ -474,3 +474,40 @@ async def fred_series_1y(redis_client, series_id: str) -> List[List[Any]]:
         except Exception:
             pass
     return out
+
+
+def with_reason_codes(reading: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """A stored reading whose reasons predate reason codes (and so show in
+    English for every language) gets them by re-scoring its own inputs.
+    The regime itself is left exactly as it was committed."""
+    if not reading or not reading.get("inputs"):
+        return reading
+    if all(r.get("code") for r in reading.get("reasons", [])):
+        return reading
+    fresh = assess(reading["inputs"])
+    return {**reading, "reasons": fresh["reasons"]}
+
+
+async def refresh_outdated_reading(redis_client) -> Optional[str]:
+    """Bring a reading made by older code up to date now, rather than at the
+    next close: a reading without the global layer shows that whole section
+    as "no data" for a day.
+
+    Never changes the regime users were told about. Same regime: the details
+    are replaced (keeping the date it began). Different regime: stored only
+    as the latest reading, for the normal two-reading confirmation to decide.
+    """
+    import json
+    committed = await current(redis_client)
+    if not committed or "global" in (committed.get("layers") or {}):
+        return None
+    inputs = await fetch_inputs()
+    reading = assess(inputs)
+    if reading["inputs_available"] < 4:
+        return "too few inputs"
+    await redis_client.set(REDIS_KEY + ":latest", json.dumps(reading), ex=14 * 24 * 3600)
+    if reading["regime"] != committed.get("regime"):
+        return f"latest only ({reading['regime']} vs committed {committed.get('regime')})"
+    reading["since"] = committed.get("since") or committed.get("as_of")
+    await redis_client.set(REDIS_KEY, json.dumps(reading))
+    return "refreshed"

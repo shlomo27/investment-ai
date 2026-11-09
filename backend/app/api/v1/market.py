@@ -1854,8 +1854,8 @@ async def market_regime(current_user: User = Depends(get_current_active_user)):
         await r.aclose()
     import json as _json
     return {
-        "current": committed,
-        "latest": _json.loads(raw) if raw else None,
+        "current": mr.with_reason_codes(committed),
+        "latest": mr.with_reason_codes(_json.loads(raw)) if raw else None,
         "pending": _json.loads(pending) if pending else None,
     }
 
@@ -1952,8 +1952,8 @@ async def market_regime_detail(
                 exposure["volatile"].append({"symbol": sym, "beta": round(a.beta, 2)})
 
     return {
-        "current": committed,
-        "latest": latest,
+        "current": mr.with_reason_codes(committed),
+        "latest": mr.with_reason_codes(latest),
         "pending": _json.loads(pending_raw) if pending_raw else None,
         "indicators": mr.indicator_table(inputs) if inputs else [],
         "series": {"spy": spy_series, "vix": vix, "hy_spread": hy},

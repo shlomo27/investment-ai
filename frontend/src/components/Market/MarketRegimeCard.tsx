@@ -41,7 +41,9 @@ export function reasonText(t: TFunction, r: MarketRegimeReason): string {
     case "eu_hy_elevated": return t("European high-yield spread at {v}%: elevated", "מרווח אשראי בתשואה גבוהה באירופה {v}%: גבוה", v);
     case "dollar_surge": return t("The dollar rose {v}% in a month: money running for safety", "הדולר עלה {v}% בחודש: כסף בורח למקום בטוח", v);
     case "yen_surge": return t("The yen rose {v}% in a month: carry trades unwinding", "הין עלה {v}% בחודש: פירוק עסקאות מימון בין", v);
-    default: return r.en;
+    // A reason without a code (from an older reading): its own Hebrew or
+    // English text, rather than English for everyone.
+    default: return t(r.en, r.he);
   }
 }
 
