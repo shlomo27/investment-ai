@@ -217,7 +217,10 @@ function buildSummary(t: TFunction, d: MarketRegimeDetail): string[] {
                { s: cur.score }));
 
   // What is driving it.
-  const top = [...cur.reasons].sort((a, b) => b.points - a.points).slice(0, 2).map((r) => reasonText(t, r));
+  // The world-regions count gets its own line below; not repeated here.
+  const ownLine = regions.length && weakRegions >= 2 ? ["global_weak", "global_broad_weak"] : [];
+  const top = [...cur.reasons].filter((r) => !ownLine.includes(r.code ?? ""))
+    .sort((a, b) => b.points - a.points).slice(0, 2).map((r) => reasonText(t, r));
   // In a healthy market the points found are things to note, not reasons.
   lines.push(top.length
     ? (cur.regime === "HEALTHY"
