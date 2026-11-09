@@ -9,7 +9,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { type MarketRegimeReason } from "../../api/client";
-import { useMarketRegime } from "./useMarketRegime";
+import { useMarketRegime, useLatestMarketReading } from "./useMarketRegime";
 import { useT, type TFunction } from "../../i18n/t";
 
 // Direct t() calls: the string scanner only sees literals passed to t().
@@ -59,6 +59,7 @@ export function regionName(t: TFunction, region: string): string {
 const MarketRegimeCard: React.FC = () => {
   const t = useT();
   const reading = useMarketRegime();
+  const latest = useLatestMarketReading();
 
   // Nothing until there is a reading: an empty gauge would read as "healthy".
   if (!reading) return null;
@@ -96,6 +97,16 @@ const MarketRegimeCard: React.FC = () => {
         <p className="mt-2 text-[11px] text-gray-500 leading-relaxed">
           {t("This is risk information, not an instruction to sell. Whether to keep holding a stock depends on its stop loss.",
              "זהו מידע על רמת הסיכון ולא הוראה למכור. ההחלטה אם להמשיך להחזיק מניה תלויה בסטופ שלה.")}
+        </p>
+      )}
+      {latest && latest.regime !== reading.regime && (
+        // Same note as the Market tab: the newest reading disagrees with the
+        // confirmed state, and the card must not read calmer than the page.
+        <p className="mt-2 text-xs text-gray-300">
+          {t("The latest reading points to: {r}, pending confirmation.", "הקריאה האחרונה מצביעה על: {r}, ממתין לאישור.",
+             { r: latest.regime === "STRESS" ? t("Market under stress", "השוק בלחץ")
+                : latest.regime === "CORRECTION" ? t("Market in correction", "השוק בתיקון")
+                : t("Market healthy", "שוק בריא") })}
         </p>
       )}
       <p className="mt-2 text-[11px] text-blue-400">{t("Full market analysis →", "ניתוח השוק המלא ←")}</p>

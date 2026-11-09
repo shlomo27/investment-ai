@@ -177,16 +177,25 @@ const LayerBadge: React.FC<{ rows: MarketIndicator[] }> = ({ rows }) => {
   const alerts = known.filter((r) => r.status === "alert").length;
   const warns = known.filter((r) => r.status === "warn").length;
   if (!known.length) return <span className="text-[11px] text-gray-500">{t("No data", "אין נתון")}</span>;
-  if (alerts) return <span className="text-[11px] px-2 py-0.5 rounded-full border bg-red-900/50 text-red-300 border-red-700/50">🔴 {t("{n} of {total} in alarm", "{n} מתוך {total} באזעקה", { n: alerts, total: known.length })}</span>;
-  if (warns) return <span className="text-[11px] px-2 py-0.5 rounded-full border bg-yellow-900/40 text-yellow-300 border-yellow-700/40">🟡 {t("{n} of {total} warning", "{n} מתוך {total} באזהרה", { n: warns, total: known.length })}</span>;
-  return <span className="text-[11px] px-2 py-0.5 rounded-full border bg-green-900/40 text-green-300 border-green-700/40">🟢 {t("All normal", "הכול תקין")}</span>;
+  if (!alerts && !warns) return <span className="text-[11px] px-2 py-0.5 rounded-full border bg-green-900/40 text-green-300 border-green-700/40">🟢 {t("All normal", "הכול תקין")}</span>;
+  // Both counts, always: showing only the alarms hid the warnings, so a
+  // section with 1 alarm and 3 warnings read as calmer than one with 3.
+  return (
+    <span className="flex flex-col items-end gap-1">
+      {alerts > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full border bg-red-900/50 text-red-300 border-red-700/50">🔴 {t("{n} of {total} in alarm", "{n} מתוך {total} באזעקה", { n: alerts, total: known.length })}</span>}
+      {warns > 0 && <span className="text-[11px] px-2 py-0.5 rounded-full border bg-yellow-900/40 text-yellow-300 border-yellow-700/40">🟡 {t("{n} of {total} warning", "{n} מתוך {total} באזהרה", { n: warns, total: known.length })}</span>}
+    </span>
+  );
 };
 
 /** The plain-language summary at the top. Built from the readings by fixed
  *  rules rather than written by a model, so it always matches the numbers
  *  below it, costs nothing, and exists in every language. */
 function buildSummary(t: TFunction, d: MarketRegimeDetail): string[] {
-  const cur = d.current!;
+  // The summary describes the newest reading, the same one the sections
+  // below show. The headline keeps the confirmed state, and says so when the
+  // newest reading points elsewhere.
+  const cur = d.latest ?? d.current!;
   const lines: string[] = [];
   const of = (layer: string) => d.indicators.filter((i) => i.layer === layer);
   const bad = (rows: MarketIndicator[], level: "warn" | "alert") =>
@@ -194,6 +203,18 @@ function buildSummary(t: TFunction, d: MarketRegimeDetail): string[] {
   const stress = of("stress");
   const regions = of("global").filter((i) => /^region_(europe|japan|china|emerging)$/.test(i.key) && i.status !== "unknown");
   const weakRegions = regions.filter((i) => i.status !== "ok").length;
+
+  // Every measure at a glance, warnings and alarms both, and how the state
+  // is decided: a measure in warning does not by itself make a correction.
+  const known = d.indicators.filter((i) => i.status !== "unknown");
+  const alarms = known.filter((i) => i.status === "alert").length;
+  const warnings = known.filter((i) => i.status === "warn").length;
+  lines.push(t("Of {total} measures: {a} in alarm, {w} in warning, the rest normal.",
+               "מתוך {total} מדדים: {a} באזעקה, {w} באזהרה, והשאר תקינים.",
+               { total: known.length, a: alarms, w: warnings }));
+  lines.push(t("Risk score {s}. The market counts as in correction from 3 and under stress from 7; each measure adds 1-2 points.",
+               "ציון סיכון {s}. השוק נחשב בתיקון מ-3 ובלחץ מ-7; כל מדד מוסיף 1-2 נקודות.",
+               { s: cur.score }));
 
   // What is driving it.
   const top = [...cur.reasons].sort((a, b) => b.points - a.points).slice(0, 2).map((r) => reasonText(t, r));
@@ -306,13 +327,21 @@ const MarketPage: React.FC = () => {
         <ul className="mt-3 space-y-1.5 text-sm text-gray-200 leading-relaxed">
           {summary.map((line) => <li key={line}>{line}</li>)}
         </ul>
-        {data.pending && data.pending.regime !== cur.regime && (
-          <p className="mt-3 text-xs text-gray-400">
-            {t("Latest reading points to: {r}. It becomes the new state if the next reading confirms it.",
-               "הקריאה האחרונה מצביעה על: {r}. זה יהפוך למצב החדש אם הקריאה הבאה תאשר.",
-               { r: regimeLabel(t, data.pending.regime) })}
-          </p>
-        )}
+        {(() => {
+          // The newest reading disagrees with the confirmed state: say so at
+          // the top, not only in the sections, so the page never reads as
+          // "healthy" above details that say otherwise.
+          const next = data.latest && data.latest.regime !== cur.regime ? data.latest.regime : data.pending?.regime;
+          if (!next || next === cur.regime) return null;
+          const ns = REGIME_STYLE[next];
+          return (
+            <p className={`mt-3 text-sm font-medium rounded-lg border px-3 py-2 ${ns.cls} ${ns.text}`}>
+              {ns.dot} {t("The latest reading points to: {r}. It becomes the market state, and an alert is sent, once it holds for two daily readings in a row (after the US close).",
+                 "הקריאה האחרונה מצביעה על: {r}. זה יהפוך למצב השוק, ותישלח התראה, אם זה יחזיק בשתי קריאות יומיות ברצף (אחרי סגירת המסחר בארה״ב).",
+                 { r: regimeLabel(t, next) })}
+            </p>
+          );
+        })()}
         <p className="mt-3 text-[11px] text-gray-500 leading-relaxed">
           {t("This is risk information, not an instruction to sell. Whether to keep holding a stock depends on its stop loss.",
              "זהו מידע על רמת הסיכון ולא הוראה למכור. ההחלטה אם להמשיך להחזיק מניה תלויה בסטופ שלה.")}

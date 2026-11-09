@@ -8,16 +8,17 @@
 import { useEffect, useState } from "react";
 import { marketApi, type MarketRegimeReading } from "../../api/client";
 
-let cached: { at: number; value: MarketRegimeReading | null } | null = null;
-let inflight: Promise<MarketRegimeReading | null> | null = null;
+type Both = { current: MarketRegimeReading | null; latest: MarketRegimeReading | null };
+let cached: { at: number; value: Both } | null = null;
+let inflight: Promise<Both> | null = null;
 
-function load(): Promise<MarketRegimeReading | null> {
+function load(): Promise<Both> {
   if (cached && Date.now() - cached.at < 3600_000) return Promise.resolve(cached.value);
   if (!inflight) {
     inflight = marketApi
       .getRegime()
-      .then((r) => r.current)
-      .catch(() => null)
+      .then((r: any) => ({ current: r.current ?? null, latest: r.latest ?? null }))
+      .catch(() => ({ current: null, latest: null }))
       .then((value) => {
         cached = { at: Date.now(), value };
         inflight = null;
@@ -27,8 +28,8 @@ function load(): Promise<MarketRegimeReading | null> {
   return inflight;
 }
 
-export function useMarketRegime(): MarketRegimeReading | null | undefined {
-  const [value, setValue] = useState<MarketRegimeReading | null | undefined>(cached?.value);
+function useBoth(): Both | undefined {
+  const [value, setValue] = useState<Both | undefined>(cached?.value);
   useEffect(() => {
     let alive = true;
     load().then((v) => alive && setValue(v));
@@ -37,4 +38,16 @@ export function useMarketRegime(): MarketRegimeReading | null | undefined {
     };
   }, []);
   return value;
+}
+
+/** The confirmed regime (the one users were alerted about). */
+export function useMarketRegime(): MarketRegimeReading | null | undefined {
+  const v = useBoth();
+  return v === undefined ? undefined : v.current;
+}
+
+/** The newest reading, which may point to a regime not yet confirmed. */
+export function useLatestMarketReading(): MarketRegimeReading | null | undefined {
+  const v = useBoth();
+  return v === undefined ? undefined : v.latest;
 }
