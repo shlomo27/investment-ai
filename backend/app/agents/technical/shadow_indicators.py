@@ -67,6 +67,17 @@ async def benchmark_closes(symbol: str) -> Optional[pd.Series]:
         if closes:
             series = pd.Series(closes).sort_index()
             series.index = pd.to_datetime(series.index)
+    if series is None:
+        # Yahoo answers from a blocked IP range on Railway at times; Alpaca
+        # serves the same ETFs.
+        try:
+            from app.services.market_data.alpaca_service import get_alpaca_service
+            bars = await get_alpaca_service().get_historical_bars(symbol, limit=260)
+            if bars:
+                series = pd.Series({b["date"]: float(b["close"]) for b in bars}).sort_index()
+                series.index = pd.to_datetime(series.index)
+        except Exception as exc:
+            logger.debug("benchmark alpaca fallback failed", symbol=symbol, error=str(exc))
     if series is not None:
         _BENCH_CACHE[symbol] = (time.time(), series)
     return series

@@ -50,7 +50,15 @@ FRED_SERIES = {
     "STLFSI4": ("St. Louis Fed Financial Stress Index", 14),
     "NFCI": ("Chicago Fed Financial Conditions Index", 14),
     "T10Y2Y": ("10Y-2Y Treasury spread", 7),
+    # Global: a crisis need not start in the US.
+    "BAMLHE00EHYIOAS": ("Euro high-yield credit spread", 7),
+    "DTWEXBGS": ("Broad US dollar index", 10),
+    "DEXJPUS": ("Japanese yen per US dollar", 10),
 }
+
+#: Regions read through their US-listed ETFs (dollar prices, one data path).
+REGION_ETFS = {"europe": "VGK", "japan": "EWJ", "china": "MCHI", "emerging": "EEM"}
+SMALL_CAPS_ETF = "IWM"
 
 REDIS_KEY = "investment_ai:market_regime"
 PENDING_KEY = "investment_ai:market_regime:pending"
@@ -124,6 +132,35 @@ async def fetch_inputs() -> Dict[str, Any]:
     curve = [v for _, v in fred["T10Y2Y"][-252:]]
     inputs["t10y2y_min_1y"] = min(curve) if curve and inputs["T10Y2Y"] is not None else None
     inputs["breadth_pct"] = await _breadth()
+
+    # Global layer. The dollar and the yen matter for how fast they move:
+    # money runs to the dollar in a crisis, and a sudden jump in the yen was
+    # the August 2024 carry-trade unwind (Japan fell 12% in a day).
+    def _move_1m(series_id: str) -> Optional[float]:
+        h = fred[series_id]
+        now_v, then_v = (h[-1][1] if h else None), _ago(h, 21)
+        if inputs.get(series_id) is None or not then_v:
+            return None
+        return (now_v - then_v) / then_v * 100
+    inputs["dollar_1m_pct"] = _move_1m("DTWEXBGS")
+    jpy = _move_1m("DEXJPUS")
+    inputs["yen_1m_pct"] = -jpy if jpy is not None else None  # fewer yen per dollar = yen up
+
+    from app.agents.technical.shadow_indicators import benchmark_closes
+    for region, etf in {**REGION_ETFS, "smallcaps": SMALL_CAPS_ETF}.items():
+        vs200 = dd = None
+        try:
+            closes = await benchmark_closes(etf)
+            if closes is not None and len(closes) >= 200:
+                last = float(closes.iloc[-1])
+                ma200 = float(closes.tail(200).mean())
+                high = float(closes.tail(252).max())
+                vs200 = round((last - ma200) / ma200 * 100, 1)
+                dd = round((high - last) / high * 100, 1)
+        except Exception as exc:
+            logger.debug("region fetch failed", etf=etf, error=str(exc))
+        inputs[f"{region}_vs200"] = vs200
+        inputs[f"{region}_drawdown"] = dd
     return inputs
 
 
@@ -166,14 +203,16 @@ async def _breadth() -> Optional[float]:
 def assess(i: Dict[str, Any]) -> Dict[str, Any]:
     """Score the inputs. Pure, so it can be tested against past crises."""
     reasons: List[Dict[str, Any]] = []
-    trend = stress = breadth = 0
+    trend = stress = breadth = global_ = 0
 
     def add(layer: str, points: int, en: str, he: str, code: str = "", **vars_):
-        nonlocal trend, stress, breadth
+        nonlocal trend, stress, breadth, global_
         if layer == "trend":
             trend += points
         elif layer == "stress":
             stress += points
+        elif layer == "global":
+            global_ += points
         else:
             breadth += points
         # `code` and `vars` let the app show the reason in any language.
@@ -238,7 +277,44 @@ def assess(i: Dict[str, Any]) -> Dict[str, Any]:
         add("breadth", 1, f"{b:.0f}% of analysed stocks are above their 200-day average",
             f"{b:.0f}% מהמניות המנותחות מעל ממוצע 200 הימים", "breadth_weak", pct=round(b))
 
-    score = trend + stress + breadth
+    # ── Global ──
+    REGION_HE = {"europe": "אירופה", "japan": "יפן", "china": "סין", "emerging": "שווקים מתעוררים"}
+    weak = [r for r in REGION_ETFS if i.get(f"{r}_vs200") is not None and i[f"{r}_vs200"] < 0]
+    known_regions = [r for r in REGION_ETFS if i.get(f"{r}_vs200") is not None]
+    if len(weak) >= 3:
+        add("global", 2, f"{len(weak)} of {len(known_regions)} world regions are below their 200-day average",
+            f"{len(weak)} מתוך {len(known_regions)} אזורים בעולם מתחת לממוצע 200 הימים",
+            "global_broad_weak", n=len(weak), total=len(known_regions))
+    elif len(weak) == 2:
+        add("global", 1, f"2 of {len(known_regions)} world regions are below their 200-day average",
+            f"2 מתוך {len(known_regions)} אזורים בעולם מתחת לממוצע 200 הימים",
+            "global_weak", n=2, total=len(known_regions))
+    for r in REGION_ETFS:
+        d = i.get(f"{r}_drawdown")
+        if d is not None and d >= 20:
+            add("global", 1, f"{r} is {d}% below its one-year high (bear market)",
+                f"{REGION_HE[r]} נמוך ב-{d}% מהשיא השנתי (שוק דובי)", "region_bear", region=r, pct=d)
+    sc = i.get("smallcaps_vs200")
+    if sc is not None and sc < 0:
+        add("global", 1, "US small caps are below their 200-day average",
+            "המניות הקטנות בארה״ב מתחת לממוצע 200 הימים", "smallcaps_below_200")
+    eu = i.get("BAMLHE00EHYIOAS")
+    if eu is not None and eu >= 7:
+        add("global", 2, f"European high-yield spread at {eu:.1f}%: credit stress",
+            f"מרווח אשראי בתשואה גבוהה באירופה {eu:.1f}%: לחץ אשראי", "eu_hy_stress", v=round(eu, 1))
+    elif eu is not None and eu >= 5:
+        add("global", 1, f"European high-yield spread at {eu:.1f}%: elevated",
+            f"מרווח אשראי בתשואה גבוהה באירופה {eu:.1f}%: גבוה", "eu_hy_elevated", v=round(eu, 1))
+    usd = i.get("dollar_1m_pct")
+    if usd is not None and usd >= 3:
+        add("global", 1, f"The dollar rose {usd:.1f}% in a month: money running for safety",
+            f"הדולר עלה {usd:.1f}% בחודש: כסף בורח למקום בטוח", "dollar_surge", v=round(usd, 1))
+    yen = i.get("yen_1m_pct")
+    if yen is not None and yen >= 5:
+        add("global", 1, f"The yen rose {yen:.1f}% in a month: carry trades unwinding",
+            f"הין עלה {yen:.1f}% בחודש: פירוק עסקאות מימון בין", "yen_surge", v=round(yen, 1))
+
+    score = trend + stress + breadth + global_
     # The yield curve is a slow, macro signal: an un-inversion can stand for a
     # year. It counts toward the score, but not toward the override, which is
     # for the fast stress measures flashing together.
@@ -256,7 +332,7 @@ def assess(i: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "regime": regime,
         "score": score,
-        "layers": {"trend": trend, "stress": stress, "breadth": breadth},
+        "layers": {"trend": trend, "stress": stress, "breadth": breadth, "global": global_},
         "reasons": reasons,
         "drawdown_pct": drawdown,
         "inputs_available": known,
@@ -351,6 +427,17 @@ def indicator_table(i: Dict[str, Any]) -> List[Dict[str, Any]]:
         row("nfci", "stress", i.get("NFCI"), 0.0001, None),
         row("yield_curve", "stress", curve, 0.0, None, higher_is_worse=False),
         row("breadth", "breadth", i.get("breadth_pct"), 40, 25, higher_is_worse=False),
+    ]
+    for region in list(REGION_ETFS) + ["smallcaps"]:
+        v, d = i.get(f"{region}_vs200"), i.get(f"{region}_drawdown")
+        status = ("unknown" if v is None else
+                  "alert" if d is not None and d >= 20 else "warn" if v < 0 else "ok")
+        rows.append({"key": f"region_{region}", "layer": "global", "value": v, "drawdown": d,
+                     "warn_at": 0.0, "alert_at": None, "higher_is_worse": False, "status": status})
+    rows += [
+        row("eu_hy_spread", "global", i.get("BAMLHE00EHYIOAS"), 5, 7),
+        row("dollar_1m", "global", round(i["dollar_1m_pct"], 2) if i.get("dollar_1m_pct") is not None else None, 3, None),
+        row("yen_1m", "global", round(i["yen_1m_pct"], 2) if i.get("yen_1m_pct") is not None else None, 5, None),
     ]
     # A positive curve that only just stopped being inverted still warns.
     for r_ in rows:
