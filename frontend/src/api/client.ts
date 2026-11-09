@@ -568,12 +568,12 @@ export const recommendationsApi = {
 // ─── Market API ──────────────────────────────────────────────────────────────
 
 export type MarketRegimeReason = {
-  layer: "trend" | "stress" | "breadth";
+  layer: "trend" | "stress" | "breadth" | "global";
   points: number;
   en: string;
   he: string;
   code?: string;
-  vars?: Record<string, number>;
+  vars?: Record<string, number | string>;
 };
 export type MarketRegimeReading = {
   regime: "HEALTHY" | "CORRECTION" | "STRESS";
@@ -584,8 +584,9 @@ export type MarketRegimeReading = {
 };
 export type MarketIndicator = {
   key: string;
-  layer: "trend" | "stress" | "breadth";
+  layer: "trend" | "stress" | "breadth" | "global";
   value: number | null;
+  drawdown?: number | null;
   status: "ok" | "warn" | "alert" | "unknown";
   note?: string;
 };

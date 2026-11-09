@@ -32,8 +32,26 @@ export function reasonText(t: TFunction, r: MarketRegimeReason): string {
     case "curve_uninverted": return t("Yield curve has just come out of an inversion, which has preceded past recessions", "עקום התשואות יצא לאחרונה מהיפוך, מצב שקדם למיתונים בעבר");
     case "breadth_low": return t("Only {pct}% of analysed stocks are above their 200-day average", "רק {pct}% מהמניות המנותחות מעל ממוצע 200 הימים", v);
     case "breadth_weak": return t("{pct}% of analysed stocks are above their 200-day average", "{pct}% מהמניות המנותחות מעל ממוצע 200 הימים", v);
+    case "global_broad_weak": return t("{n} of {total} world regions are below their 200-day average", "{n} מתוך {total} אזורים בעולם מתחת לממוצע 200 הימים", v);
+    case "global_weak": return t("{n} of {total} world regions are below their 200-day average", "{n} מתוך {total} אזורים בעולם מתחת לממוצע 200 הימים", v);
+    case "region_bear": return t("{region} is {pct}% below its one-year high (bear market)", "{region} נמוך ב-{pct}% מהשיא השנתי (שוק דובי)",
+                                 { ...v, region: regionName(t, String(v.region)) });
+    case "smallcaps_below_200": return t("US small caps are below their 200-day average", "המניות הקטנות בארה״ב מתחת לממוצע 200 הימים");
+    case "eu_hy_stress": return t("European high-yield spread at {v}%: credit stress", "מרווח אשראי בתשואה גבוהה באירופה {v}%: לחץ אשראי", v);
+    case "eu_hy_elevated": return t("European high-yield spread at {v}%: elevated", "מרווח אשראי בתשואה גבוהה באירופה {v}%: גבוה", v);
+    case "dollar_surge": return t("The dollar rose {v}% in a month: money running for safety", "הדולר עלה {v}% בחודש: כסף בורח למקום בטוח", v);
+    case "yen_surge": return t("The yen rose {v}% in a month: carry trades unwinding", "הין עלה {v}% בחודש: פירוק עסקאות מימון בין", v);
     default: return r.en;
   }
+}
+
+export function regionName(t: TFunction, region: string): string {
+  return region === "europe" ? t("Europe", "אירופה")
+    : region === "japan" ? t("Japan", "יפן")
+    : region === "china" ? t("China", "סין")
+    : region === "emerging" ? t("Emerging markets", "שווקים מתעוררים")
+    : region === "smallcaps" ? t("US small caps", "מניות קטנות בארה״ב")
+    : region;
 }
 
 const MarketRegimeCard: React.FC = () => {

@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import { marketApi, type MarketRegimeDetail, type MarketIndicator } from "../api/client";
 import { useT, useDir, useLocale, type TFunction } from "../i18n/t";
-import { reasonText } from "../components/Market/MarketRegimeCard";
+import { reasonText, regionName } from "../components/Market/MarketRegimeCard";
 
 const REGIME_STYLE = {
   STRESS: { dot: "🔴", cls: "border-red-700/50 bg-red-950/30", text: "text-red-300" },
@@ -53,13 +53,26 @@ function indicatorInfo(t: TFunction, key: string): { name: string; why: string }
       why: t("Inverted, or just back from an inversion, it has preceded past recessions. A slow signal: months, not days.", "עקום הפוך, או כזה שבדיוק חזר מהיפוך, קדם למיתונים בעבר. סימן איטי: חודשים, לא ימים.") };
     case "breadth": return { name: t("Analysed stocks above their 200-day average", "מניות מנותחות מעל ממוצע 200 הימים"),
       why: t("How many stocks share the trend. A fall in everything is worse than a fall in a few giants.", "כמה מניות שותפות למגמה. ירידה של כולן חמורה מירידה של כמה ענקיות.") };
+    case "region_europe": case "region_japan": case "region_china": case "region_emerging":
+      return { name: t("{region} vs its 200-day average", "{region} מול ממוצע 200 הימים", { region: regionName(t, key.slice(7)) }),
+        why: t("Read through the region's main US-listed fund. A crisis abroad can reach the US later.", "נמדד דרך קרן הסל המרכזית של האזור. משבר בחו״ל יכול להגיע לארה״ב מאוחר יותר.") };
+    case "region_smallcaps": return { name: t("US small caps vs their 200-day average", "מניות קטנות בארה״ב מול ממוצע 200 הימים"),
+      why: t("Small companies tend to weaken before the big index.", "חברות קטנות נוטות להיחלש לפני המדד הגדול.") };
+    case "eu_hy_spread": return { name: t("European high-yield credit spread", "מרווח אשראי בתשואה גבוהה באירופה"),
+      why: t("Credit stress in Europe, the first sign in the 2011 debt crisis.", "לחץ אשראי באירופה, הסימן הראשון במשבר החוב של 2011.") };
+    case "dollar_1m": return { name: t("US dollar, last month", "הדולר האמריקאי, חודש אחרון"),
+      why: t("In a crisis money runs to the dollar; a sharp rise is a sign of fear.", "במשבר כסף בורח לדולר; עלייה חדה היא סימן לפחד.") };
+    case "yen_1m": return { name: t("Japanese yen, last month", "הין היפני, חודש אחרון"),
+      why: t("A sudden jump in the yen forces investors who borrowed in yen to sell, as in August 2024.", "קפיצה פתאומית בין מאלצת משקיעים שלוו בין למכור, כמו באוגוסט 2024.") };
     default: return { name: key, why: "" };
   }
 }
 
 function fmtValue(key: string, v: number | null): string {
   if (v === null || v === undefined) return "—";
-  if (key === "spy_vs_200" || key === "spy_vs_50") return `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
+  if (key === "spy_vs_200" || key === "spy_vs_50" || key.startsWith("region_") || key === "dollar_1m" || key === "yen_1m")
+    return `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
+  if (key === "eu_hy_spread") return `${v.toFixed(2)}%`;
   if (key === "drawdown") return `-${v.toFixed(1)}%`;
   if (key === "hy_spread") return `${v.toFixed(2)}%`;
   if (key === "hy_widening_1m") return `${v > 0 ? "+" : ""}${v.toFixed(2)}`;
@@ -81,6 +94,13 @@ function thresholdText(t: TFunction, ind: MarketIndicator): string {
       ? t("Just came out of an inversion", "יצא לאחרונה מהיפוך")
       : t("Warning below 0 (inverted)", "אזהרה מתחת ל-0 (הפוך)");
     case "breadth": return t("Warning below 40% · alarm below 25%", "אזהרה מתחת ל-40% · אזעקה מתחת ל-25%");
+    case "region_europe": case "region_japan": case "region_china": case "region_emerging": case "region_smallcaps":
+      return ind.drawdown != null
+        ? t("Warning below 0% · alarm in a bear market (20% off the high; now {d}% off)", "אזהרה מתחת ל-0% · אזעקה בשוק דובי (20% מהשיא; כרגע {d}%)", { d: ind.drawdown })
+        : t("Warning below 0% · alarm in a bear market (20% off the high)", "אזהרה מתחת ל-0% · אזעקה בשוק דובי (20% מהשיא)");
+    case "eu_hy_spread": return t("Warning from 5% · alarm from 7%", "אזהרה מ-5% · אזעקה מ-7%");
+    case "dollar_1m": return t("Warning from +3% in a month", "אזהרה מ-3%+ בחודש");
+    case "yen_1m": return t("Warning from +5% in a month", "אזהרה מ-5%+ בחודש");
     default: return "";
   }
 }
@@ -131,6 +151,104 @@ const Chart: React.FC<{
   );
 };
 
+/** A section that opens on tap. Its header always shows how it stands, so
+ *  a closed section still says whether it is worth opening. */
+const Section: React.FC<{ title: string; sub?: string; badge?: React.ReactNode; children: React.ReactNode }> = (
+  { title, sub, badge, children }) => (
+  <details className="group bg-gray-900 rounded-2xl border border-gray-800">
+    <summary className="list-none cursor-pointer select-none p-4 flex items-center justify-between gap-3">
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-gray-200">{title}</span>
+        {sub && <span className="block text-[11px] text-gray-500">{sub}</span>}
+      </span>
+      <span className="flex items-center gap-2 shrink-0">
+        {badge}
+        <span className="text-gray-500 transition-transform group-open:rotate-180">▾</span>
+      </span>
+    </summary>
+    <div className="px-4 pb-4">{children}</div>
+  </details>
+);
+
+/** How a layer stands, for its closed header: "all normal", "2 of 5 warning". */
+const LayerBadge: React.FC<{ rows: MarketIndicator[] }> = ({ rows }) => {
+  const t = useT();
+  const known = rows.filter((r) => r.status !== "unknown");
+  const alerts = known.filter((r) => r.status === "alert").length;
+  const warns = known.filter((r) => r.status === "warn").length;
+  if (!known.length) return <span className="text-[11px] text-gray-500">{t("No data", "אין נתון")}</span>;
+  if (alerts) return <span className="text-[11px] px-2 py-0.5 rounded-full border bg-red-900/50 text-red-300 border-red-700/50">🔴 {t("{n} of {total} in alarm", "{n} מתוך {total} באזעקה", { n: alerts, total: known.length })}</span>;
+  if (warns) return <span className="text-[11px] px-2 py-0.5 rounded-full border bg-yellow-900/40 text-yellow-300 border-yellow-700/40">🟡 {t("{n} of {total} warning", "{n} מתוך {total} באזהרה", { n: warns, total: known.length })}</span>;
+  return <span className="text-[11px] px-2 py-0.5 rounded-full border bg-green-900/40 text-green-300 border-green-700/40">🟢 {t("All normal", "הכול תקין")}</span>;
+};
+
+/** The plain-language summary at the top. Built from the readings by fixed
+ *  rules rather than written by a model, so it always matches the numbers
+ *  below it, costs nothing, and exists in every language. */
+function buildSummary(t: TFunction, d: MarketRegimeDetail): string[] {
+  const cur = d.current!;
+  const lines: string[] = [];
+  const of = (layer: string) => d.indicators.filter((i) => i.layer === layer);
+  const bad = (rows: MarketIndicator[], level: "warn" | "alert") =>
+    rows.filter((r) => (level === "alert" ? r.status === "alert" : r.status === "warn" || r.status === "alert")).length;
+  const stress = of("stress");
+  const regions = of("global").filter((i) => /^region_(europe|japan|china|emerging)$/.test(i.key) && i.status !== "unknown");
+  const weakRegions = regions.filter((i) => i.status !== "ok").length;
+
+  // What is driving it.
+  const top = [...cur.reasons].sort((a, b) => b.points - a.points).slice(0, 2).map((r) => reasonText(t, r));
+  lines.push(top.length
+    ? t("Main reasons: {r}.", "הסיבות העיקריות: {r}.", { r: top.join("; ") })
+    : t("Trend, credit and stress measures are all within normal ranges.", "מדדי המגמה, האשראי והלחץ כולם בטווח הרגיל."));
+
+  // How deep it goes: credit and financial stress, and abroad.
+  if (bad(stress, "alert") > 0) {
+    lines.push(t("Credit and financial-stress measures are flashing: the kind of signal that came before past crises.",
+                 "מדדי האשראי והלחץ הפיננסי מהבהבים: סימן מהסוג שקדם למשברים קודמים."));
+  } else if (cur.regime !== "HEALTHY" && bad(stress, "warn") === 0) {
+    lines.push(t("Credit and financial-stress measures are still normal: no sign of a financial crisis.",
+                 "מדדי האשראי והלחץ הפיננסי עדיין תקינים: אין סימן למשבר פיננסי."));
+  }
+  if (regions.length && weakRegions >= 2) {
+    lines.push(t("The weakness is global: {n} of {total} world regions are falling.",
+                 "החולשה עולמית: {n} מתוך {total} אזורים בעולם בירידה.", { n: weakRegions, total: regions.length }));
+  } else if (regions.length && cur.regime !== "HEALTHY" && weakRegions === 0) {
+    lines.push(t("Markets abroad are holding up: the weakness is mainly in the US.",
+                 "השווקים בעולם מחזיקים מעמד: החולשה בעיקר בארה״ב."));
+  }
+
+  // What it means for this reader.
+  const ex = d.exposure;
+  if (ex.followed > 0) {
+    if (ex.near_stop.length) {
+      lines.push(t("For you: {list} near the stop loss.", "בשבילך: {list} קרובות לסטופ.",
+                   { list: ex.near_stop.map((x) => x.symbol).join(", ") }));
+    } else {
+      lines.push(t("For you: none of your stocks is near its stop loss.", "בשבילך: אף מניה שלך אינה קרובה לסטופ."));
+    }
+    if (ex.volatile.length && cur.regime !== "HEALTHY") {
+      lines.push(t("{list}: highly volatile, usually hit harder in a fall.", "{list}: תנודתיות גבוהה, בדרך כלל נפגעות יותר בירידות.",
+                   { list: ex.volatile.map((x) => x.symbol).join(", ") }));
+    }
+  }
+
+  // What to watch next.
+  lines.push(
+    cur.regime === "STRESS"
+      ? t("To watch: a recovery usually shows first in VIX falling and credit spreads narrowing.",
+          "למה לשים לב: התאוששות נראית בדרך כלל קודם בירידת ה-VIX ובהצטמצמות מרווחי האשראי.")
+      : cur.regime === "CORRECTION" && bad(stress, "warn") === 0
+      ? t("To watch: if credit spreads start widening, the risk rises.",
+          "למה לשים לב: אם מרווחי האשראי יתחילו להתרחב, הסיכון יעלה.")
+      : cur.regime === "CORRECTION"
+      ? t("To watch: credit spreads and the stress index. If they keep rising, the market may move to stress.",
+          "למה לשים לב: מרווחי האשראי ומדד הלחץ. אם ימשיכו לעלות, השוק עלול לעבור למצב לחץ.")
+      : t("Nothing stands out. Trouble usually shows first in credit spreads and VIX.",
+          "שום דבר לא בולט. בעיות מופיעות בדרך כלל קודם במרווחי האשראי וב-VIX."),
+  );
+  return lines;
+}
+
 const MarketPage: React.FC = () => {
   const t = useT();
   const dir = useDir();
@@ -158,39 +276,32 @@ const MarketPage: React.FC = () => {
   }
 
   const style = REGIME_STYLE[cur.regime] ?? REGIME_STYLE.HEALTHY;
-  const top = [...cur.reasons].sort((a, b) => b.points - a.points).slice(0, 4);
   const date = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString(locale, { day: "numeric", month: "long", year: "numeric" }) : "");
-  const layers: { key: "trend" | "stress" | "breadth"; title: string; sub: string }[] = [
+  const layers: { key: MarketIndicator["layer"]; title: string; sub: string }[] = [
     { key: "trend", title: t("Trend", "מגמה"), sub: t("Where the index is heading", "לאן המדד הולך") },
     { key: "stress", title: t("Crisis detectors", "גלאי משבר"), sub: t("The measures that moved before the index in past crises", "המדדים שזזו לפני המדד במשברים קודמים") },
+    { key: "global", title: t("Global", "עולמי"), sub: t("Europe, Asia, emerging markets, small caps, the dollar and the yen", "אירופה, אסיה, שווקים מתעוררים, מניות קטנות, הדולר והין") },
     { key: "breadth", title: t("Breadth", "רוחב השוק"), sub: t("How many stocks share the move", "כמה מניות שותפות לתנועה") },
   ];
   // Isolated left-to-right, so a minus sign stays in front of the number
   // inside a right-to-left sentence.
   const pct = (v: number | null) => (v === null ? "—" : `\u2066${v > 0 ? "+" : ""}${v.toFixed(1)}%\u2069`);
   const s = data.series;
+  const summary = buildSummary(t, data);
 
   return (
-    <div dir={dir} className="space-y-5">
+    <div dir={dir} className="space-y-4">
       <h1 className="text-2xl font-bold">{t("Market", "שוק")}</h1>
 
-      {/* 1. Where the market stands */}
+      {/* 1. The summary: what a reader needs in two seconds. */}
       <div className={`rounded-2xl border p-4 ${style.cls}`}>
-        <p className={`text-lg font-bold ${style.text}`}>{style.dot} {regimeLabel(t, cur.regime)}</p>
-        <p className="text-xs text-gray-400 mt-1">
-          {cur.since ? t("Since {date}", "מאז {date}", { date: date(cur.since) }) : ""}
-          {" · "}{t("Score {s}", "ציון {s}", { s: cur.score })}
-          {" · "}{t("Updated {date}", "עודכן {date}", { date: date(cur.as_of) })}
+        <p className={`text-lg font-bold ${style.text}`}>
+          {style.dot} {regimeLabel(t, cur.regime)}
+          {cur.since && <span className="text-sm font-normal text-gray-400"> · {t("since {date}", "מאז {date}", { date: date(cur.since) })}</span>}
         </p>
-        {top.length > 0 ? (
-          <ul className="mt-3 space-y-1 text-sm text-gray-200">
-            {top.map((r) => <li key={r.code || r.en}>• {reasonText(t, r)}</li>)}
-          </ul>
-        ) : (
-          <p className="mt-3 text-sm text-gray-300">
-            {t("Trend, credit and stress measures are all within normal ranges.", "מדדי המגמה, האשראי והלחץ כולם בטווח הרגיל.")}
-          </p>
-        )}
+        <ul className="mt-3 space-y-1.5 text-sm text-gray-200 leading-relaxed">
+          {summary.map((line) => <li key={line}>{line}</li>)}
+        </ul>
         {data.pending && data.pending.regime !== cur.regime && (
           <p className="mt-3 text-xs text-gray-400">
             {t("Latest reading points to: {r}. It becomes the new state if the next reading confirms it.",
@@ -201,10 +312,11 @@ const MarketPage: React.FC = () => {
         <p className="mt-3 text-[11px] text-gray-500 leading-relaxed">
           {t("This is risk information, not an instruction to sell. Whether to keep holding a stock depends on its stop loss.",
              "זהו מידע על רמת הסיכון ולא הוראה למכור. ההחלטה אם להמשיך להחזיק מניה תלויה בסטופ שלה.")}
+          {" "}{t("Updated {date}", "עודכן {date}", { date: date(cur.as_of) })}.
         </p>
       </div>
 
-      {/* 2. Your stocks */}
+      {/* 2. Your stocks — open, it is about the reader. */}
       <div className="bg-gray-900 rounded-2xl border border-gray-800 p-4">
         <p className="text-sm font-semibold text-gray-200">{t("Your stocks", "המניות שלך")}</p>
         {data.exposure.followed === 0 ? (
@@ -234,15 +346,14 @@ const MarketPage: React.FC = () => {
         )}
       </div>
 
-      {/* 3. What was checked */}
+      {/* 3. The detail, one tap away. */}
+      <p className="text-xs text-gray-500 pt-1">{t("The details: tap a section to open it", "הפירוט: לחץ על חלק כדי לפתוח אותו")}</p>
       {layers.map((layer) => {
         const rows = data.indicators.filter((i) => i.layer === layer.key);
         if (!rows.length) return null;
         return (
-          <div key={layer.key} className="bg-gray-900 rounded-2xl border border-gray-800 p-4">
-            <p className="text-sm font-semibold text-gray-200">{layer.title}</p>
-            <p className="text-[11px] text-gray-500">{layer.sub}</p>
-            <div className="mt-2 divide-y divide-gray-800/70">
+          <Section key={layer.key} title={layer.title} sub={layer.sub} badge={<LayerBadge rows={rows} />}>
+            <div className="divide-y divide-gray-800/70">
               {rows.map((ind) => {
                 const info = indicatorInfo(t, ind.key);
                 return (
@@ -260,41 +371,46 @@ const MarketPage: React.FC = () => {
                 );
               })}
             </div>
-          </div>
+          </Section>
         );
       })}
 
-      {/* 4. A year of history */}
-      <Chart
-        locale={locale}
-        title={t("S&P 500 and its averages, one year", "S&P 500 והממוצעים, שנה")}
-        legend={
-          <p className="text-[11px] text-gray-500">
-            <span className="text-blue-400">━</span> S&P 500 (SPY) ·{" "}
-            <span className="text-amber-400">━</span> {t("50-day", "50 יום")} ·{" "}
-            <span className="text-red-400">━</span> {t("200-day", "200 יום")}
-          </p>
-        }
-        data={s.spy.map(([d, v, a, b]) => ({ d, v, a, b }))}
-      />
-      <Chart
-        locale={locale}
-        title={t("VIX, one year", "VIX, שנה")}
-        legend={<p className="text-[11px] text-gray-500">{t("Dashed lines: warning at 25, alarm at 35", "קווים מקווקווים: אזהרה ב-25, אזעקה ב-35")}</p>}
-        refs={[{ y: 25, color: "#ca8a04" }, { y: 35, color: "#dc2626" }]}
-        data={s.vix.map(([d, v]) => ({ d, v }))}
-      />
-      <Chart
-        locale={locale}
-        title={t("High-yield credit spread, one year", "מרווח אשראי בתשואה גבוהה, שנה")}
-        legend={<p className="text-[11px] text-gray-500">{t("Dashed lines: warning at 5%, alarm at 7%", "קווים מקווקווים: אזהרה ב-5%, אזעקה ב-7%")}</p>}
-        refs={[{ y: 5, color: "#ca8a04" }, { y: 7, color: "#dc2626" }]}
-        data={s.hy_spread.map(([d, v]) => ({ d, v }))}
-      />
+      <Section title={t("Charts", "גרפים")} sub={t("S&P 500, VIX and credit spreads over the past year", "S&P 500, VIX ומרווחי אשראי בשנה האחרונה")}>
+        <div className="space-y-3">
+          <Chart
+            locale={locale}
+            title={t("S&P 500 and its averages, one year", "S&P 500 והממוצעים, שנה")}
+            legend={
+              <p className="text-[11px] text-gray-500">
+                <span className="text-blue-400">━</span> S&P 500 (SPY) ·{" "}
+                <span className="text-amber-400">━</span> {t("50-day", "50 יום")} ·{" "}
+                <span className="text-red-400">━</span> {t("200-day", "200 יום")}
+              </p>
+            }
+            data={s.spy.map(([d, v, a, b]) => ({ d, v, a, b }))}
+          />
+          <Chart
+            locale={locale}
+            title={t("VIX, one year", "VIX, שנה")}
+            legend={<p className="text-[11px] text-gray-500">{t("Dashed lines: warning at 25, alarm at 35", "קווים מקווקווים: אזהרה ב-25, אזעקה ב-35")}</p>}
+            refs={[{ y: 25, color: "#ca8a04" }, { y: 35, color: "#dc2626" }]}
+            data={s.vix.map(([d, v]) => ({ d, v }))}
+          />
+          <Chart
+            locale={locale}
+            title={t("High-yield credit spread, one year", "מרווח אשראי בתשואה גבוהה, שנה")}
+            legend={<p className="text-[11px] text-gray-500">{t("Dashed lines: warning at 5%, alarm at 7%", "קווים מקווקווים: אזהרה ב-5%, אזעקה ב-7%")}</p>}
+            refs={[{ y: 5, color: "#ca8a04" }, { y: 7, color: "#dc2626" }]}
+            data={s.hy_spread.map(([d, v]) => ({ d, v }))}
+          />
+        </div>
+      </Section>
 
-      {/* 5. Past changes, and what the index did next */}
-      <div className="bg-gray-900 rounded-2xl border border-gray-800 p-4">
-        <p className="text-sm font-semibold text-gray-200">{t("Changes of market state", "שינויים במצב השוק")}</p>
+      <Section
+        title={t("Changes of market state", "שינויים במצב השוק")}
+        sub={t("And what the S&P 500 did next", "ומה עשה S&P 500 אחר כך")}
+        badge={<span className="text-[11px] text-gray-500">{data.history.length}</span>}
+      >
         <p className="text-[11px] text-gray-500">
           {t("And what the S&P 500 did next: the plainest test of whether this reading sees anything.",
              "ומה עשה S&P 500 אחר כך: המבחן הפשוט ביותר אם הקריאה הזו באמת מזהה משהו.")}
@@ -317,11 +433,11 @@ const MarketPage: React.FC = () => {
             ))}
           </div>
         )}
-      </div>
+      </Section>
 
       <p className="text-[11px] text-gray-600 leading-relaxed pb-2">
-        {t("Sources: S&P 500 prices, and VIX, credit spreads, stress indices and the yield curve from the Federal Reserve's FRED database. Updated after each US trading day.",
-           "מקורות: מחירי S&P 500, ו-VIX, מרווחי אשראי, מדדי לחץ ועקום התשואות ממאגר FRED של הבנק הפדרלי. מתעדכן אחרי כל יום מסחר בארה״ב.")}
+        {t("Sources: prices of the S&P 500 and of regional index funds, and VIX, credit spreads, stress indices, the yield curve, the dollar and the yen from the Federal Reserve's FRED database. Updated after each US trading day.",
+           "מקורות: מחירי S&P 500 וקרנות סל אזוריות, ו-VIX, מרווחי אשראי, מדדי לחץ, עקום התשואות, הדולר והין ממאגר FRED של הבנק הפדרלי. מתעדכן אחרי כל יום מסחר בארה״ב.")}
       </p>
     </div>
   );
